@@ -13,6 +13,7 @@ Relay is a multiplayer coding-agent room built on Cloudflare Durable Objects and
 - Persistent room snapshots for late joiners
 - Public GitHub repository selection, exact commit pinning, and durable native OpenCode workspaces
 - Per-user GitHub OAuth and one-click pull request creation from the shared overlay
+- Automatic updates to one room PR, exact-commit preview tracking, and seamless room handoff to the deployed build
 - Hardware-isolated OpenCode, shell, and file tools through a self-hosted Microsandbox runner
 - Responsive transcript, people, and queue views
 - Local simulation mode for development without provider credentials
@@ -22,8 +23,10 @@ Relay is a multiplayer coding-agent room built on Cloudflare Durable Objects and
 
 ```text
 React client
-  ├─ GitHub OAuth + POST /api/rooms/:room/pull-requests
-  └─ WebSocket /api/rooms/:room/ws
+  ├─ Production or stateless preview build
+  ├─ One-time room handoff ticket
+  ├─ GitHub OAuth + revision publishing
+  └─ WebSocket to the stable Relay control plane
        └─ AgentRoom Durable Object (one per room name)
             ├─ Relay SQLite tables: room, events, participants, permissions
             ├─ Commit-pinned GitHub snapshot + mutable PR overlay
@@ -37,6 +40,8 @@ React client
 ```
 
 Relay keeps collaboration state in Durable Object SQLite. OpenCode keeps its own session database on the per-room microVM disk. The runner streams OpenCode's durable events to Relay, which records a compact, UI-focused projection while retaining the raw payload. After each turn, the runner returns the Git change set to Relay's durable overlay for pull-request creation.
+
+The Durable Object is the stable room authority even when the browser moves to a preview deployment. Preview builds are stateless Workers: after Relay verifies that a preview serves the exact published commit and room protocol, every participant receives a short-lived, one-time handoff ticket. The deployed client reconnects to the original room, preserving the transcript, presence, queue, workspace, and OpenCode session.
 
 Cloudflare's Agents SDK was considered for `useAgent`, but it is intentionally not layered on top: its client requires the Agents SDK server protocol and would introduce a second agent state model. Relay keeps OpenCode authoritative and uses a small room-specific WebSocket protocol instead.
 
@@ -102,7 +107,42 @@ npx wrangler secret put GITHUB_OAUTH_CLIENT_SECRET
 openssl rand -hex 32 | npx wrangler secret put GITHUB_SESSION_SECRET
 ```
 
-When a room has shared file changes, **Create PR** writes Git blobs and a deletion-aware tree on top of the room's pinned commit, creates a uniquely named `relay/…` branch, and opens the pull request against the selected base branch. If the authenticated user cannot push to the upstream repository, Relay creates or reuses that user's fork first. The resulting PR URL is persisted in the Durable Object and broadcast to every participant.
+When a room has shared file changes, **Create PR** writes Git blobs and a deletion-aware tree on top of the room's pinned commit, creates a uniquely named `relay/…` branch, and opens the pull request against the selected base branch. If the authenticated user cannot push to the upstream repository, Relay creates or reuses that user's fork first. Relay stores the credential encrypted with `GITHUB_SESSION_SECRET`; later successful turns append commits to the same PR automatically. Each commit becomes an immutable room revision and starts deployment observation.
+
+## Seamless preview handoff
+
+Relay uses two deployment surfaces because Cloudflare does not generate normal preview URLs for Workers that implement Durable Objects:
+
+- `wrangler.jsonc` deploys the stable control plane and production client.
+- `preview/wrangler.jsonc` deploys the stateless preview client.
+
+Configure Cloudflare Workers Builds for non-production branches with this deploy command:
+
+```bash
+pnpm deploy:preview
+```
+
+The preview build requires these build variables/secrets:
+
+```text
+RELAY_CONTROL_ORIGIN=https://relay.com
+RELAY_DEPLOYMENT_WEBHOOK_SECRET=<same secret configured on the control Worker>
+```
+
+Workers Builds supplies `WORKERS_CI_BRANCH` and `WORKERS_CI_COMMIT_SHA`. The publish script uploads a preview alias, waits for `/__relay/ready` to report that exact SHA, and calls the stable control plane. Relay then broadcasts the ready revision and moves connected participants to the deployed version. A later deployment on the same preview origin activates the revision and reloads the room; a versioned preview on a different origin uses a one-time ticket.
+
+The complete two-origin flow can be tested without GitHub or OAuth:
+
+```bash
+pnpm dev:e2e --host 127.0.0.1
+pnpm dev:preview --host 127.0.0.1
+
+curl -X POST http://127.0.0.1:5176/api/rooms/local-loop/local-preview \
+  -H 'Content-Type: application/json' \
+  --data '{"previewURL":"http://127.0.0.1:5174","commitSHA":"local-preview"}'
+```
+
+Open `http://127.0.0.1:5176/r/local-loop` before calling the local-preview endpoint. The browser will move to port 5174 while its WebSocket remains attached to the room on port 5176.
 
 ## Live OpenCode mode
 
@@ -123,6 +163,7 @@ Relay configures OpenCode's native permission wildcard to `allow`. This is dange
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm build:preview
 pnpm deploy
 ```
 

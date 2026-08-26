@@ -1,0 +1,15 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "relay-multiplayer-preview",
+  "main": "../src/preview-worker.ts",
+  "compatibility_date": "2026-08-25",
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/__relay/*"]
+  },
+  "preview_urls": true,
+  "vars": {
+    "RELAY_CONTROL_ORIGIN": "https://relay.com"
+  }
+}

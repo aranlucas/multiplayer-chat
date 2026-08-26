@@ -190,6 +190,12 @@ export function Header({
                 ? "Workspace error"
                 : running
                   ? "Agent running"
+                  : room?.latestRevision?.status === "waiting"
+                    ? "Preview queued"
+                    : room?.latestRevision?.status === "building"
+                      ? "Preview building"
+                      : room?.latestRevision?.status === "ready"
+                        ? `Revision ${room.latestRevision.sequence} live`
                   : room?.agentStatus === "paused"
                     ? "Agent paused"
                     : "Agent ready"}
@@ -223,7 +229,7 @@ export function Header({
         type="button"
         onClick={onPullRequest}
         disabled={
-          !githubConfigured ||
+          (!githubConfigured && !pullRequestURL) ||
           creatingPullRequest ||
           room?.workspaceStatus !== "ready"
         }

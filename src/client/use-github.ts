@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface GitHubUser {
   login: string;
@@ -21,12 +21,17 @@ const initialState: GitHubState = {
   creating: false,
 };
 
-export function useGitHub(roomID: string) {
+export function useGitHub(roomID: string, controlOrigin = window.location.origin) {
   const [state, setState] = useState(initialState);
+  const creatingRef = useRef(false);
 
   useEffect(() => {
+    if (controlOrigin !== window.location.origin) {
+      setState((current) => ({ ...current, loading: false }));
+      return;
+    }
     const controller = new AbortController();
-    fetch("/api/auth/github/session", {
+    fetch(`${controlOrigin}/api/auth/github/session`, {
       credentials: "same-origin",
       signal: controller.signal,
     })
@@ -51,20 +56,22 @@ export function useGitHub(roomID: string) {
         }));
       });
     return () => controller.abort();
-  }, []);
+  }, [controlOrigin]);
 
   const connect = useCallback(() => {
     const returnTo = `${window.location.pathname}${window.location.search}`;
     window.location.assign(
-      `/api/auth/github/start?return=${encodeURIComponent(returnTo)}`,
+      `${controlOrigin}/api/auth/github/start?return=${encodeURIComponent(returnTo)}`,
     );
-  }, []);
+  }, [controlOrigin]);
 
   const createPullRequest = useCallback(async () => {
+    if (creatingRef.current) return undefined;
+    creatingRef.current = true;
     setState((current) => ({ ...current, creating: true, error: undefined }));
     try {
       const response = await fetch(
-        `/api/rooms/${encodeURIComponent(roomID)}/pull-requests`,
+        `${controlOrigin}/api/rooms/${encodeURIComponent(roomID)}/pull-requests`,
         {
           method: "POST",
           credentials: "same-origin",
@@ -79,6 +86,7 @@ export function useGitHub(roomID: string) {
       if (!response.ok || !result.pullRequest)
         throw new Error(result.error || "Pull request creation failed");
       setState((current) => ({ ...current, creating: false }));
+      creatingRef.current = false;
       return result.pullRequest.url;
     } catch (error) {
       setState((current) => ({
@@ -86,9 +94,10 @@ export function useGitHub(roomID: string) {
         creating: false,
         error: errorMessage(error),
       }));
+      creatingRef.current = false;
       return undefined;
     }
-  }, [roomID]);
+  }, [controlOrigin, roomID]);
 
   return { state, connect, createPullRequest };
 }

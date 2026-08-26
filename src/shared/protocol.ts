@@ -14,6 +14,27 @@ export interface Participant {
 
 export type DeliveryMode = "steer" | "queue";
 
+export type DeploymentStatus =
+  | "waiting"
+  | "building"
+  | "ready"
+  | "failed";
+
+export interface RoomRevision {
+  id: string;
+  sequence: number;
+  workspaceRevision: number;
+  commitSHA: string;
+  status: DeploymentStatus;
+  previewURL?: string;
+  provider?: string;
+  deploymentID?: string;
+  failure?: string;
+  createdAt: number;
+  updatedAt: number;
+  activatedAt?: number;
+}
+
 export interface RoomInfo {
   id: string;
   title: string;
@@ -24,8 +45,16 @@ export interface RoomInfo {
   workspaceError?: string;
   agentStatus: "idle" | "running" | "paused" | "error";
   opencodeSessionID?: string;
+  workspaceRevision: number;
+  publishedWorkspaceRevision: number;
   pullRequestURL?: string;
+  pullRequestNumber?: number;
   pullRequestBranch?: string;
+  pullRequestRepository?: string;
+  pullRequestHeadSHA?: string;
+  autoPublishConfigured: boolean;
+  latestRevision?: RoomRevision;
+  activeRevision?: RoomRevision;
 }
 
 export interface TimelineEvent {

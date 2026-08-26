@@ -10,5 +10,10 @@
     "noEmit": true,
     "types": ["@cloudflare/workers-types/2023-07-01"]
   },
-  "include": ["src/worker.ts", "src/server", "src/shared"]
+  "include": [
+    "src/worker.ts",
+    "src/preview-worker.ts",
+    "src/server",
+    "src/shared"
+  ]
 }

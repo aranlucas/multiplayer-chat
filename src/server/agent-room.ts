@@ -9,6 +9,7 @@ import {
   type PermissionRequest,
   type QueuedPrompt,
   type RoomInfo,
+  type RoomRevision,
   type RoomSnapshot,
   type ServerMessage,
   type TimelineEvent,
@@ -21,8 +22,13 @@ import {
 import { RepositoryWorkspace } from "./workspace";
 import {
   GitHubPullRequestClient,
+  type ExistingPullRequest,
   type PullRequestResult,
 } from "./github-pull-request";
+import {
+  sealGitHubCredential,
+  unsealGitHubCredential,
+} from "./github-auth";
 
 interface SocketAttachment {
   participant: Pick<Participant, "id" | "name" | "role" | "color">;
@@ -58,6 +64,43 @@ interface PermissionRow {
   created_at: number;
 }
 
+interface RevisionRow {
+  [key: string]: string | number | null;
+  id: string;
+  sequence: number;
+  workspace_revision: number;
+  commit_sha: string;
+  status: RoomRevision["status"];
+  preview_url: string | null;
+  provider: string | null;
+  deployment_id: string | null;
+  failure: string | null;
+  created_at: number;
+  updated_at: number;
+  activated_at: number | null;
+}
+
+interface HandoffRow {
+  [key: string]: string | number | null;
+  token_hash: string;
+  target_origin: string;
+  participant_json: string;
+  expires_at: number;
+  used_at: number | null;
+}
+
+interface HandoffParticipant {
+  id: string;
+  name: string;
+  role: Participant["role"];
+}
+
+interface HandoffClientState {
+  draft?: string;
+  selectedID?: string;
+  mobileTab?: "transcript" | "people" | "queue";
+}
+
 const wait = (milliseconds: number) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -88,10 +131,6 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     body?: string;
   }): Promise<PullRequestResult> {
     const room = this.getRoom();
-    if (room.pullRequestURL)
-      throw new Error(
-        "This version of the shared workspace already has a pull request",
-      );
     const workspace = await this.workspace.pullRequestWorkspace();
     const title = cleanPullRequestText(
       input.title,
@@ -109,36 +148,325 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       ].join("\n"),
       20_000,
     );
-    const result = await new GitHubPullRequestClient(input.accessToken).create({
-      accessToken: input.accessToken,
-      login: input.login,
-      roomID: room.id,
-      repository: workspace.repository,
-      baseBranch: workspace.branch,
-      baseCommitSHA: workspace.commitSHA,
-      changes: workspace.changes,
-      title,
-      body,
-    });
-    this.ctx.storage.sql.exec(
-      "UPDATE relay_room SET pull_request_url = ?, pull_request_branch = ? WHERE singleton = 1",
-      result.url,
-      result.branch,
+    const existing: ExistingPullRequest | undefined =
+      room.pullRequestURL &&
+      room.pullRequestNumber &&
+      room.pullRequestBranch &&
+      room.pullRequestRepository &&
+      room.pullRequestHeadSHA
+        ? {
+            number: room.pullRequestNumber,
+            url: room.pullRequestURL,
+            branch: room.pullRequestBranch,
+            writeRepository: room.pullRequestRepository,
+            headSHA: room.pullRequestHeadSHA,
+          }
+        : undefined;
+    const result = await new GitHubPullRequestClient(
+      input.accessToken,
+    ).publish(
+      {
+        accessToken: input.accessToken,
+        login: input.login,
+        roomID: room.id,
+        repository: workspace.repository,
+        baseBranch: workspace.branch,
+        baseCommitSHA: workspace.commitSHA,
+        changes: workspace.changes,
+        title,
+        body,
+      },
+      existing,
     );
+    const sealedCredential = await sealGitHubCredential(
+      { accessToken: input.accessToken, login: input.login },
+      this.env,
+    );
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_room SET pull_request_url = ?, pull_request_number = ?, pull_request_branch = ?, pull_request_repository = ?, pull_request_head_sha = ?, github_credential = ?, published_workspace_revision = workspace_revision WHERE singleton = 1",
+      result.url,
+      result.number,
+      result.branch,
+      result.writeRepository,
+      result.commitSHA,
+      sealedCredential,
+    );
+    const revision = this.insertRevision({
+      workspaceRevision: this.getRoom().workspaceRevision,
+      commitSHA: result.commitSHA,
+      status: "waiting",
+      provider: "github",
+    });
     const event = this.insertEvent({
       id: crypto.randomUUID(),
       kind: "system",
       createdAt: Date.now(),
       payload: {
         type: "pull_request",
-        text: `@${input.login} created pull request #${result.number}`,
+        text: existing
+          ? `@${input.login} published revision ${revision.sequence} to pull request #${result.number}`
+          : `@${input.login} created pull request #${result.number}`,
         url: result.url,
         branch: result.branch,
+        commitSHA: result.commitSHA,
+        revision: revision.sequence,
       },
     });
     this.broadcast({ type: "room", room: this.getRoom() });
     this.broadcast({ type: "event", event });
+    await this.ctx.storage.setAlarm(Date.now() + 2_000);
     return result;
+  }
+
+  async publishSavedPullRequest(): Promise<PullRequestResult | undefined> {
+    const room = this.getRoom();
+    if (room.workspaceRevision <= room.publishedWorkspaceRevision)
+      return undefined;
+    const credential = this.githubCredential();
+    if (!credential) return undefined;
+    return this.createPullRequest(
+      await unsealGitHubCredential(credential, this.env),
+    );
+  }
+
+  async recordDeployment(input: {
+    commitSHA: string;
+    status: RoomRevision["status"];
+    previewURL?: string;
+    provider?: string;
+    deploymentID?: string;
+    failure?: string;
+  }): Promise<RoomRevision> {
+    const revision = this.revisionForCommit(input.commitSHA);
+    if (!revision)
+      throw new Error("Deployment does not match a published room revision");
+    const previewURL = input.previewURL
+      ? validatePreviewURL(input.previewURL)
+      : undefined;
+    if (input.status === "ready" && !previewURL)
+      throw new Error("A ready deployment requires a preview URL");
+    const now = Date.now();
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_revisions SET status = ?, preview_url = COALESCE(?, preview_url), provider = COALESCE(?, provider), deployment_id = COALESCE(?, deployment_id), failure = ?, updated_at = ? WHERE id = ?",
+      input.status,
+      previewURL,
+      input.provider ?? null,
+      input.deploymentID ?? null,
+      input.failure ?? null,
+      now,
+      revision.id,
+    );
+    const updated = this.revisionByID(revision.id)!;
+    if (input.status === "ready" || input.status === "failed") {
+      const event = this.insertEvent({
+        id: `deployment:${updated.id}:${input.status}`,
+        kind: "system",
+        createdAt: now,
+        payload: {
+          type: "deployment",
+          status: input.status,
+          text:
+            input.status === "ready"
+              ? `Revision ${updated.sequence} preview is ready`
+              : `Revision ${updated.sequence} preview failed`,
+          url: updated.previewURL,
+          failure: updated.failure,
+          revision: updated.sequence,
+          commitSHA: updated.commitSHA,
+        },
+      });
+      this.broadcast({ type: "event", event });
+    }
+    this.broadcast({ type: "room", room: this.getRoom() });
+    return updated;
+  }
+
+  async createLocalPreview(input: {
+    previewURL: string;
+    commitSHA?: string;
+  }): Promise<RoomRevision> {
+    const room = this.getRoom();
+    const workspaceRevision = room.workspaceRevision + 1;
+    const commitSHA =
+      input.commitSHA ??
+      `local-${workspaceRevision}-${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_room SET workspace_revision = ?, published_workspace_revision = ? WHERE singleton = 1",
+      workspaceRevision,
+      workspaceRevision,
+    );
+    const revision = this.insertRevision({
+      workspaceRevision,
+      commitSHA,
+      status: "ready",
+      previewURL: validatePreviewURL(input.previewURL),
+      provider: "local",
+    });
+    const event = this.insertEvent({
+      id: `deployment:${revision.id}:ready`,
+      kind: "system",
+      createdAt: revision.createdAt,
+      payload: {
+        type: "deployment",
+        status: "ready",
+        text: `Revision ${revision.sequence} preview is ready`,
+        url: revision.previewURL,
+        revision: revision.sequence,
+        commitSHA: revision.commitSHA,
+      },
+    });
+    this.broadcast({ type: "event", event });
+    this.broadcast({ type: "room", room: this.getRoom() });
+    return revision;
+  }
+
+  async createHandoff(input: {
+    participant: HandoffParticipant;
+    clientState?: HandoffClientState;
+    currentOrigin: string;
+    controlOrigin: string;
+  }): Promise<{ url: string; expiresAt: number }> {
+    const revision = this.latestRevision();
+    if (!revision?.previewURL || revision.status !== "ready")
+      throw new Error("The latest room preview is not ready");
+    const target = new URL(revision.previewURL);
+    const currentOrigin = new URL(input.currentOrigin).origin;
+    const controlOrigin = new URL(input.controlOrigin).origin;
+    if (target.origin === currentOrigin)
+      throw new Error("The room is already on the latest preview");
+    const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll(
+      "-",
+      "",
+    );
+    const tokenHash = await sha256(token);
+    const expiresAt = Date.now() + 60_000;
+    this.ctx.storage.sql.exec(
+      "INSERT INTO relay_handoffs (token_hash, revision_id, target_origin, participant_json, expires_at) VALUES (?, ?, ?, ?, ?)",
+      tokenHash,
+      revision.id,
+      target.origin,
+      JSON.stringify({
+        participant: input.participant,
+        clientState: validateHandoffClientState(input.clientState),
+      }),
+      expiresAt,
+    );
+    target.pathname = `/r/${encodeURIComponent(this.roomID)}`;
+    target.searchParams.set("control", controlOrigin);
+    target.hash = `handoff=${token}`;
+    return { url: target.toString(), expiresAt };
+  }
+
+  async redeemHandoff(input: {
+    token: string;
+    targetOrigin: string;
+  }): Promise<{
+    participant: HandoffParticipant;
+    clientState?: HandoffClientState;
+    roomID: string;
+  }> {
+    if (!/^[a-f0-9]{64}$/i.test(input.token))
+      throw new Error("Invalid room handoff ticket");
+    const tokenHash = await sha256(input.token);
+    const rows = this.ctx.storage.sql
+      .exec<HandoffRow>(
+        "SELECT * FROM relay_handoffs WHERE token_hash = ?",
+        tokenHash,
+      )
+      .toArray();
+    const handoff = rows[0];
+    if (!handoff || handoff.used_at || handoff.expires_at <= Date.now())
+      throw new Error("Room handoff ticket is expired or already used");
+    if (new URL(input.targetOrigin).origin !== handoff.target_origin)
+      throw new Error("Room handoff ticket was issued for another preview");
+    const now = Date.now();
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_handoffs SET used_at = ? WHERE token_hash = ? AND used_at IS NULL",
+      now,
+      tokenHash,
+    );
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_revisions SET activated_at = COALESCE(activated_at, ?) WHERE id = (SELECT revision_id FROM relay_handoffs WHERE token_hash = ?)",
+      now,
+      tokenHash,
+    );
+    this.broadcast({ type: "room", room: this.getRoom() });
+    const stored = JSON.parse(handoff.participant_json) as {
+      participant: HandoffParticipant;
+      clientState?: HandoffClientState;
+    };
+    return {
+      participant: stored.participant,
+      clientState: stored.clientState,
+      roomID: this.roomID,
+    };
+  }
+
+  async activateRevision(input: {
+    revisionID: string;
+    currentOrigin: string;
+  }): Promise<RoomRevision> {
+    const revision = this.revisionByID(input.revisionID);
+    if (!revision?.previewURL || revision.status !== "ready")
+      throw new Error("Room revision is not ready");
+    if (
+      new URL(revision.previewURL).origin !==
+      new URL(input.currentOrigin).origin
+    )
+      throw new Error("Room revision belongs to another preview origin");
+    const now = Date.now();
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_revisions SET activated_at = COALESCE(activated_at, ?) WHERE id = ?",
+      now,
+      revision.id,
+    );
+    const updated = this.revisionByID(revision.id)!;
+    this.broadcast({ type: "room", room: this.getRoom() });
+    return updated;
+  }
+
+  async alarm(): Promise<void> {
+    const room = this.getRoomOrNull();
+    if (!room?.pullRequestHeadSHA) return;
+    const revision = room.latestRevision;
+    if (
+      !revision ||
+      revision.commitSHA !== room.pullRequestHeadSHA ||
+      revision.status === "ready" ||
+      revision.status === "failed"
+    )
+      return;
+    if (Date.now() - revision.createdAt > 15 * 60_000) {
+      await this.recordDeployment({
+        commitSHA: revision.commitSHA,
+        status: "failed",
+        provider: revision.provider,
+        failure: "Preview deployment was not ready within 15 minutes",
+      });
+      return;
+    }
+    const credential = this.githubCredential();
+    if (!credential) return;
+    const session = await unsealGitHubCredential(credential, this.env);
+    const observation = await new GitHubPullRequestClient(
+      session.accessToken,
+    ).findDeployment(room.repository, room.pullRequestHeadSHA);
+    if (observation.status === "ready" && observation.environmentURL) {
+      await verifyReadyPreview(
+        observation.environmentURL,
+        room.pullRequestHeadSHA,
+      );
+    }
+    await this.recordDeployment({
+      commitSHA: room.pullRequestHeadSHA,
+      status: observation.status,
+      previewURL: observation.environmentURL,
+      provider: "github",
+      deploymentID: observation.deploymentID,
+      failure: observation.failure,
+    });
+    if (observation.status === "waiting" || observation.status === "building")
+      await this.ctx.storage.setAlarm(Date.now() + 5_000);
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -247,7 +575,30 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         status TEXT NOT NULL,
         created_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS relay_revisions (
+        id TEXT PRIMARY KEY,
+        sequence INTEGER NOT NULL UNIQUE,
+        workspace_revision INTEGER NOT NULL,
+        commit_sha TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL,
+        preview_url TEXT,
+        provider TEXT,
+        deployment_id TEXT,
+        failure TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        activated_at INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS relay_handoffs (
+        token_hash TEXT PRIMARY KEY,
+        revision_id TEXT NOT NULL,
+        target_origin TEXT NOT NULL,
+        participant_json TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER
+      );
       CREATE INDEX IF NOT EXISTS relay_events_created_idx ON relay_events(created_at);
+      CREATE INDEX IF NOT EXISTS relay_handoffs_expiry_idx ON relay_handoffs(expires_at);
     `);
     this.ensureColumn("relay_room", "commit_sha", "TEXT");
     this.ensureColumn(
@@ -259,6 +610,20 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     this.ensureColumn("relay_room", "opencode_event_cursor", "TEXT");
     this.ensureColumn("relay_room", "pull_request_url", "TEXT");
     this.ensureColumn("relay_room", "pull_request_branch", "TEXT");
+    this.ensureColumn("relay_room", "pull_request_number", "INTEGER");
+    this.ensureColumn("relay_room", "pull_request_repository", "TEXT");
+    this.ensureColumn("relay_room", "pull_request_head_sha", "TEXT");
+    this.ensureColumn("relay_room", "github_credential", "TEXT");
+    this.ensureColumn(
+      "relay_room",
+      "workspace_revision",
+      "INTEGER NOT NULL DEFAULT 0",
+    );
+    this.ensureColumn(
+      "relay_room",
+      "published_workspace_revision",
+      "INTEGER NOT NULL DEFAULT 0",
+    );
     this.ctx.storage.sql.exec(
       "DELETE FROM relay_events WHERE id LIKE 'seed-%'",
     );
@@ -490,6 +855,13 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       result.cursor ?? null,
     );
     this.workspace.syncNativeAgentChanges(result.changes);
+    const workspaceChanged =
+      JSON.stringify(workspace.changes) !== JSON.stringify(result.changes);
+    if (result.status === "succeeded" && workspaceChanged) {
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_room SET workspace_revision = workspace_revision + 1 WHERE singleton = 1",
+      );
+    }
     this.setRoomStatus(
       result.status === "succeeded"
         ? "idle"
@@ -497,6 +869,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
           ? "paused"
           : "error",
     );
+    if (result.status === "succeeded" && workspaceChanged) {
+      await this.publishSavedPullRequest();
+    }
   }
 
   private handleNativeRunnerEvent(event: NativeRunnerEvent) {
@@ -725,6 +1100,97 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       }));
   }
 
+  private insertRevision(input: {
+    workspaceRevision: number;
+    commitSHA: string;
+    status: RoomRevision["status"];
+    previewURL?: string;
+    provider?: string;
+  }): RoomRevision {
+    const now = Date.now();
+    const sequence = this.ctx.storage.sql
+      .exec<{ sequence: number }>(
+        "SELECT COALESCE(MAX(sequence), 0) + 1 AS sequence FROM relay_revisions",
+      )
+      .one().sequence;
+    const id = crypto.randomUUID();
+    this.ctx.storage.sql.exec(
+      "INSERT INTO relay_revisions (id, sequence, workspace_revision, commit_sha, status, preview_url, provider, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      id,
+      sequence,
+      input.workspaceRevision,
+      input.commitSHA,
+      input.status,
+      input.previewURL ?? null,
+      input.provider ?? null,
+      now,
+      now,
+    );
+    return this.revisionByID(id)!;
+  }
+
+  private revisionByID(id: string): RoomRevision | undefined {
+    const row = this.ctx.storage.sql
+      .exec<RevisionRow>("SELECT * FROM relay_revisions WHERE id = ?", id)
+      .toArray()[0];
+    return row ? this.rowToRevision(row) : undefined;
+  }
+
+  private revisionForCommit(commitSHA: string): RoomRevision | undefined {
+    const row = this.ctx.storage.sql
+      .exec<RevisionRow>(
+        "SELECT * FROM relay_revisions WHERE commit_sha = ?",
+        commitSHA,
+      )
+      .toArray()[0];
+    return row ? this.rowToRevision(row) : undefined;
+  }
+
+  private latestRevision(): RoomRevision | undefined {
+    const row = this.ctx.storage.sql
+      .exec<RevisionRow>(
+        "SELECT * FROM relay_revisions ORDER BY sequence DESC LIMIT 1",
+      )
+      .toArray()[0];
+    return row ? this.rowToRevision(row) : undefined;
+  }
+
+  private activeRevision(): RoomRevision | undefined {
+    const row = this.ctx.storage.sql
+      .exec<RevisionRow>(
+        "SELECT * FROM relay_revisions WHERE activated_at IS NOT NULL ORDER BY activated_at DESC LIMIT 1",
+      )
+      .toArray()[0];
+    return row ? this.rowToRevision(row) : undefined;
+  }
+
+  private rowToRevision(row: RevisionRow): RoomRevision {
+    return {
+      id: row.id,
+      sequence: row.sequence,
+      workspaceRevision: row.workspace_revision,
+      commitSHA: row.commit_sha,
+      status: row.status,
+      previewURL: row.preview_url ?? undefined,
+      provider: row.provider ?? undefined,
+      deploymentID: row.deployment_id ?? undefined,
+      failure: row.failure ?? undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      activatedAt: row.activated_at ?? undefined,
+    };
+  }
+
+  private githubCredential(): string | undefined {
+    return (
+      this.ctx.storage.sql
+        .exec<{ github_credential: string | null }>(
+          "SELECT github_credential FROM relay_room WHERE singleton = 1",
+        )
+        .one().github_credential ?? undefined
+    );
+  }
+
   private getRoomOrNull(): RoomInfo | null {
     const rows = this.ctx.storage.sql
       .exec<{
@@ -738,7 +1204,13 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         workspace_status: RoomInfo["workspaceStatus"];
         workspace_error: string | null;
         pull_request_url: string | null;
+        pull_request_number: number | null;
         pull_request_branch: string | null;
+        pull_request_repository: string | null;
+        pull_request_head_sha: string | null;
+        workspace_revision: number;
+        published_workspace_revision: number;
+        github_credential: string | null;
       }>("SELECT * FROM relay_room WHERE singleton = 1")
       .toArray();
     if (!rows.length) return null;
@@ -753,8 +1225,16 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       workspaceError: row.workspace_error ?? undefined,
       agentStatus: row.agent_status,
       opencodeSessionID: row.opencode_session_id ?? undefined,
+      workspaceRevision: row.workspace_revision,
+      publishedWorkspaceRevision: row.published_workspace_revision,
       pullRequestURL: row.pull_request_url ?? undefined,
+      pullRequestNumber: row.pull_request_number ?? undefined,
       pullRequestBranch: row.pull_request_branch ?? undefined,
+      pullRequestRepository: row.pull_request_repository ?? undefined,
+      pullRequestHeadSHA: row.pull_request_head_sha ?? undefined,
+      autoPublishConfigured: Boolean(row.github_credential),
+      latestRevision: this.latestRevision(),
+      activeRevision: this.activeRevision(),
     };
   }
 
@@ -809,6 +1289,66 @@ function hashCode(value: string): number {
   for (let index = 0; index < value.length; index += 1)
     hash = (hash << 5) - hash + value.charCodeAt(index);
   return hash | 0;
+}
+
+function validatePreviewURL(value: string): string {
+  const url = new URL(value);
+  const local = url.hostname === "127.0.0.1" || url.hostname === "localhost";
+  if (url.protocol !== "https:" && !(local && url.protocol === "http:"))
+    throw new Error("Preview URL must use HTTPS unless it is local");
+  url.username = "";
+  url.password = "";
+  url.hash = "";
+  return url.toString();
+}
+
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+function validateHandoffClientState(
+  value: HandoffClientState | undefined,
+): HandoffClientState | undefined {
+  if (!value) return undefined;
+  const draft =
+    typeof value.draft === "string"
+      ? value.draft.slice(0, 8_000)
+      : undefined;
+  const selectedID =
+    typeof value.selectedID === "string"
+      ? value.selectedID.slice(0, 200)
+      : undefined;
+  const mobileTab =
+    value.mobileTab === "people" || value.mobileTab === "queue"
+      ? value.mobileTab
+      : "transcript";
+  return { draft, selectedID, mobileTab };
+}
+
+async function verifyReadyPreview(previewURL: string, commitSHA: string) {
+  const readiness = new URL("/__relay/ready", validatePreviewURL(previewURL));
+  const response = await fetch(readiness, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(8_000),
+  });
+  const result: { ready?: boolean; commitSHA?: string; roomProtocol?: number } =
+    await response
+    .json<{ ready?: boolean; commitSHA?: string; roomProtocol?: number }>()
+    .catch(() => ({}));
+  if (
+    !response.ok ||
+    !result.ready ||
+    result.commitSHA !== commitSHA ||
+    result.roomProtocol !== 1
+  ) {
+    throw new Error("Deployment did not pass the Relay readiness check");
+  }
 }
 
 function unwrapNativeEvent(

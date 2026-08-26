@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:e2e": "vite --config vite.e2e.config.ts --port 5176",
+    "dev:preview": "VITE_RELAY_BUILD=preview VITE_RELAY_ACCENT='#ff5ca8' vite --config vite.preview.config.ts --port 5174",
     "build": "tsc -b && vite build",
+    "build:preview": "tsc -b && VITE_RELAY_BUILD=preview VITE_RELAY_ACCENT='#ff5ca8' vite build --config vite.preview.config.ts",
+    "deploy:preview": "pnpm build:preview && node scripts/publish-preview.mjs",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run --config vitest.config.ts",
-    "deploy": "wrangler deploy",
+    "deploy": "pnpm build && wrangler deploy --config dist/relay_multiplayer_agent/wrangler.json",
     "cf-typegen": "wrangler types",
     "runner": "tsx runner/server.ts"
   },

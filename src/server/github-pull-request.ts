@@ -17,6 +17,24 @@ export interface PullRequestResult {
   url: string;
   branch: string;
   repository: string;
+  writeRepository: string;
+  commitSHA: string;
+}
+
+export interface ExistingPullRequest {
+  number: number;
+  url: string;
+  branch: string;
+  writeRepository: string;
+  headSHA: string;
+}
+
+export interface DeploymentObservation {
+  status: "waiting" | "building" | "ready" | "failed";
+  environmentURL?: string;
+  environment?: string;
+  deploymentID?: string;
+  failure?: string;
 }
 
 interface RepositoryResponse {
@@ -40,6 +58,13 @@ export class GitHubPullRequestClient {
   ) {}
 
   async create(input: PullRequestInput): Promise<PullRequestResult> {
+    return this.publish(input);
+  }
+
+  async publish(
+    input: PullRequestInput,
+    existing?: ExistingPullRequest,
+  ): Promise<PullRequestResult> {
     if (!input.changes.length)
       throw new Error(
         "There are no shared workspace changes to put in a pull request",
@@ -47,9 +72,11 @@ export class GitHubPullRequestClient {
     const baseRepository = await this.request<RepositoryResponse>(
       `/repos/${input.repository}`,
     );
-    const writeRepository = baseRepository.permissions?.push
-      ? baseRepository.full_name
-      : await this.ensureFork(input.login, baseRepository);
+    const writeRepository =
+      existing?.writeRepository ??
+      (baseRepository.permissions?.push
+        ? baseRepository.full_name
+        : await this.ensureFork(input.login, baseRepository));
     const baseCommit = await this.waitForCommit(
       writeRepository,
       input.baseCommitSHA,
@@ -89,6 +116,18 @@ export class GitHubPullRequestClient {
         }),
       },
     );
+    let parentSHA = input.baseCommitSHA;
+    if (existing) {
+      const remote = await this.request<{ object: { sha: string } }>(
+        `/repos/${writeRepository}/git/ref/heads/${refPath(existing.branch)}`,
+      );
+      if (remote.object.sha !== existing.headSHA) {
+        throw new Error(
+          `Pull request branch moved from ${existing.headSHA.slice(0, 12)} to ${remote.object.sha.slice(0, 12)}; refresh the room before publishing`,
+        );
+      }
+      parentSHA = remote.object.sha;
+    }
     const commit = await this.request<{ sha: string }>(
       `/repos/${writeRepository}/git/commits`,
       {
@@ -96,36 +135,101 @@ export class GitHubPullRequestClient {
         body: JSON.stringify({
           message: input.title,
           tree: tree.sha,
-          parents: [input.baseCommitSHA],
+          parents: [parentSHA],
         }),
       },
     );
-    const branch = branchName(input.roomID);
-    await this.request(`/repos/${writeRepository}/git/refs`, {
-      method: "POST",
-      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
-    });
-    const pull = await this.request<{ number: number; html_url: string }>(
-      `/repos/${input.repository}/pulls`,
-      {
+    const branch = existing?.branch ?? branchName(input.roomID);
+    if (existing) {
+      await this.request(
+        `/repos/${writeRepository}/git/refs/heads/${refPath(branch)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ sha: commit.sha, force: false }),
+        },
+      );
+    } else {
+      await this.request(`/repos/${writeRepository}/git/refs`, {
         method: "POST",
-        body: JSON.stringify({
-          title: input.title,
-          body: input.body,
-          base: input.baseBranch,
-          head:
-            writeRepository === baseRepository.full_name
-              ? branch
-              : `${input.login}:${branch}`,
-        }),
-      },
-    );
+        body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+      });
+    }
+    const pull = existing
+      ? { number: existing.number, html_url: existing.url }
+      : await this.request<{ number: number; html_url: string }>(
+          `/repos/${input.repository}/pulls`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              title: input.title,
+              body: input.body,
+              base: input.baseBranch,
+              head:
+                writeRepository === baseRepository.full_name
+                  ? branch
+                  : `${input.login}:${branch}`,
+            }),
+          },
+        );
     return {
       number: pull.number,
       url: pull.html_url,
       branch,
       repository: input.repository,
+      writeRepository,
+      commitSHA: commit.sha,
     };
+  }
+
+  async findDeployment(
+    repository: string,
+    commitSHA: string,
+  ): Promise<DeploymentObservation> {
+    const deployments = await this.request<
+      Array<{ id: number; environment?: string }>
+    >(
+      `/repos/${repository}/deployments?sha=${encodeURIComponent(commitSHA)}&per_page=20`,
+    );
+    if (!deployments.length) return { status: "waiting" };
+
+    for (const deployment of deployments) {
+      const statuses = await this.request<
+        Array<{
+          id: number;
+          state: string;
+          environment_url?: string;
+          description?: string;
+        }>
+      >(`/repos/${repository}/deployments/${deployment.id}/statuses?per_page=20`);
+      const latest = statuses[0];
+      if (!latest) continue;
+      if (latest.state === "success" && latest.environment_url) {
+        return {
+          status: "ready",
+          environmentURL: latest.environment_url,
+          environment: deployment.environment,
+          deploymentID: String(deployment.id),
+        };
+      }
+      if (
+        latest.state === "failure" ||
+        latest.state === "error" ||
+        latest.state === "inactive"
+      ) {
+        return {
+          status: "failed",
+          environment: deployment.environment,
+          deploymentID: String(deployment.id),
+          failure: latest.description || `Deployment ${latest.state}`,
+        };
+      }
+      return {
+        status: "building",
+        environment: deployment.environment,
+        deploymentID: String(deployment.id),
+      };
+    }
+    return { status: "waiting" };
   }
 
   private async ensureFork(
@@ -225,6 +329,10 @@ function branchName(roomID: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, "-")
     .replace(/-+/g, "-")
-    .slice(0, 32);
-  return `relay/${room || "session"}-${Date.now().toString(36)}`;
+    .slice(0, 64);
+  return `relay/${room || "session"}--${Date.now().toString(36)}`;
+}
+
+function refPath(branch: string): string {
+  return branch.split("/").map(encodeURIComponent).join("/");
 }

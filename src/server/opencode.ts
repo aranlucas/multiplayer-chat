@@ -12,6 +12,7 @@ export interface WorkerEnv extends GitHubOAuthEnv, MicrosandboxRunnerEnv {
   CLOUDFLARE_ACCOUNT_ID: string;
   CLOUDFLARE_API_TOKEN?: string;
   OPENCODE_MODEL: string;
+  RELAY_DEPLOYMENT_WEBHOOK_SECRET?: string;
 }
 
 export function hasLiveOpenCode(env: WorkerEnv) {

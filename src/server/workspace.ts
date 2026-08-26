@@ -56,7 +56,7 @@ export class RepositoryWorkspace {
     const normalizedRepository = validateRepository(repository);
     const normalizedBranch = validateBranch(branch);
     this.storage.sql.exec(
-      "UPDATE relay_room SET repository = ?, branch = ?, commit_sha = NULL, workspace_status = 'cloning', workspace_error = NULL, opencode_session_id = NULL, opencode_event_cursor = NULL, pull_request_url = NULL, pull_request_branch = NULL WHERE singleton = 1",
+      "UPDATE relay_room SET repository = ?, branch = ?, commit_sha = NULL, workspace_status = 'cloning', workspace_error = NULL, opencode_session_id = NULL, opencode_event_cursor = NULL, workspace_revision = 0, published_workspace_revision = 0, pull_request_url = NULL, pull_request_number = NULL, pull_request_branch = NULL, pull_request_repository = NULL, pull_request_head_sha = NULL, github_credential = NULL WHERE singleton = 1",
       normalizedRepository,
       normalizedBranch,
     );
@@ -67,6 +67,8 @@ export class RepositoryWorkspace {
     this.ensureRemoteSchema();
     this.storage.sql.exec("DELETE FROM relay_workspace_files");
     this.storage.sql.exec("DELETE FROM relay_workspace_changes");
+    this.storage.sql.exec("DELETE FROM relay_handoffs");
+    this.storage.sql.exec("DELETE FROM relay_revisions");
     return this.ensureReady();
   }
 

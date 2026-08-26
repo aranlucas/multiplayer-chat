@@ -1,0 +1,33 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "relay-multiplayer-agent-e2e",
+  "main": "../src/worker.ts",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AGENT_ROOMS",
+        "class_name": "AgentRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["AgentRoom"]
+    }
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    "OPENCODE_MODE": "simulation",
+    "OPENCODE_PROVIDER": "opencode-zen",
+    "OPENCODE_MODEL": "opencode/hy3-free",
+    "CLOUDFLARE_ACCOUNT_ID": "local",
+    "GITHUB_OAUTH_CLIENT_ID": ""
+  }
+}

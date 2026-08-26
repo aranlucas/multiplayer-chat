@@ -4,17 +4,23 @@ import type { DeliveryMode } from "../../shared/protocol";
 
 interface ComposerProps {
   disabled?: boolean;
+  text: string;
+  onTextChange: (text: string) => void;
   onSend: (text: string, delivery: DeliveryMode) => boolean;
 }
 
-export function Composer({ disabled, onSend }: ComposerProps) {
+export function Composer({
+  disabled,
+  text,
+  onTextChange,
+  onSend,
+}: ComposerProps) {
   const [delivery, setDelivery] = useState<DeliveryMode>("steer");
-  const [text, setText] = useState("");
 
   function submit() {
     const value = text.trim();
     if (!value || disabled) return;
-    if (onSend(value, delivery)) setText("");
+    if (onSend(value, delivery)) onTextChange("");
   }
 
   return (
@@ -42,7 +48,7 @@ export function Composer({ disabled, onSend }: ComposerProps) {
       <div className="composer">
         <textarea
           value={text}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => onTextChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();

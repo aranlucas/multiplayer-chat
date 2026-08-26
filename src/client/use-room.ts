@@ -62,9 +62,15 @@ function deriveQueue(events: TimelineEvent[]): QueuedPrompt[] {
 
 export function getIdentity(roomID: string): RoomIdentity {
   const params = new URLSearchParams(window.location.search);
-  const requestedName = params.get("name")?.trim() || "You";
+  const remembered = rememberedIdentity(roomID);
+  const requestedName =
+    params.get("name")?.trim() || remembered?.name || "You";
   const requestedRole =
-    params.get("role") === "contributor" ? "contributor" : "maintainer";
+    params.has("role")
+      ? params.get("role") === "contributor"
+        ? "contributor"
+        : "maintainer"
+      : remembered?.role ?? "maintainer";
   const storageKey = `relay:${roomID}:${requestedName}:participant`;
   let id = window.localStorage.getItem(storageKey);
   if (!id) {
@@ -74,10 +80,36 @@ export function getIdentity(roomID: string): RoomIdentity {
         : requestedName.toLowerCase().replace(/[^a-z0-9]/g, "-");
     window.localStorage.setItem(storageKey, id);
   }
-  return { id, name: requestedName, role: requestedRole };
+  const identity = { id, name: requestedName, role: requestedRole };
+  window.localStorage.setItem(
+    `relay:${roomID}:identity`,
+    JSON.stringify(identity),
+  );
+  return identity;
 }
 
-export function useRoom(roomID: string, identity: RoomIdentity) {
+function rememberedIdentity(roomID: string): RoomIdentity | undefined {
+  try {
+    const value = window.localStorage.getItem(`relay:${roomID}:identity`);
+    if (!value) return undefined;
+    const identity = JSON.parse(value) as Partial<RoomIdentity>;
+    if (
+      typeof identity.id === "string" &&
+      typeof identity.name === "string" &&
+      (identity.role === "maintainer" || identity.role === "contributor")
+    )
+      return identity as RoomIdentity;
+  } catch {
+    // Ignore malformed local identity state.
+  }
+  return undefined;
+}
+
+export function useRoom(
+  roomID: string,
+  identity: RoomIdentity,
+  controlOrigin = window.location.origin,
+) {
   const [state, setState] = useState<RoomState>(initialState);
   const socketRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<number | null>(null);
@@ -116,14 +148,15 @@ export function useRoom(roomID: string, identity: RoomIdentity) {
     let disposed = false;
 
     const connect = () => {
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const endpoint = new URL(controlOrigin);
+      const protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
       const params = new URLSearchParams({
         participant: identity.id,
         name: identity.name,
         role: identity.role,
       });
       const socket = new WebSocket(
-        `${protocol}//${window.location.host}/api/rooms/${roomID}/ws?${params}`,
+        `${protocol}//${endpoint.host}/api/rooms/${roomID}/ws?${params}`,
       );
       socketRef.current = socket;
       setState((current) => ({
@@ -167,7 +200,14 @@ export function useRoom(roomID: string, identity: RoomIdentity) {
       if (retryRef.current) window.clearTimeout(retryRef.current);
       socketRef.current?.close(1000, "component unmounted");
     };
-  }, [handleMessage, identity.id, identity.name, identity.role, roomID]);
+  }, [
+    controlOrigin,
+    handleMessage,
+    identity.id,
+    identity.name,
+    identity.role,
+    roomID,
+  ]);
 
   const send = useCallback((message: ClientMessage) => {
     const socket = socketRef.current;

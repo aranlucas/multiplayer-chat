@@ -80,6 +80,58 @@ pre {
   background: var(--bg);
 }
 
+.room-transition {
+  position: fixed;
+  z-index: 100;
+  inset: 50% auto auto 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transform: translate(-50%, -50%);
+  padding: 13px 18px;
+  border: 1px solid color-mix(in srgb, var(--lime) 45%, var(--border));
+  border-radius: 10px;
+  background: rgba(10, 14, 16, 0.96);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.55);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.transition-pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--lime);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--lime) 45%, transparent);
+  animation: transition-pulse 900ms ease-out infinite;
+}
+
+.handoff-error {
+  display: grid;
+  place-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  text-align: center;
+}
+
+.handoff-error strong {
+  font-size: 18px;
+}
+
+.handoff-error p {
+  color: var(--muted);
+}
+
+.handoff-error a {
+  color: var(--lime);
+}
+
+@keyframes transition-pulse {
+  to {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+
 .app-header {
   position: relative;
   grid-area: header;

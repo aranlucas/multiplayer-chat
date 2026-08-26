@@ -163,6 +163,24 @@ export function githubOAuthConfigured(env: GitHubOAuthEnv): boolean {
   );
 }
 
+export async function sealGitHubCredential(
+  session: Pick<GitHubSession, "accessToken" | "login">,
+  env: GitHubOAuthEnv,
+): Promise<string> {
+  if (!env.GITHUB_SESSION_SECRET)
+    throw new Error("GitHub session encryption is not configured");
+  return seal(session, env.GITHUB_SESSION_SECRET);
+}
+
+export async function unsealGitHubCredential(
+  value: string,
+  env: GitHubOAuthEnv,
+): Promise<Pick<GitHubSession, "accessToken" | "login">> {
+  if (!env.GITHUB_SESSION_SECRET)
+    throw new Error("GitHub session encryption is not configured");
+  return unseal(value, env.GITHUB_SESSION_SECRET);
+}
+
 interface TokenResponse {
   access_token: string;
   refresh_token?: string;
