@@ -1,6 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import type { OpenCodeWorkerd } from "@opencode-ai/sdk/workerd";
 import {
+  DEFAULT_BRANCH,
+  DEFAULT_REPOSITORY,
   PARTICIPANT_COLORS,
   parseClientMessage,
   type ClientMessage,
@@ -260,8 +262,8 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       "INSERT INTO relay_room (singleton, room_id, title, repository, branch, agent_status, workspace_status) VALUES (1, ?, ?, ?, ?, ?, ?)",
       roomID,
       "Investigate reconnect loop",
-      "cloudflare/workers-chat-demo",
-      "master",
+      DEFAULT_REPOSITORY,
+      DEFAULT_BRANCH,
       "idle",
       "cloning",
     );

@@ -26,7 +26,7 @@ export function relayPlugin(workspace: RepositoryWorkspace): Plugin {
       await ctx.agent.transform((agents) => {
         agents.update("build", (agent) => {
           agent.description =
-            "Investigates and modifies the room's real, commit-pinned GitHub workspace. Use Relay tools for status, search, file reads, diffs, tests, and patches. Explain evidence from tool output. This room runs in dangerous always-allow mode, so tools do not pause for approval.";
+            "Investigates and modifies the room's real, commit-pinned GitHub workspace. Use Relay tools for status, search, file reads, diffs, tests, and patches. relay.read_file adds a line-number gutter for display; never include that gutter in patch context. relay.apply_patch accepts only a standard unified diff with ---/+++/numeric @@ headers, never the *** Begin Patch format. Explain evidence from tool output. This room runs in dangerous always-allow mode, so tools do not pause for approval.";
         });
       });
 
@@ -68,7 +68,7 @@ export function relayPlugin(workspace: RepositoryWorkspace): Plugin {
 
         tools.add({
           name: "read_file",
-          description: "Read a UTF-8 file from the connected repository.",
+          description: "Read a UTF-8 file from the connected repository with an `N │ ` line-number gutter for display. Omit the gutter when constructing patches.",
           input: {
             type: "object",
             properties: { path: { type: "string" } },
@@ -130,10 +130,15 @@ export function relayPlugin(workspace: RepositoryWorkspace): Plugin {
 
         tools.add({
           name: "apply_patch",
-          description: "Apply a unified diff to the shared repository workspace immediately in dangerous always-allow mode.",
+          description: "Apply a standard unified diff to the shared repository workspace immediately in dangerous always-allow mode. The patch must use `--- a/path`, `+++ b/path`, and numeric `@@ -oldStart,oldCount +newStart,newCount @@` headers. Do not use `*** Begin Patch`, `*** Update File`, or unnumbered `@@` markers.",
           input: {
             type: "object",
-            properties: { patch: { type: "string" } },
+            properties: {
+              patch: {
+                type: "string",
+                description: "Standard unified diff, for example: `--- a/README.md\\n+++ b/README.md\\n@@ -1,1 +1,2 @@\\n # Project\\n+Verified.`",
+              },
+            },
             required: ["patch"],
             additionalProperties: false,
           },

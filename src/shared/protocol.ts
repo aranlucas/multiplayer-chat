@@ -1,5 +1,8 @@
 export type ParticipantRole = "maintainer" | "contributor";
 
+export const DEFAULT_REPOSITORY = "aranlucas/multiplayer-chat";
+export const DEFAULT_BRANCH = "main";
+
 export interface Participant {
   id: string;
   name: string;

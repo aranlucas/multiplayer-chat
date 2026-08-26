@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { parseClientMessage, safeParticipantName, safeRoomID } from "./protocol";
+import { DEFAULT_BRANCH, DEFAULT_REPOSITORY, parseClientMessage, safeParticipantName, safeRoomID } from "./protocol";
 
 describe("room protocol", () => {
+  it("defaults new rooms to the Relay source repository", () => {
+    expect(DEFAULT_REPOSITORY).toBe("aranlucas/multiplayer-chat");
+    expect(DEFAULT_BRANCH).toBe("main");
+  });
+
   it("normalizes room and participant identity", () => {
     expect(safeRoomID("Reconnect Loop! / 2026")).toBe("reconnect-loop-2026");
     expect(safeParticipantName("  <Maya>  ")).toBe("Maya");

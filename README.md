@@ -58,6 +58,8 @@ http://127.0.0.1:5173/r/reconnect-loop?name=Sam&role=contributor
 
 Production uses a Workers-native repository backend: it resolves public Git refs over Git smart HTTP, downloads the exact commit archive, stores text files in the room's Durable Object, and applies unified diffs to a persistent overlay. This works on the Workers Free plan.
 
+New rooms start from [`aranlucas/multiplayer-chat@main`](https://github.com/aranlucas/multiplayer-chat/tree/main). Maintainers can select a different public GitHub repository and branch from the header.
+
 Full commands run on the free, self-hosted Microsandbox service in [`runner/`](runner/). For every command the runner boots a hardware-isolated Linux microVM, clones the selected repository, checks out the exact Durable Object commit, applies the room's changed-file overlay, and streams stdout and stderr back through OpenCode. The bearer token stays in the Worker secret store and on the runner host; it is never placed inside the microVM or sent to the browser. If the runner is offline, repository browsing and edits continue to work and `run_tests` falls back to the Workers-native preflight.
 
 ## Microsandbox runner

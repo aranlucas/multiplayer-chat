@@ -1,6 +1,6 @@
 import { Check, ChevronDown, GitBranch, GitPullRequest, LoaderCircle, MessageSquarePlus, Pause, Share2, Zap } from "lucide-react";
 import { useState } from "react";
-import type { Participant, RoomInfo } from "../../shared/protocol";
+import { DEFAULT_BRANCH, DEFAULT_REPOSITORY, type Participant, type RoomInfo } from "../../shared/protocol";
 
 interface HeaderProps {
   room?: RoomInfo;
@@ -33,8 +33,8 @@ export function Header({
 }: HeaderProps) {
   const [copied, setCopied] = useState(false);
   const [editingRepository, setEditingRepository] = useState(false);
-  const [repository, setRepository] = useState(room?.repository ?? "cloudflare/workers-chat-demo");
-  const [branch, setBranch] = useState(room?.branch ?? "master");
+  const [repository, setRepository] = useState(room?.repository ?? DEFAULT_REPOSITORY);
+  const [branch, setBranch] = useState(room?.branch ?? DEFAULT_BRANCH);
   const online = participants.filter((participant) => participant.online);
   const running = room?.agentStatus === "running";
 
@@ -66,12 +66,12 @@ export function Header({
         }}
       >
         <span className="repository-icon">▦</span>
-        <span>{room?.repository ?? "cloudflare/workers-chat-demo"}</span>
+        <span>{room?.repository ?? DEFAULT_REPOSITORY}</span>
         <ChevronDown size={14} aria-hidden />
       </button>
       <div className="header-context branch-context">
         <GitBranch size={16} aria-hidden />
-        <span>{room?.branch ?? "fix/session-reconnect"}</span>
+        <span>{room?.branch ?? DEFAULT_BRANCH}</span>
         <ChevronDown size={14} aria-hidden />
       </div>
       {editingRepository ? (
