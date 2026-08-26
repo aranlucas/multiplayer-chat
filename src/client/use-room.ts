@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { queuedPrompts } from "../shared/protocol";
 import type {
   ClientMessage,
   DeliveryMode,
@@ -42,22 +43,6 @@ function appendEvent(events: TimelineEvent[], incoming: TimelineEvent) {
       ? [...events, incoming]
       : events.map((event, index) => (index === existing ? incoming : event));
   return coalesceTimelineEvents(next);
-}
-
-function deriveQueue(events: TimelineEvent[]): QueuedPrompt[] {
-  return events
-    .filter(
-      (event) =>
-        event.kind === "prompt" &&
-        event.payload.delivery === "queue" &&
-        event.actor,
-    )
-    .map((event) => ({
-      eventID: event.id,
-      participant: event.actor!,
-      text: String(event.payload.text ?? ""),
-      createdAt: event.createdAt,
-    }));
 }
 
 export function getIdentity(roomID: string): RoomIdentity {
@@ -131,7 +116,7 @@ export function useRoom(
       }
       if (message.type === "event") {
         const events = appendEvent(current.events, message.event);
-        return { ...current, events, queue: deriveQueue(events) };
+        return { ...current, events, queue: queuedPrompts(events) };
       }
       if (message.type === "presence")
         return { ...current, participants: message.participants };

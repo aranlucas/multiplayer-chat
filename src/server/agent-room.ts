@@ -4,6 +4,7 @@ import {
   DEFAULT_REPOSITORY,
   PARTICIPANT_COLORS,
   parseClientMessage,
+  queuedPrompts,
   type ClientMessage,
   type Participant,
   type PermissionRequest,
@@ -14,6 +15,7 @@ import {
   type ServerMessage,
   type TimelineEvent,
 } from "../shared/protocol";
+import { completedTurnStatus } from "./agent-turn";
 import {
   hasLiveOpenCode,
   liveOpenCodeConfigurationError,
@@ -46,6 +48,7 @@ interface EventRow {
   created_at: number;
   actor_json: string | null;
   payload_json: string;
+  queue_status: "pending" | "consumed" | null;
 }
 
 interface ParticipantRow {
@@ -561,7 +564,8 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         kind TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         actor_json TEXT,
-        payload_json TEXT NOT NULL
+        payload_json TEXT NOT NULL,
+        queue_status TEXT
       );
       CREATE TABLE IF NOT EXISTS relay_participants (
         id TEXT PRIMARY KEY,
@@ -612,6 +616,15 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     );
     this.ensureColumn("relay_room", "workspace_error", "TEXT");
     this.ensureColumn("relay_room", "opencode_event_cursor", "TEXT");
+    this.ensureColumn(
+      "relay_room",
+      "agent_turn_generation",
+      "INTEGER NOT NULL DEFAULT 0",
+    );
+    this.ensureColumn("relay_events", "queue_status", "TEXT");
+    this.ctx.storage.sql.exec(
+      "CREATE INDEX IF NOT EXISTS relay_events_queue_idx ON relay_events(queue_status, seq)",
+    );
     this.ensureColumn("relay_room", "pull_request_url", "TEXT");
     this.ensureColumn("relay_room", "pull_request_branch", "TEXT");
     this.ensureColumn("relay_room", "pull_request_number", "INTEGER");
@@ -742,7 +755,11 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       kind: "prompt",
       createdAt: Date.now(),
       actor: participant,
-      payload: { text: message.text, delivery: message.delivery },
+      payload: {
+        text: message.text,
+        delivery: message.delivery,
+        ...(message.delivery === "queue" ? { queueStatus: "pending" } : {}),
+      },
     });
     this.broadcast({ type: "event", event });
     this.send(socket, { type: "ack", requestID: message.requestID });
@@ -766,17 +783,42 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     }
 
     if (!hasLiveOpenCode(this.env)) {
-      if (message.delivery === "queue") return;
-      this.setRoomStatus("running");
-      await this.runSimulatedTurn(message.text);
+      if (
+        message.delivery === "queue" &&
+        this.getRoom().agentStatus === "running"
+      )
+        return;
+      const generation = this.beginAgentTurn();
+      try {
+        if (message.delivery === "queue") this.consumeQueuedPrompt(event.id);
+        await this.runSimulatedTurn(message.text);
+        await this.drainSimulatedQueue();
+        this.completeAgentTurn(generation, "idle");
+      } catch (error) {
+        this.completeAgentTurn(generation, "error");
+        throw error;
+      }
       return;
     }
 
-    this.setRoomStatus("running");
+    const generation = this.beginAgentTurn();
     try {
-      await this.runNativeOpenCodeTurn(message.text, message.delivery);
+      const result = await this.runNativeOpenCodeTurn(
+        message.text,
+        message.delivery,
+        message.delivery === "queue" ? event.id : undefined,
+        generation,
+      );
+      this.completeAgentTurn(
+        generation,
+        result === "succeeded"
+          ? "idle"
+          : result === "interrupted"
+            ? "paused"
+            : "error",
+      );
     } catch (error) {
-      this.setRoomStatus("error");
+      this.completeAgentTurn(generation, "error");
       const failed = this.insertEvent({
         id: crypto.randomUUID(),
         kind: "system",
@@ -859,15 +901,26 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       });
       this.broadcast({ type: "event", event });
     }
-    this.setRoomStatus("idle");
+  }
+
+  private async drainSimulatedQueue() {
+    while (true) {
+      const next = this.getQueue()[0];
+      if (!next) return;
+      this.consumeQueuedPrompt(next.eventID);
+      await this.runSimulatedTurn(next.text);
+    }
   }
 
   private async runNativeOpenCodeTurn(
     prompt: string,
     delivery: "steer" | "queue",
-  ) {
+    queuedPromptID: string | undefined,
+    generation: number,
+  ): Promise<"succeeded" | "failed" | "interrupted"> {
     const room = this.getRoom();
     const workspace = await this.workspace.nativeAgentWorkspace();
+    let queueConsumed = false;
     const result = await this.runner.turn(
       {
         roomID: room.id,
@@ -880,7 +933,14 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         sessionID: room.opencodeSessionID,
         after: this.openCodeCursor(),
       },
-      (event) => this.handleNativeRunnerEvent(event),
+      (event) => {
+        if (!queueConsumed && queuedPromptID) {
+          queueConsumed = true;
+          this.consumeQueuedPrompt(queuedPromptID);
+          this.setAgentTurnStatus(generation, "running");
+        }
+        this.handleNativeRunnerEvent(event);
+      },
     );
     this.ctx.storage.sql.exec(
       "UPDATE relay_room SET opencode_session_id = ?, opencode_event_cursor = ? WHERE singleton = 1",
@@ -895,16 +955,10 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         "UPDATE relay_room SET workspace_revision = workspace_revision + 1 WHERE singleton = 1",
       );
     }
-    this.setRoomStatus(
-      result.status === "succeeded"
-        ? "idle"
-        : result.status === "interrupted"
-          ? "paused"
-          : "error",
-    );
     if (result.status === "succeeded" && workspaceChanged) {
       await this.publishSavedPullRequest();
     }
+    return result.status;
   }
 
   private handleNativeRunnerEvent(event: NativeRunnerEvent) {
@@ -934,7 +988,6 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     const eventRecord = normalizeNativeEvent(unwrapNativeEvent(event.event));
     const data = asRecord(eventRecord.data);
     this.captureOpenCodePermission(eventRecord, data);
-    this.updateStatusFromOpenCode(eventRecord.type);
     const timelineEvent = this.insertEvent({
       id:
         typeof eventRecord.id === "string"
@@ -996,13 +1049,6 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     }
   }
 
-  private updateStatusFromOpenCode(type: unknown) {
-    if (type === "session.execution.started") this.setRoomStatus("running");
-    if (type === "session.execution.succeeded") this.setRoomStatus("idle");
-    if (type === "session.execution.interrupted") this.setRoomStatus("paused");
-    if (type === "session.execution.failed") this.setRoomStatus("error");
-  }
-
   private async replyToPermission(
     requestID: string,
     reply: "once" | "always" | "reject",
@@ -1039,13 +1085,18 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     ignoreDuplicate = true,
   ): TimelineEvent {
     const insert = ignoreDuplicate ? "INSERT OR IGNORE" : "INSERT";
+    const queueStatus =
+      event.kind === "prompt" && event.payload.delivery === "queue"
+        ? "pending"
+        : null;
     this.ctx.storage.sql.exec(
-      `${insert} INTO relay_events (id, kind, created_at, actor_json, payload_json) VALUES (?, ?, ?, ?, ?)`,
+      `${insert} INTO relay_events (id, kind, created_at, actor_json, payload_json, queue_status) VALUES (?, ?, ?, ?, ?, ?)`,
       event.id,
       event.kind,
       event.createdAt,
       event.actor ? JSON.stringify(event.actor) : null,
       JSON.stringify(event.payload),
+      queueStatus,
     );
     const row = this.ctx.storage.sql
       .exec<EventRow>("SELECT * FROM relay_events WHERE id = ?", event.id)
@@ -1063,13 +1114,17 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   }
 
   private rowToEvent(row: EventRow): TimelineEvent {
+    const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+    if (row.kind === "prompt" && payload.delivery === "queue") {
+      payload.queueStatus = row.queue_status ?? "consumed";
+    }
     return {
       seq: row.seq,
       id: row.id,
       kind: row.kind,
       createdAt: row.created_at,
       actor: row.actor_json ? JSON.parse(row.actor_json) : undefined,
-      payload: JSON.parse(row.payload_json),
+      payload,
     };
   }
 
@@ -1127,20 +1182,27 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       }));
   }
 
-  private getQueue(events = this.getEvents()): QueuedPrompt[] {
-    return events
-      .filter(
-        (event) =>
-          event.kind === "prompt" &&
-          event.payload.delivery === "queue" &&
-          event.actor,
+  private getQueue(): QueuedPrompt[] {
+    const events = this.ctx.storage.sql
+      .exec<EventRow>(
+        "SELECT * FROM relay_events WHERE kind = 'prompt' AND queue_status = 'pending' ORDER BY seq ASC",
       )
-      .map((event) => ({
-        eventID: event.id,
-        participant: event.actor!,
-        text: String(event.payload.text ?? ""),
-        createdAt: event.createdAt,
-      }));
+      .toArray()
+      .map((row) => this.rowToEvent(row));
+    return queuedPrompts(events);
+  }
+
+  private consumeQueuedPrompt(eventID: string) {
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_events SET queue_status = 'consumed' WHERE id = ? AND queue_status = 'pending'",
+      eventID,
+    );
+    const rows = this.ctx.storage.sql
+      .exec<EventRow>("SELECT * FROM relay_events WHERE id = ?", eventID)
+      .toArray();
+    if (rows.length) {
+      this.broadcast({ type: "event", event: this.rowToEvent(rows[0]) });
+    }
   }
 
   private insertRevision(input: {
@@ -1311,6 +1373,48 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       .one().count;
   }
 
+  private beginAgentTurn(): number {
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_room SET agent_turn_generation = agent_turn_generation + 1, agent_status = 'running' WHERE singleton = 1",
+    );
+    const generation = this.ctx.storage.sql
+      .exec<{ agent_turn_generation: number }>(
+        "SELECT agent_turn_generation FROM relay_room WHERE singleton = 1",
+      )
+      .one().agent_turn_generation;
+    this.broadcast({ type: "room", room: this.getRoom() });
+    return generation;
+  }
+
+  private completeAgentTurn(
+    generation: number,
+    status: RoomInfo["agentStatus"],
+  ) {
+    const currentGeneration = this.ctx.storage.sql
+      .exec<{ agent_turn_generation: number }>(
+        "SELECT agent_turn_generation FROM relay_room WHERE singleton = 1",
+      )
+      .one().agent_turn_generation;
+    const completedStatus = completedTurnStatus(
+      currentGeneration,
+      generation,
+      status,
+    );
+    if (completedStatus) this.setRoomStatus(completedStatus);
+  }
+
+  private setAgentTurnStatus(
+    generation: number,
+    status: RoomInfo["agentStatus"],
+  ) {
+    const currentGeneration = this.ctx.storage.sql
+      .exec<{ agent_turn_generation: number }>(
+        "SELECT agent_turn_generation FROM relay_room WHERE singleton = 1",
+      )
+      .one().agent_turn_generation;
+    if (currentGeneration === generation) this.setRoomStatus(status);
+  }
+
   private async snapshot(): Promise<RoomSnapshot> {
     const events = this.getEvents();
     return {
@@ -1319,7 +1423,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       participants: this.getParticipants(),
       events,
       permissions: this.getPermissions(),
-      queue: this.getQueue(events),
+      queue: this.getQueue(),
     };
   }
 
