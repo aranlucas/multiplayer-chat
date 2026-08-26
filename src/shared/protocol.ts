@@ -38,6 +38,7 @@ export interface RoomRevision {
 export interface RoomInfo {
   id: string;
   title: string;
+  titleAuto: boolean;
   repository: string;
   branch: string;
   commitSHA?: string;
