@@ -131,3 +131,7 @@ pnpm deploy
 Deployed app: [relay-multiplayer-agent.aranlucas.workers.dev](https://relay-multiplayer-agent.aranlucas.workers.dev)
 
 The generated UI concepts are retained in [`design/`](design/) and the browser-verified implementation screenshots are in [`artifacts/`](artifacts/).
+
+## Deployed PR verification
+
+This pull request was created from a fresh Relay room using aranlucas/multiplayer-chat as its default repository.
