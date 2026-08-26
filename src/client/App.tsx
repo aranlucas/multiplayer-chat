@@ -1,18 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useRoom } from "./use-room";
 import { useGitHub } from "./use-github";
-import type { RelayBootstrap } from "./room-bootstrap";
+import { createThread, type RelayBootstrap } from "./room-bootstrap";
 import { ActivityRail } from "./components/ActivityRail";
 import { CollaborationRail } from "./components/CollaborationRail";
 import { Composer } from "./components/Composer";
 import { Header } from "./components/Header";
 import { MobileTabs, type MobileTab } from "./components/MobileTabs";
 import { Transcript } from "./components/Transcript";
-
-function createThread() {
-  const nextRoomID = `session-${crypto.randomUUID()}`;
-  window.location.assign(`/r/${nextRoomID}${window.location.search}`);
-}
 
 export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
   const { roomID, identity, controlOrigin } = bootstrap;
