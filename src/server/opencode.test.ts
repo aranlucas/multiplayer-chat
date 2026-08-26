@@ -6,27 +6,24 @@ function env(overrides: Partial<WorkerEnv>): WorkerEnv {
     OPENCODE_MODE: "live",
     OPENCODE_PROVIDER: "opencode-zen",
     OPENCODE_MODEL: "opencode/mimo-v2.5-free",
+    MICROSANDBOX_RUNNER_URL: "http://127.0.0.1:7777",
+    MICROSANDBOX_RUNNER_TOKEN: "x".repeat(32),
     ...overrides,
   } as WorkerEnv;
 }
 
 describe("hasLiveOpenCode", () => {
-  it("allows a current Zen free model without an API key", () => {
+  it("enables live mode when the native runner is configured", () => {
     expect(hasLiveOpenCode(env({}))).toBe(true);
   });
 
-  it("still requires a Zen API key for paid models", () => {
+  it("requires the native runner transport", () => {
     expect(
-      hasLiveOpenCode(env({ OPENCODE_MODEL: "opencode/claude-sonnet-5" })),
+      hasLiveOpenCode(env({ MICROSANDBOX_RUNNER_URL: undefined })),
     ).toBe(false);
     expect(
-      hasLiveOpenCode(
-        env({
-          OPENCODE_MODEL: "opencode/claude-sonnet-5",
-          OPENCODE_ZEN_API_KEY: "secret",
-        }),
-      ),
-    ).toBe(true);
+      hasLiveOpenCode(env({ MICROSANDBOX_RUNNER_TOKEN: undefined })),
+    ).toBe(false);
   });
 
   it("keeps simulation mode offline", () => {

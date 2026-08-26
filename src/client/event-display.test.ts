@@ -76,4 +76,80 @@ describe("tool event display", () => {
       }),
     ).toMatchObject({ title: "bash", status: "failed" });
   });
+
+  it("exposes the exact command for a completed Bash tool", () => {
+    expect(
+      displayEvent({
+        ...rawToolEvent("bash", { command: "git status --short" }),
+        payload: {
+          type: "raw",
+          event: {
+            type: "session.tool.success",
+            data: {
+              tool: "bash",
+              input: { command: "git status --short" },
+              executed: false,
+              content: [{ type: "text", text: "passed" }],
+            },
+          },
+        },
+      }),
+    ).toMatchObject({
+      title: "bash",
+      status: "completed",
+      command: "git status --short",
+    });
+  });
+
+  it("exposes the command for the shell alias as Bash", () => {
+    expect(
+      displayEvent({
+        ...rawToolEvent("shell", { command: "pnpm test" }),
+        payload: {
+          type: "raw",
+          event: {
+            type: "session.tool.success",
+            data: {
+              tool: "shell",
+              input: { command: "pnpm test" },
+              executed: false,
+              content: [{ type: "text", text: "passed" }],
+            },
+          },
+        },
+      }),
+    ).toMatchObject({
+      title: "bash",
+      status: "completed",
+      command: "pnpm test",
+    });
+  });
+
+  it("does not expose a copyable command for non-Bash tools", () => {
+    const display = displayEvent(
+      rawToolEvent("edit", {
+        filePath: "src/index.ts",
+        oldString: "old",
+        newString: "new",
+      }),
+    );
+    expect(display).toMatchObject({ title: "edit" });
+    expect("command" in display ? display.command : undefined).toBeUndefined();
+  });
+
+  it("keeps the copyable command free of its display prefix", () => {
+    const display = displayEvent(
+      rawToolEvent("bash", { command: "git status --short" }),
+    );
+    expect(display).toMatchObject({
+      title: "bash",
+      detail: "$ git status --short",
+      command: "git status --short",
+    });
+    expect(
+      "command" in display && display.command
+        ? display.command.startsWith("$ ")
+        : undefined,
+    ).toBe(false);
+  });
 });

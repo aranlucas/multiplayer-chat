@@ -1,55 +1,65 @@
 import { describe, expect, it } from "vitest";
-import { parseExecuteRequest } from "./protocol";
+import {
+  parseOpenCodeInterruptRequest,
+  parseOpenCodeTurnRequest,
+} from "./protocol";
 import { parseGitChangePaths } from "../src/shared/workspace-change";
 
 const valid = {
   roomID: "live-ox",
-  repository: "cloudflare/workers-chat-demo",
+  repository: "aranlucas/multiplayer-chat",
   commitSHA: "a".repeat(40),
   changes: [{ path: "src/index.ts", content: "export {};\n" }],
-  command: "pnpm test",
+  prompt: "Add a copy button and test it",
+  delivery: "steer",
+  model: "opencode/hy3-free",
 };
 
-describe("Microsandbox runner protocol", () => {
-  it("accepts a commit-pinned command request", () => {
-    expect(parseExecuteRequest(valid)).toMatchObject({
+describe("Microsandbox native OpenCode protocol", () => {
+  it("accepts a commit-pinned native agent turn", () => {
+    expect(parseOpenCodeTurnRequest(valid)).toMatchObject({
       ...valid,
-      timeoutMs: 300_000,
+      timeoutMs: 600_000,
     });
   });
 
-  it("accepts dangerous-mode commands with a bounded timeout", () => {
+  it("accepts a persistent session and durable event cursor", () => {
     expect(
-      parseExecuteRequest({
+      parseOpenCodeTurnRequest({
         ...valid,
-        command: "npm test",
-        timeoutMs: 60_000,
-      }).command,
-    ).toBe("npm test");
+        sessionID: "ses_abc-123",
+        after: "evt:42",
+        delivery: "queue",
+      }),
+    ).toMatchObject({
+      sessionID: "ses_abc-123",
+      after: "evt:42",
+      delivery: "queue",
+    });
+  });
+
+  it("accepts an interrupt for a room session", () => {
+    expect(
+      parseOpenCodeInterruptRequest({ roomID: "live-ox", sessionID: "ses_1" }),
+    ).toEqual({ roomID: "live-ox", sessionID: "ses_1" });
   });
 
   it.each(["../secret", "/etc/passwd", "src\\escape.ts"])(
     "rejects unsafe changed path %s",
     (path) => {
       expect(() =>
-        parseExecuteRequest({ ...valid, changes: [{ path, content: "x" }] }),
+        parseOpenCodeTurnRequest({
+          ...valid,
+          changes: [{ path, content: "x" }],
+        }),
       ).toThrow("Invalid changed file path");
     },
   );
 
   it("rejects a branch name in place of an exact commit", () => {
-    expect(() => parseExecuteRequest({ ...valid, commitSHA: "main" })).toThrow(
-      "Invalid commit SHA",
-    );
-  });
-
-  it("accepts deletion markers in the shared overlay", () => {
-    expect(
-      parseExecuteRequest({
-        ...valid,
-        changes: [{ path: "src/removed.ts", content: null }],
-      }).changes,
-    ).toEqual([{ path: "src/removed.ts", content: null }]);
+    expect(() =>
+      parseOpenCodeTurnRequest({ ...valid, commitSHA: "main" }),
+    ).toThrow("Invalid commit SHA");
   });
 
   it("parses modified, renamed, deleted, and untracked Git paths", () => {

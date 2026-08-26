@@ -1,5 +1,4 @@
 import { DurableObject } from "cloudflare:workers";
-import type { OpenCodeWorkerd } from "@opencode-ai/sdk/workerd";
 import {
   DEFAULT_BRANCH,
   DEFAULT_REPOSITORY,
@@ -14,7 +13,11 @@ import {
   type ServerMessage,
   type TimelineEvent,
 } from "../shared/protocol";
-import { createOpenCode, hasLiveOpenCode, type WorkerEnv } from "./opencode";
+import { hasLiveOpenCode, type WorkerEnv } from "./opencode";
+import {
+  MicrosandboxRunnerClient,
+  type NativeRunnerEvent,
+} from "./microsandbox-runner";
 import { RepositoryWorkspace } from "./workspace";
 import {
   GitHubPullRequestClient,
@@ -59,20 +62,15 @@ const wait = (milliseconds: number) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export class AgentRoom extends DurableObject<WorkerEnv> {
-  private readonly opencode: Promise<OpenCodeWorkerd.Interface>;
   private readonly workspace: RepositoryWorkspace;
+  private readonly runner: MicrosandboxRunnerClient;
   private roomID = "reconnect-loop";
-  private eventPumpStarted = false;
 
   constructor(ctx: DurableObjectState, env: WorkerEnv) {
     super(ctx, env);
+    this.migrate();
     this.workspace = new RepositoryWorkspace(ctx.storage, env);
-    this.opencode = ctx.blockConcurrencyWhile(async () => {
-      const host = await createOpenCode(ctx.storage, env, this.workspace);
-      this.migrate();
-      this.startEventPump(host);
-      return host;
-    });
+    this.runner = new MicrosandboxRunnerClient(env);
   }
 
   async initialize(roomID: string): Promise<void> {
@@ -81,22 +79,6 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     await this.workspace.ensureReady().catch((error) => {
       console.warn("Repository workspace initialization deferred", error);
     });
-    const room = this.getRoom();
-    if (!room.opencodeSessionID) {
-      try {
-        const host = await this.opencode;
-        const session = await host.sessions.create({
-          title: room.title,
-          agent: "build",
-        });
-        this.ctx.storage.sql.exec(
-          "UPDATE relay_room SET opencode_session_id = ? WHERE singleton = 1",
-          session.id,
-        );
-      } catch (error) {
-        console.warn("OpenCode session initialization deferred", error);
-      }
-    }
   }
 
   async createPullRequest(input: {
@@ -236,6 +218,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         branch TEXT NOT NULL,
         agent_status TEXT NOT NULL,
         opencode_session_id TEXT,
+        opencode_event_cursor TEXT,
         commit_sha TEXT,
         workspace_status TEXT NOT NULL DEFAULT 'cloning',
         workspace_error TEXT
@@ -273,6 +256,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       "TEXT NOT NULL DEFAULT 'cloning'",
     );
     this.ensureColumn("relay_room", "workspace_error", "TEXT");
+    this.ensureColumn("relay_room", "opencode_event_cursor", "TEXT");
     this.ensureColumn("relay_room", "pull_request_url", "TEXT");
     this.ensureColumn("relay_room", "pull_request_branch", "TEXT");
     this.ctx.storage.sql.exec(
@@ -375,9 +359,8 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     if (message.type === "agent.pause") {
       const room = this.getRoom();
       if (room.opencodeSessionID) {
-        const host = await this.opencode;
-        await host.sessions
-          .interrupt({ sessionID: room.opencodeSessionID, continue: false })
+        await this.runner
+          .interrupt(room.id, room.opencodeSessionID)
           .catch(() => undefined);
       }
       this.setRoomStatus("paused");
@@ -402,19 +385,12 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     }
 
     this.setRoomStatus("running");
-    const room = this.getRoom();
-    if (!room.opencodeSessionID)
-      throw new Error("OpenCode session is not ready");
-    const host = await this.opencode;
-    await host.sessions.prompt({
-      sessionID: room.opencodeSessionID,
-      text: message.text,
-      delivery: message.delivery,
-      metadata: {
-        relayParticipantID: participant.id,
-        relayParticipantName: participant.name,
-      },
-    });
+    try {
+      await this.runNativeOpenCodeTurn(message.text, message.delivery);
+    } catch (error) {
+      this.setRoomStatus("error");
+      throw error;
+    }
   }
 
   private async runSimulatedTurn(prompt: string) {
@@ -488,41 +464,82 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     this.setRoomStatus("idle");
   }
 
-  private startEventPump(host: OpenCodeWorkerd.Interface) {
-    if (this.eventPumpStarted) return;
-    this.eventPumpStarted = true;
-    void (async () => {
-      try {
-        for await (const rawEvent of host.events.subscribe()) {
-          const eventRecord = rawEvent as unknown as Record<string, unknown>;
-          const data = (eventRecord.data ?? {}) as Record<string, unknown>;
-          const room = this.getRoomOrNull();
-          if (
-            !room?.opencodeSessionID ||
-            data.sessionID !== room.opencodeSessionID
-          )
-            continue;
-          this.captureOpenCodePermission(eventRecord, data);
-          this.updateStatusFromOpenCode(eventRecord.type);
-          const event = this.insertEvent({
-            id:
-              typeof eventRecord.id === "string"
-                ? eventRecord.id
-                : crypto.randomUUID(),
-            kind: "opencode",
-            createdAt:
-              typeof eventRecord.created === "number"
-                ? eventRecord.created
-                : Date.now(),
-            payload: { type: "raw", event: eventRecord },
-          });
-          this.broadcast({ type: "event", event });
-        }
-      } catch (error) {
-        console.error("OpenCode event stream stopped", error);
-        this.eventPumpStarted = false;
-      }
-    })();
+  private async runNativeOpenCodeTurn(
+    prompt: string,
+    delivery: "steer" | "queue",
+  ) {
+    const room = this.getRoom();
+    const workspace = await this.workspace.nativeAgentWorkspace();
+    const result = await this.runner.turn(
+      {
+        roomID: room.id,
+        repository: workspace.repository,
+        commitSHA: workspace.commitSHA,
+        changes: workspace.changes,
+        prompt,
+        delivery,
+        model: this.env.OPENCODE_MODEL,
+        sessionID: room.opencodeSessionID,
+        after: this.openCodeCursor(),
+      },
+      (event) => this.handleNativeRunnerEvent(event),
+    );
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_room SET opencode_session_id = ?, opencode_event_cursor = ? WHERE singleton = 1",
+      result.sessionID,
+      result.cursor ?? null,
+    );
+    this.workspace.syncNativeAgentChanges(result.changes);
+    this.setRoomStatus(
+      result.status === "succeeded"
+        ? "idle"
+        : result.status === "interrupted"
+          ? "paused"
+          : "error",
+    );
+  }
+
+  private handleNativeRunnerEvent(event: NativeRunnerEvent) {
+    if (event.type === "session") {
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_room SET opencode_session_id = ? WHERE singleton = 1",
+        event.sessionID,
+      );
+      return;
+    }
+    if (event.type !== "opencode") return;
+    if (event.cursor)
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_room SET opencode_event_cursor = ? WHERE singleton = 1",
+        event.cursor,
+      );
+    const eventRecord = normalizeNativeEvent(unwrapNativeEvent(event.event));
+    const data = asRecord(eventRecord.data);
+    this.captureOpenCodePermission(eventRecord, data);
+    this.updateStatusFromOpenCode(eventRecord.type);
+    const timelineEvent = this.insertEvent({
+      id:
+        typeof eventRecord.id === "string"
+          ? eventRecord.id
+          : event.cursor
+            ? `opencode:${this.roomID}:${event.cursor}`
+            : crypto.randomUUID(),
+      kind: "opencode",
+      createdAt:
+        typeof eventRecord.created === "number" ? eventRecord.created : Date.now(),
+      payload: { type: "raw", event: eventRecord },
+    });
+    this.broadcast({ type: "event", event: timelineEvent });
+  }
+
+  private openCodeCursor(): string | undefined {
+    return (
+      this.ctx.storage.sql
+        .exec<{ opencode_event_cursor: string | null }>(
+          "SELECT opencode_event_cursor FROM relay_room WHERE singleton = 1",
+        )
+        .one().opencode_event_cursor ?? undefined
+    );
   }
 
   private captureOpenCodePermission(
@@ -582,14 +599,6 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     if (!permission || permission.status !== "pending")
       throw new Error("Permission request is no longer pending");
 
-    if (hasLiveOpenCode(this.env)) {
-      const host = await this.opencode;
-      await host.permission.reply({
-        sessionID: permission.session_id,
-        requestID,
-        reply,
-      });
-    }
     const status = reply === "reject" ? "denied" : "approved";
     this.ctx.storage.sql.exec(
       "UPDATE relay_permissions SET status = ? WHERE id = ?",
@@ -800,6 +809,30 @@ function hashCode(value: string): number {
   for (let index = 0; index < value.length; index += 1)
     hash = (hash << 5) - hash + value.charCodeAt(index);
   return hash | 0;
+}
+
+function unwrapNativeEvent(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  const nested = asRecord(value.event);
+  return typeof value.type === "string" || !Object.keys(nested).length
+    ? value
+    : nested;
+}
+
+function normalizeNativeEvent(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  const type = typeof value.type === "string" ? value.type : "";
+  return type.startsWith("session.next.")
+    ? { ...value, type: type.replace("session.next.", "session.") }
+    : value;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function cleanPullRequestText(

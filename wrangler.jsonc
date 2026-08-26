@@ -34,7 +34,7 @@
     "OPENCODE_MODE": "live",
     "OPENCODE_PROVIDER": "opencode-zen",
     "CLOUDFLARE_ACCOUNT_ID": "d93c650f72e597f96785abba389b0ce4",
-    "OPENCODE_MODEL": "opencode/mimo-v2.5-free",
+    "OPENCODE_MODEL": "opencode/hy3-free",
     "GITHUB_OAUTH_CLIENT_ID": "Ov23li43DfrritRncWry",
   },
 }

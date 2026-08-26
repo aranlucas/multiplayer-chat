@@ -10,28 +10,36 @@ export interface MicrosandboxRunnerEnv {
   MICROSANDBOX_RUNNER_TOKEN?: string;
 }
 
-export interface ExecuteRequest {
+export interface NativeTurnRequest {
   roomID: string;
   repository: string;
   commitSHA: string;
   changes: WorkspaceChange[];
-  command: string;
+  prompt: string;
+  delivery: "steer" | "queue";
+  model: string;
+  sessionID?: string;
+  after?: string;
   timeoutMs?: number;
 }
 
-export type RunnerEvent =
+export type NativeRunnerEvent =
   | { type: "status"; message: string }
-  | { type: "stdout" | "stderr"; data: string }
+  | { type: "session"; sessionID: string }
+  | { type: "opencode"; cursor?: string; event: Record<string, unknown> }
   | { type: "changes"; changes: WorkspaceChange[] }
-  | { type: "result"; exitCode: number; durationMs: number };
+  | {
+      type: "result";
+      status: "succeeded" | "failed" | "interrupted";
+      durationMs: number;
+    };
 
-export interface RunnerExecution {
-  output: string;
-  exitCode: number;
+export interface NativeTurnResult {
+  sessionID: string;
+  status: "succeeded" | "failed" | "interrupted";
   changes: WorkspaceChange[];
+  cursor?: string;
 }
-
-const MAX_OUTPUT = 60_000;
 
 export class MicrosandboxRunnerClient {
   private readonly fetcher: typeof fetch;
@@ -49,70 +57,60 @@ export class MicrosandboxRunnerClient {
     );
   }
 
-  async execute(
-    request: ExecuteRequest,
-    onEvent?: (event: RunnerEvent) => void | Promise<void>,
-  ): Promise<RunnerExecution> {
-    const endpoint = this.endpoint();
-    const response = await this.fetcher(new URL("/v1/execute", endpoint), {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.env.MICROSANDBOX_RUNNER_TOKEN}`,
-        "Content-Type": "application/json",
+  async turn(
+    request: NativeTurnRequest,
+    onEvent?: (event: NativeRunnerEvent) => void | Promise<void>,
+  ): Promise<NativeTurnResult> {
+    const response = await this.fetcher(
+      new URL("/v1/opencode/turn", this.endpoint()),
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(
+          Math.min((request.timeoutMs ?? 600_000) + 60_000, 960_000),
+        ),
       },
-      body: JSON.stringify(request),
-      signal: AbortSignal.timeout(
-        Math.min((request.timeoutMs ?? 300_000) + 60_000, 660_000),
-      ),
-    });
+    );
+    if (!response.ok || !response.body)
+      throw new Error(await runnerFailure(response, "rejected the turn"));
 
-    if (!response.ok || !response.body) {
-      const detail = (await response.text()).slice(0, 2_000);
-      throw new Error(
-        `Microsandbox runner rejected the command (${response.status}): ${detail || response.statusText}`,
-      );
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let output = "";
-    let exitCode: number | undefined;
+    let sessionID = request.sessionID;
     let changes: WorkspaceChange[] | undefined;
-
-    const consume = async (line: string) => {
-      if (!line.trim()) return;
-      const event = parseRunnerEvent(line);
+    let status: NativeTurnResult["status"] | undefined;
+    let cursor = request.after;
+    await readNDJSON(response.body, async (line) => {
+      const event = parseNativeRunnerEvent(line);
       await onEvent?.(event);
-      if (event.type === "stdout" || event.type === "stderr") {
-        output = appendOutput(output, event.data);
-      } else if (event.type === "changes") {
-        changes = event.changes;
-      } else if (event.type === "result") {
-        exitCode = event.exitCode;
-      }
-    };
+      if (event.type === "session") sessionID = event.sessionID;
+      if (event.type === "changes") changes = event.changes;
+      if (event.type === "opencode" && event.cursor) cursor = event.cursor;
+      if (event.type === "result") status = event.status;
+    });
+    if (!sessionID) throw new Error("Runner ended without an OpenCode session");
+    if (!changes) throw new Error("Runner ended without workspace changes");
+    if (!status) throw new Error("Runner ended without a turn result");
+    return { sessionID, changes, status, cursor };
+  }
 
-    while (true) {
-      const { done, value } = await reader.read();
-      buffer += decoder.decode(value, { stream: !done });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) await consume(line);
-      if (done) break;
-    }
-    await consume(buffer);
+  async interrupt(roomID: string, sessionID: string): Promise<void> {
+    const response = await this.fetcher(
+      new URL("/v1/opencode/interrupt", this.endpoint()),
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({ roomID, sessionID }),
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (!response.ok)
+      throw new Error(await runnerFailure(response, "failed to interrupt"));
+  }
 
-    if (exitCode === undefined)
-      throw new Error("Microsandbox runner ended without an exit result");
-    if (!changes)
-      throw new Error(
-        output.trim() || "Microsandbox runner ended without workspace changes",
-      );
+  private headers() {
     return {
-      output: output.trim() || `Process exited ${exitCode}`,
-      exitCode,
-      changes,
+      Authorization: `Bearer ${this.env.MICROSANDBOX_RUNNER_TOKEN}`,
+      "Content-Type": "application/json",
     };
   }
 
@@ -124,14 +122,13 @@ export class MicrosandboxRunnerClient {
       endpoint.protocol !== "https:" &&
       endpoint.hostname !== "127.0.0.1" &&
       endpoint.hostname !== "localhost"
-    ) {
+    )
       throw new Error("Microsandbox runner must use HTTPS unless it is local");
-    }
     return endpoint;
   }
 }
 
-export function parseRunnerEvent(line: string): RunnerEvent {
+export function parseNativeRunnerEvent(line: string): NativeRunnerEvent {
   let value: unknown;
   try {
     value = JSON.parse(line);
@@ -143,34 +140,54 @@ export function parseRunnerEvent(line: string): RunnerEvent {
   const event = value as Record<string, unknown>;
   if (event.type === "status" && typeof event.message === "string")
     return { type: "status", message: event.message };
-  if (
-    (event.type === "stdout" || event.type === "stderr") &&
-    typeof event.data === "string"
-  ) {
-    return { type: event.type, data: event.data };
-  }
-  if (event.type === "changes") {
+  if (event.type === "session" && typeof event.sessionID === "string")
+    return { type: "session", sessionID: event.sessionID };
+  if (event.type === "opencode" && isRecord(event.event))
     return {
-      type: "changes",
-      changes: parseWorkspaceChanges(event.changes),
+      type: "opencode",
+      event: event.event,
+      cursor: typeof event.cursor === "string" ? event.cursor : undefined,
     };
-  }
+  if (event.type === "changes")
+    return { type: "changes", changes: parseWorkspaceChanges(event.changes) };
   if (
     event.type === "result" &&
-    Number.isInteger(event.exitCode) &&
+    (event.status === "succeeded" ||
+      event.status === "failed" ||
+      event.status === "interrupted") &&
     typeof event.durationMs === "number"
-  ) {
+  )
     return {
       type: "result",
-      exitCode: Number(event.exitCode),
+      status: event.status,
       durationMs: event.durationMs,
     };
-  }
   throw new Error("Microsandbox runner returned an unsupported event");
 }
 
-function appendOutput(current: string, chunk: string): string {
-  const next = current + chunk;
-  if (next.length <= MAX_OUTPUT) return next;
-  return `… output truncated …\n${next.slice(next.length - MAX_OUTPUT)}`;
+async function readNDJSON(
+  body: ReadableStream<Uint8Array>,
+  consume: (line: string) => Promise<void>,
+) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) if (line.trim()) await consume(line);
+    if (done) break;
+  }
+  if (buffer.trim()) await consume(buffer);
+}
+
+async function runnerFailure(response: Response, label: string) {
+  const detail = (await response.text()).slice(0, 2_000);
+  return `Microsandbox runner ${label} (${response.status}): ${detail || response.statusText}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

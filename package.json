@@ -14,8 +14,6 @@
   },
   "dependencies": {
     "@cloudflare/sandbox": "0.12.8",
-    "@opencode-ai/plugin": "0.0.0-dev-18259",
-    "@opencode-ai/sdk": "0.0.0-dev-18259",
     "hono": "^4.9.4",
     "lucide-react": "^0.541.0",
     "microsandbox": "^0.6.15",

@@ -1,6 +1,6 @@
 # Relay
 
-Relay is a multiplayer coding-agent room built on Cloudflare Durable Objects and the OpenCode Workerd SDK. One Durable Object owns one shared room, giving participants a stable identity, a single event order, hibernating WebSockets, and persistent SQLite history.
+Relay is a multiplayer coding-agent room built on Cloudflare Durable Objects and native OpenCode runtimes in Microsandbox. One Durable Object owns one shared room, giving participants a stable identity, a single event order, hibernating WebSockets, and persistent SQLite history.
 
 ![Relay desktop session](artifacts/relay-desktop-local.png)
 
@@ -11,12 +11,12 @@ Relay is a multiplayer coding-agent room built on Cloudflare Durable Objects and
 - Immediate steering or queued follow-up prompts
 - Dangerous always-allow tool execution with every side effect retained in the transcript
 - Persistent room snapshots for late joiners
-- Public GitHub repository selection, exact commit pinning, durable Bash workspaces, and exact-string edits
+- Public GitHub repository selection, exact commit pinning, and durable native OpenCode workspaces
 - Per-user GitHub OAuth and one-click pull request creation from the shared overlay
-- Free hardware-isolated command execution through a self-hosted Microsandbox runner
+- Hardware-isolated OpenCode, shell, and file tools through a self-hosted Microsandbox runner
 - Responsive transcript, people, and queue views
 - Local simulation mode for development without provider credentials
-- Live OpenCode Zen using MiMo-V2.5 Free (`mimo-v2.5-free`)
+- Live OpenCode Zen using a configurable model (`hy3-free` by default)
 
 ## Architecture
 
@@ -26,16 +26,17 @@ React client
   └─ WebSocket /api/rooms/:room/ws
        └─ AgentRoom Durable Object (one per room name)
             ├─ Relay SQLite tables: room, events, participants, permissions
-            ├─ Commit-pinned GitHub snapshot + mutable file overlay
-            ├─ Authenticated Microsandbox command stream
+            ├─ Commit-pinned GitHub snapshot + mutable PR overlay
+            ├─ Authenticated native OpenCode event stream
             ├─ Hibernating WebSocket fan-out
-            └─ OpenCodeWorkerd
-                 ├─ OpenCode session + persistent event bus
-                 ├─ Native-name `bash` and `edit` tools
-                 └─ Dangerous always-allow permission policy
+            └─ Per-room Microsandbox microVM
+                 ├─ OpenCode server + persistent session database
+                 ├─ Repository at `/workspace/repository`
+                 ├─ OpenCode's native read/edit/write/bash tools
+                 └─ Dangerous always-allow policy inside the microVM
 ```
 
-OpenCode initializes its schema first, then Relay creates namespaced collaboration tables in the same Durable Object SQLite database. Relay records its own compact, UI-focused event projection while retaining the raw OpenCode event payload.
+Relay keeps collaboration state in Durable Object SQLite. OpenCode keeps its own session database on the per-room microVM disk. The runner streams OpenCode's durable events to Relay, which records a compact, UI-focused projection while retaining the raw payload. After each turn, the runner returns the Git change set to Relay's durable overlay for pull-request creation.
 
 Cloudflare's Agents SDK was considered for `useAgent`, but it is intentionally not layered on top: its client requires the Agents SDK server protocol and would introduce a second agent state model. Relay keeps OpenCode authoritative and uses a small room-specific WebSocket protocol instead.
 
@@ -60,9 +61,9 @@ Production uses a Workers-native repository backend: it resolves public Git refs
 
 New rooms start from [`aranlucas/multiplayer-chat@main`](https://github.com/aranlucas/multiplayer-chat/tree/main). Maintainers can select a different public GitHub repository and branch from the header.
 
-The native-name `bash` tool runs on the free, self-hosted Microsandbox service in [`runner/`](runner/). The runner gives each room its own hardware-isolated Linux microVM disk. Every command resumes that disk, resets tracked and untracked repository files to the exact Durable Object commit plus shared overlay, and streams stdout and stderr back through OpenCode. Ignored dependency directories and package caches survive between calls, so an install can be followed by focused test and build commands without downloading the world again. Before shutdown the runner returns every tracked, untracked, modified, renamed, and deleted UTF-8 text file to the Worker, which replaces the room's durable overlay. This synchronization also happens when the shell command exits non-zero. The bearer token stays in the Worker secret store and on the runner host; it is never placed inside the microVM or sent to the browser.
+The self-hosted service in [`runner/`](runner/) gives each room its own hardware-isolated Linux microVM disk. OpenCode itself runs in that microVM beside the repository and invokes its built-in read, edit, write, search, and bash tools directly. Relay does not implement or proxy a model-facing Bash tool. Its runner only handles runtime lifecycle, authenticated prompt/event transport, exact-commit checkout, and Git-change synchronization.
 
-The native-name `edit` tool performs exact replacements directly against the durable overlay and remains available when the runner is offline. Bash is required for repository inspection, file creation or deletion, and real test/build commands.
+Every turn resumes the disk, resets the repository to the exact Durable Object commit plus shared overlay, and starts the room's persistent OpenCode session. Ignored dependency directories and package caches survive between turns. Before shutdown the runner returns every tracked, untracked, modified, renamed, and deleted UTF-8 text file to the Worker. The bearer token stays in the Worker secret store and on the runner host; it is never sent to the browser.
 
 ## Microsandbox runner
 
@@ -82,7 +83,7 @@ npx wrangler secret put MICROSANDBOX_RUNNER_TOKEN
 pnpm deploy
 ```
 
-Relay intentionally exposes only OpenCode's familiar `bash` and `edit` names. Bash permits an arbitrary shell command because Relay runs in dangerous always-allow mode. A room's first install warms its isolated disk; later Bash calls reuse ignored dependency directories and package caches. Both tools retain progress and terminal results in the shared Durable Object transcript, while edit cards omit replacement contents from the UI.
+The default image is the pinned official `ghcr.io/anomalyco/opencode:1.18.17` image. On first room boot, the runner adds Bash, Git, Node, Corepack, and ripgrep. For production, publish a derived image with those packages preinstalled and set `MICROSANDBOX_IMAGE` to eliminate that first-boot provisioning delay.
 
 ## GitHub pull requests
 
@@ -105,23 +106,16 @@ When a room has shared file changes, **Create PR** writes Git blobs and a deleti
 
 ## Live OpenCode mode
 
-Production is configured for OpenCode Zen's MiMo-V2.5 Free model (`opencode/mimo-v2.5-free`). The configured free model can run live locally without a Zen API key:
+The checked-in default is OpenCode Zen's `opencode/hy3-free` model. A free model can run live locally without a Zen API key:
 
 ```bash
 cp .dev.vars.example .dev.vars
-# Set OPENCODE_MODE=live in .dev.vars. Paid models also need OPENCODE_ZEN_API_KEY.
+# Set OPENCODE_MODE=live and MICROSANDBOX_RUNNER_TOKEN in .dev.vars.
+# Start `pnpm runner` with the same token, then run `pnpm dev`.
 pnpm dev
 ```
 
-For production, store the key as a Worker secret:
-
-```bash
-pnpm wrangler secret put OPENCODE_ZEN_API_KEY
-```
-
-The key is available only to the Worker and is passed into OpenCode's provider configuration inside the Durable Object. It is never sent to the browser. OpenCode's SDK is dynamically loaded on first room use, keeping Worker startup below Cloudflare's validation limit.
-
-Relay deliberately configures the V2 permission rule `{ action: "*", resource: "*", effect: "allow" }` and forces plugin permission evaluations to `allow`. This is dangerous mode: repository edits do not pause for maintainer approval. Tool inputs, outputs, and resulting diffs remain visible and persistent to every participant.
+Relay configures OpenCode's native permission wildcard to `allow`. This is dangerous mode inside a hardware-isolated microVM: repository edits do not pause for maintainer approval, while tool inputs, outputs, and resulting diffs remain visible and persistent to every participant. The Pause action calls OpenCode's native interrupt API, which also terminates an active bash tool.
 
 ## Verify and deploy
 

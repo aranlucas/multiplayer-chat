@@ -14,6 +14,7 @@ export type DisplayEvent =
       detail?: string;
       output?: string;
       status: "running" | "completed" | "failed";
+      command?: string;
     }
   | { type: "text"; title: string; detail: string; streaming?: boolean }
   | { type: "diff"; title: string; additions: number; deletions: number }
@@ -47,6 +48,16 @@ function summarizeToolInput(tool: string, value: unknown) {
   if (tool === "edit" && typeof input.filePath === "string")
     return `Editing ${input.filePath}${input.replaceAll === true ? " (all matches)" : ""}`;
   return stringifyToolInput(value);
+}
+
+function bashCommand(tool: string, value: unknown): string | undefined {
+  const input = asRecord(value);
+  if (
+    (tool === "bash" || tool === "shell") &&
+    typeof input.command === "string"
+  )
+    return input.command;
+  return undefined;
 }
 
 function displayToolName(tool: string) {
@@ -101,11 +112,13 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
     };
   }
   if (payload.type === "tool") {
+    const tool = String(payload.tool ?? "tool call");
     return {
       type: "tool",
-      title: String(payload.tool ?? "tool call"),
+      title: displayToolName(tool),
       detail: payload.summary ? String(payload.summary) : undefined,
       output: payload.output ? String(payload.output) : undefined,
+      command: bashCommand(tool, payload.input),
       status:
         payload.status === "running"
           ? "running"
@@ -155,6 +168,7 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
         type: "tool",
         title: displayToolName(tool),
         detail: summarizeToolInput(tool, data.input),
+        command: bashCommand(tool, data.input),
         status: "running",
       };
     }
@@ -173,6 +187,7 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
         title: displayToolName(tool),
         detail: summarizeToolInput(tool, data.input) || "Completed",
         output: textFromContent(data.content),
+        command: bashCommand(tool, data.input),
         status: "completed",
       };
     }
@@ -185,6 +200,7 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
           typeof data.error === "string"
             ? data.error
             : stringifyToolInput(data.error) || "Tool failed",
+        command: bashCommand(tool, data.input),
         status: "failed",
       };
     }

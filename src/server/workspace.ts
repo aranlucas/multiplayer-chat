@@ -1,10 +1,5 @@
 import { getSandbox, type Sandbox } from "@cloudflare/sandbox";
 import {
-  MicrosandboxRunnerClient,
-  type MicrosandboxRunnerEnv,
-  type RunnerEvent,
-} from "./microsandbox-runner";
-import {
   MAX_WORKSPACE_CHANGE_BYTES,
   MAX_WORKSPACE_FILE_BYTES,
   parseGitChangePaths,
@@ -13,7 +8,7 @@ import {
 } from "../shared/workspace-change";
 import { replaceExact } from "../shared/exact-edit";
 
-export interface WorkspaceEnv extends MicrosandboxRunnerEnv {
+export interface WorkspaceEnv {
   Sandbox?: DurableObjectNamespace<Sandbox>;
 }
 
@@ -42,14 +37,11 @@ const MAX_TOOL_OUTPUT = 60_000;
 
 export class RepositoryWorkspace {
   private preparing?: Promise<WorkspaceInfo>;
-  private readonly runner: MicrosandboxRunnerClient;
 
   constructor(
     private readonly storage: DurableObjectStorage,
     private readonly env: WorkspaceEnv,
-  ) {
-    this.runner = new MicrosandboxRunnerClient(env);
-  }
+  ) {}
 
   async ensureReady(): Promise<WorkspaceInfo> {
     if (!this.preparing) {
@@ -64,7 +56,7 @@ export class RepositoryWorkspace {
     const normalizedRepository = validateRepository(repository);
     const normalizedBranch = validateBranch(branch);
     this.storage.sql.exec(
-      "UPDATE relay_room SET repository = ?, branch = ?, commit_sha = NULL, workspace_status = 'cloning', workspace_error = NULL, pull_request_url = NULL, pull_request_branch = NULL WHERE singleton = 1",
+      "UPDATE relay_room SET repository = ?, branch = ?, commit_sha = NULL, workspace_status = 'cloning', workspace_error = NULL, opencode_session_id = NULL, opencode_event_cursor = NULL, pull_request_url = NULL, pull_request_branch = NULL WHERE singleton = 1",
       normalizedRepository,
       normalizedBranch,
     );
@@ -212,54 +204,6 @@ export class RepositoryWorkspace {
     return this.diff();
   }
 
-  async runCommand(
-    command: string,
-    onEvent?: (event: RunnerEvent) => void | Promise<void>,
-  ): Promise<string> {
-    const value = command.trim();
-    if (!value || value.length > 4_000 || value.includes("\0"))
-      throw new Error("Command must be between 1 and 4,000 characters");
-    const workspace = await this.ensureReady();
-    if (this.runner.configured) {
-      try {
-        const execution = await this.runner.execute(
-          {
-            roomID: this.room().room_id,
-            repository: workspace.repository,
-            commitSHA: workspace.commitSHA,
-            changes: this.workspaceChanges(),
-            command: value,
-            timeoutMs: 300_000,
-          },
-          onEvent,
-        );
-        this.replaceWorkspaceChanges(execution.changes);
-        if (execution.exitCode !== 0) throw new Error(execution.output);
-        return execution.output;
-      } catch (error) {
-        console.error("Microsandbox command execution failed", error);
-        throw error;
-      }
-    }
-    if (!this.env.Sandbox)
-      throw new Error(
-        "Full command execution requires the free Microsandbox runner to be online",
-      );
-    const result = await this.sandbox(this.room().room_id).exec(value, {
-      cwd: WORKSPACE_DIRECTORY,
-      timeout: 300_000,
-    });
-    this.replaceWorkspaceChanges(
-      await this.sandboxChanges(this.sandbox(this.room().room_id)),
-    );
-    const output = [result.stdout, result.stderr].filter(Boolean).join("\n");
-    if (!result.success)
-      throw new Error(
-        truncate(output || `Command exited with ${result.exitCode}`),
-      );
-    return truncate(output || "✓ Command passed");
-  }
-
   async pullRequestWorkspace(): Promise<PullRequestWorkspace> {
     const workspace = await this.ensureReady();
     const changes = this.workspaceChanges();
@@ -268,6 +212,15 @@ export class RepositoryWorkspace {
         "There are no shared workspace changes to put in a pull request",
       );
     return { ...workspace, changes };
+  }
+
+  async nativeAgentWorkspace(): Promise<PullRequestWorkspace> {
+    const workspace = await this.ensureReady();
+    return { ...workspace, changes: this.workspaceChanges() };
+  }
+
+  syncNativeAgentChanges(changes: WorkspaceChange[]) {
+    this.replaceWorkspaceChanges(changes);
   }
 
   private async prepare(): Promise<WorkspaceInfo> {

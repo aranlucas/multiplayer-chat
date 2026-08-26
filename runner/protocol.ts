@@ -5,51 +5,114 @@ import {
 
 export type { WorkspaceChange } from "../src/shared/workspace-change";
 
-export interface ExecuteRequest {
+export interface OpenCodeTurnRequest {
   roomID: string;
   repository: string;
   commitSHA: string;
   changes: WorkspaceChange[];
-  command: string;
+  prompt: string;
+  delivery: "steer" | "queue";
+  model: string;
+  sessionID?: string;
+  after?: string;
   timeoutMs: number;
+}
+
+export interface OpenCodeInterruptRequest {
+  roomID: string;
+  sessionID: string;
 }
 
 const ROOM_PATTERN = /^[a-z0-9][a-z0-9-_]{0,63}$/;
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
+const SESSION_PATTERN = /^ses[A-Za-z0-9_-]+$/;
+const MODEL_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.:/-]+$/;
 
-export function parseExecuteRequest(value: unknown): ExecuteRequest {
-  if (!value || typeof value !== "object")
-    throw new Error("Request body must be an object");
-  const input = value as Record<string, unknown>;
-  if (typeof input.roomID !== "string" || !ROOM_PATTERN.test(input.roomID))
-    throw new Error("Invalid room ID");
-  if (
-    typeof input.repository !== "string" ||
-    !REPOSITORY_PATTERN.test(input.repository)
-  ) {
-    throw new Error("Invalid GitHub repository");
-  }
-  if (
-    typeof input.commitSHA !== "string" ||
-    !COMMIT_PATTERN.test(input.commitSHA)
-  )
-    throw new Error("Invalid commit SHA");
-  const changes = parseWorkspaceChanges(input.changes);
-  const command =
-    typeof input.command === "string" ? input.command.trim() : undefined;
-  if (command && command.length > 4_000) throw new Error("Command is too long");
-  if (!command) throw new Error("A command is required");
+export function parseOpenCodeTurnRequest(
+  value: unknown,
+): OpenCodeTurnRequest {
+  const input = parseBaseRequest(value);
+  const prompt =
+    typeof input.prompt === "string" ? input.prompt.trim() : undefined;
+  if (!prompt || prompt.length > 8_000)
+    throw new Error("Prompt must be between 1 and 8,000 characters");
+  if (input.delivery !== "steer" && input.delivery !== "queue")
+    throw new Error("Invalid delivery mode");
+  if (typeof input.model !== "string" || !MODEL_PATTERN.test(input.model))
+    throw new Error("Invalid OpenCode model");
+  const sessionID = optionalSessionID(input.sessionID);
+  const after = optionalCursor(input.after);
   const timeoutMs =
-    typeof input.timeoutMs === "number" ? Math.floor(input.timeoutMs) : 300_000;
-  if (timeoutMs < 1_000 || timeoutMs > 600_000)
-    throw new Error("Timeout must be between 1 and 600 seconds");
+    typeof input.timeoutMs === "number" ? Math.floor(input.timeoutMs) : 600_000;
+  if (timeoutMs < 1_000 || timeoutMs > 900_000)
+    throw new Error("Timeout must be between 1 and 900 seconds");
   return {
-    roomID: input.roomID,
-    repository: input.repository,
-    commitSHA: input.commitSHA,
-    changes,
-    command,
+    roomID: parseRoomID(input.roomID),
+    repository: parseRepository(input.repository),
+    commitSHA: parseCommit(input.commitSHA),
+    changes: parseWorkspaceChanges(input.changes),
+    prompt,
+    delivery: input.delivery,
+    model: input.model,
+    sessionID,
+    after,
     timeoutMs,
   };
+}
+
+export function parseOpenCodeInterruptRequest(
+  value: unknown,
+): OpenCodeInterruptRequest {
+  const input = parseBaseRequest(value);
+  return {
+    roomID: parseRoomID(input.roomID),
+    sessionID: requiredSessionID(input.sessionID),
+  };
+}
+
+function parseBaseRequest(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object")
+    throw new Error("Request body must be an object");
+  return value as Record<string, unknown>;
+}
+
+function parseRoomID(value: unknown): string {
+  if (typeof value !== "string" || !ROOM_PATTERN.test(value))
+    throw new Error("Invalid room ID");
+  return value;
+}
+
+function parseRepository(value: unknown): string {
+  if (typeof value !== "string" || !REPOSITORY_PATTERN.test(value))
+    throw new Error("Invalid GitHub repository");
+  return value;
+}
+
+function parseCommit(value: unknown): string {
+  if (typeof value !== "string" || !COMMIT_PATTERN.test(value))
+    throw new Error("Invalid commit SHA");
+  return value;
+}
+
+function optionalSessionID(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  return requiredSessionID(value);
+}
+
+function requiredSessionID(value: unknown): string {
+  if (typeof value !== "string" || !SESSION_PATTERN.test(value))
+    throw new Error("Invalid OpenCode session ID");
+  return value;
+}
+
+function optionalCursor(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== "string" ||
+    value.length > 200 ||
+    !/^[A-Za-z0-9_.:-]+$/.test(value)
+  )
+    throw new Error("Invalid OpenCode event cursor");
+  return value;
 }
