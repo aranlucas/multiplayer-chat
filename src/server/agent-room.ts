@@ -16,6 +16,7 @@ import {
   type TimelineEvent,
 } from "../shared/protocol";
 import { completedTurnStatus } from "./agent-turn";
+import { sessionTitleFromEvent } from "./session-title";
 import {
   hasLiveOpenCode,
   liveOpenCodeConfigurationError,
@@ -631,6 +632,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     this.ensureColumn("relay_room", "pull_request_repository", "TEXT");
     this.ensureColumn("relay_room", "pull_request_head_sha", "TEXT");
     this.ensureColumn("relay_room", "github_credential", "TEXT");
+    this.ensureColumn("relay_room", "title_auto", "INTEGER NOT NULL DEFAULT 1");
     this.ensureColumn(
       "relay_room",
       "workspace_revision",
@@ -730,7 +732,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       if (participant.role !== "maintainer")
         throw new Error("Only maintainers can rename the room");
       this.ctx.storage.sql.exec(
-        "UPDATE relay_room SET title = ? WHERE singleton = 1",
+        "UPDATE relay_room SET title = ?, title_auto = 0 WHERE singleton = 1",
         message.title,
       );
       this.broadcast({ type: "room", room: this.getRoom() });
@@ -988,6 +990,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     const eventRecord = normalizeNativeEvent(unwrapNativeEvent(event.event));
     const data = asRecord(eventRecord.data);
     this.captureOpenCodePermission(eventRecord, data);
+    this.captureSessionTitle(eventRecord);
     const timelineEvent = this.insertEvent({
       id:
         typeof eventRecord.id === "string"
@@ -1011,6 +1014,26 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         )
         .one().opencode_event_cursor ?? undefined
     );
+  }
+
+  private captureSessionTitle(eventRecord: Record<string, unknown>) {
+    const title = sessionTitleFromEvent(eventRecord);
+    if (!title) return;
+    const room = this.getRoomOrNull();
+    if (!room || !room.titleAuto) return;
+    if (room.title === title) return;
+    this.setRoomTitle(title);
+    const event = this.insertEvent({
+      id: crypto.randomUUID(),
+      kind: "system",
+      createdAt: Date.now(),
+      payload: {
+        type: "session_title",
+        text: `OpenCode titled the session “${title}”`,
+        title,
+      },
+    });
+    this.broadcast({ type: "event", event });
   }
 
   private captureOpenCodePermission(
@@ -1316,6 +1339,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         workspace_revision: number;
         published_workspace_revision: number;
         github_credential: string | null;
+        title_auto: number;
       }>("SELECT * FROM relay_room WHERE singleton = 1")
       .toArray();
     if (!rows.length) return null;
@@ -1337,6 +1361,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       pullRequestBranch: row.pull_request_branch ?? undefined,
       pullRequestRepository: row.pull_request_repository ?? undefined,
       pullRequestHeadSHA: row.pull_request_head_sha ?? undefined,
+      titleAuto: row.title_auto !== 0,
       autoPublishConfigured: Boolean(row.github_credential),
       latestRevision: this.latestRevision(),
       activeRevision: this.activeRevision(),
