@@ -16,7 +16,10 @@ import {
 } from "../shared/protocol";
 import { createOpenCode, hasLiveOpenCode, type WorkerEnv } from "./opencode";
 import { RepositoryWorkspace } from "./workspace";
-import { GitHubPullRequestClient, type PullRequestResult } from "./github-pull-request";
+import {
+  GitHubPullRequestClient,
+  type PullRequestResult,
+} from "./github-pull-request";
 
 interface SocketAttachment {
   participant: Pick<Participant, "id" | "name" | "role" | "color">;
@@ -52,7 +55,8 @@ interface PermissionRow {
   created_at: number;
 }
 
-const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const wait = (milliseconds: number) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export class AgentRoom extends DurableObject<WorkerEnv> {
   private readonly opencode: Promise<OpenCodeWorkerd.Interface>;
@@ -81,8 +85,14 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     if (!room.opencodeSessionID) {
       try {
         const host = await this.opencode;
-        const session = await host.sessions.create({ title: room.title, agent: "build" });
-        this.ctx.storage.sql.exec("UPDATE relay_room SET opencode_session_id = ? WHERE singleton = 1", session.id);
+        const session = await host.sessions.create({
+          title: room.title,
+          agent: "build",
+        });
+        this.ctx.storage.sql.exec(
+          "UPDATE relay_room SET opencode_session_id = ? WHERE singleton = 1",
+          session.id,
+        );
       } catch (error) {
         console.warn("OpenCode session initialization deferred", error);
       }
@@ -96,9 +106,16 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     body?: string;
   }): Promise<PullRequestResult> {
     const room = this.getRoom();
-    if (room.pullRequestURL) throw new Error("This version of the shared workspace already has a pull request");
+    if (room.pullRequestURL)
+      throw new Error(
+        "This version of the shared workspace already has a pull request",
+      );
     const workspace = await this.workspace.pullRequestWorkspace();
-    const title = cleanPullRequestText(input.title, `Relay: ${room.title}`, 160);
+    const title = cleanPullRequestText(
+      input.title,
+      `Relay: ${room.title}`,
+      160,
+    );
     const body = cleanPullRequestText(
       input.body,
       [
@@ -153,7 +170,12 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     const requestedRole = url.searchParams.get("role");
     const role = requestedRole === "contributor" ? "contributor" : "maintainer";
     const colorIndex = Math.abs(hashCode(id)) % PARTICIPANT_COLORS.length;
-    const participant = { id, name, role, color: PARTICIPANT_COLORS[colorIndex] } as const;
+    const participant = {
+      id,
+      name,
+      role,
+      color: PARTICIPANT_COLORS[colorIndex],
+    } as const;
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
@@ -166,21 +188,30 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  async webSocketMessage(socket: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-    const attachment = socket.deserializeAttachment() as SocketAttachment | null;
+  async webSocketMessage(
+    socket: WebSocket,
+    raw: string | ArrayBuffer,
+  ): Promise<void> {
+    const attachment =
+      socket.deserializeAttachment() as SocketAttachment | null;
     if (!attachment) return;
 
     try {
-      const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
+      const text =
+        typeof raw === "string" ? raw : new TextDecoder().decode(raw);
       const message = parseClientMessage(JSON.parse(text));
       await this.handleClientMessage(socket, attachment.participant, message);
     } catch (error) {
-      this.send(socket, { type: "error", message: error instanceof Error ? error.message : "Invalid message" });
+      this.send(socket, {
+        type: "error",
+        message: error instanceof Error ? error.message : "Invalid message",
+      });
     }
   }
 
   async webSocketClose(socket: WebSocket): Promise<void> {
-    const attachment = socket.deserializeAttachment() as SocketAttachment | null;
+    const attachment =
+      socket.deserializeAttachment() as SocketAttachment | null;
     if (attachment) {
       this.ctx.storage.sql.exec(
         "UPDATE relay_participants SET last_seen = ? WHERE id = ?",
@@ -236,26 +267,40 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       CREATE INDEX IF NOT EXISTS relay_events_created_idx ON relay_events(created_at);
     `);
     this.ensureColumn("relay_room", "commit_sha", "TEXT");
-    this.ensureColumn("relay_room", "workspace_status", "TEXT NOT NULL DEFAULT 'cloning'");
+    this.ensureColumn(
+      "relay_room",
+      "workspace_status",
+      "TEXT NOT NULL DEFAULT 'cloning'",
+    );
     this.ensureColumn("relay_room", "workspace_error", "TEXT");
     this.ensureColumn("relay_room", "pull_request_url", "TEXT");
     this.ensureColumn("relay_room", "pull_request_branch", "TEXT");
-    this.ctx.storage.sql.exec("DELETE FROM relay_events WHERE id LIKE 'seed-%'");
-    this.ctx.storage.sql.exec("DELETE FROM relay_permissions WHERE id = 'demo-deploy'");
+    this.ctx.storage.sql.exec(
+      "DELETE FROM relay_events WHERE id LIKE 'seed-%'",
+    );
+    this.ctx.storage.sql.exec(
+      "DELETE FROM relay_permissions WHERE id = 'demo-deploy'",
+    );
     this.ctx.storage.sql.exec(
       "UPDATE relay_room SET branch = 'master', commit_sha = NULL, workspace_status = 'cloning', workspace_error = NULL WHERE repository = 'cloudflare/workers-chat-demo' AND branch IN ('fix/session-reconnect', 'main')",
     );
   }
 
   private ensureColumn(table: string, column: string, definition: string) {
-    const columns = this.ctx.storage.sql.exec<{ name: string }>(`PRAGMA table_info(${table})`).toArray();
+    const columns = this.ctx.storage.sql
+      .exec<{ name: string }>(`PRAGMA table_info(${table})`)
+      .toArray();
     if (!columns.some((candidate) => candidate.name === column)) {
-      this.ctx.storage.sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      this.ctx.storage.sql.exec(
+        `ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`,
+      );
     }
   }
 
   private ensureRoom(roomID: string) {
-    const existing = this.ctx.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM relay_room").one();
+    const existing = this.ctx.storage.sql
+      .exec<{ count: number }>("SELECT COUNT(*) AS count FROM relay_room")
+      .one();
     if (existing.count) return;
 
     this.ctx.storage.sql.exec(
@@ -280,15 +325,24 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     }
 
     if (message.type === "permission.reply") {
-      if (participant.role !== "maintainer") throw new Error("Only maintainers can resolve side effects");
-      await this.replyToPermission(message.requestID, message.reply, participant);
+      if (participant.role !== "maintainer")
+        throw new Error("Only maintainers can resolve side effects");
+      await this.replyToPermission(
+        message.requestID,
+        message.reply,
+        participant,
+      );
       this.send(socket, { type: "ack", requestID: message.requestID });
       return;
     }
 
     if (message.type === "room.configure") {
-      if (participant.role !== "maintainer") throw new Error("Only maintainers can change the repository");
-      const info = await this.workspace.configure(message.repository, message.branch);
+      if (participant.role !== "maintainer")
+        throw new Error("Only maintainers can change the repository");
+      const info = await this.workspace.configure(
+        message.repository,
+        message.branch,
+      );
       const event = this.insertEvent({
         id: crypto.randomUUID(),
         kind: "system",
@@ -310,7 +364,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       const room = this.getRoom();
       if (room.opencodeSessionID) {
         const host = await this.opencode;
-        await host.sessions.interrupt({ sessionID: room.opencodeSessionID, continue: false }).catch(() => undefined);
+        await host.sessions
+          .interrupt({ sessionID: room.opencodeSessionID, continue: false })
+          .catch(() => undefined);
       }
       this.setRoomStatus("paused");
       return;
@@ -335,13 +391,17 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
     this.setRoomStatus("running");
     const room = this.getRoom();
-    if (!room.opencodeSessionID) throw new Error("OpenCode session is not ready");
+    if (!room.opencodeSessionID)
+      throw new Error("OpenCode session is not ready");
     const host = await this.opencode;
     await host.sessions.prompt({
       sessionID: room.opencodeSessionID,
       text: message.text,
       delivery: message.delivery,
-      metadata: { relayParticipantID: participant.id, relayParticipantName: participant.name },
+      metadata: {
+        relayParticipantID: participant.id,
+        relayParticipantName: participant.name,
+      },
     });
   }
 
@@ -349,52 +409,65 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     const searchTerm = extractSearchTerm(prompt);
     const workspace = await this.workspace.ensureReady();
     const searchOutput = await this.workspace.search(searchTerm);
-    const testOutput = await this.workspace.runTests("auto").catch((error) =>
-      error instanceof Error ? error.message : "Repository checks failed",
-    );
+    const testOutput = await this.workspace
+      .runTests("auto")
+      .catch((error) =>
+        error instanceof Error ? error.message : "Repository checks failed",
+      );
     const workspaceKind = workspace.directory.startsWith("github://")
       ? "Workers-native GitHub snapshot"
       : "Cloudflare Sandbox";
-    const sequence: Array<{ delay: number; payload: Record<string, unknown> }> = [
-      {
-        delay: 180,
-        payload: {
-          type: "reasoning",
-          text: `I’ll inspect ${workspace.repository}@${workspace.commitSHA.slice(0, 8)} for ${searchTerm}, then run the repository's available checks.`,
+    const sequence: Array<{ delay: number; payload: Record<string, unknown> }> =
+      [
+        {
+          delay: 180,
+          payload: {
+            type: "reasoning",
+            text: `I’ll inspect ${workspace.repository}@${workspace.commitSHA.slice(0, 8)} for ${searchTerm}, then run the repository's available checks.`,
+          },
         },
-      },
-      {
-        delay: 260,
-        payload: { type: "tool", tool: "relay.repo_search", status: "running", summary: "Searching the repository…" },
-      },
-      {
-        delay: 320,
-        payload: {
-          type: "tool",
-          tool: "relay.repo_search",
-          status: "completed",
-          summary: searchOutput === "No matches found." ? "No matches" : "Repository search completed",
-          output: searchOutput,
+        {
+          delay: 260,
+          payload: {
+            type: "tool",
+            tool: "relay.repo_search",
+            status: "running",
+            summary: "Searching the repository…",
+          },
         },
-      },
-      {
-        delay: 280,
-        payload: {
-          type: "tool",
-          tool: "relay.run_tests",
-          status: "completed",
-          summary: testOutput.includes("failed") ? "Checks reported a failure" : "Repository checks completed",
-          output: testOutput,
+        {
+          delay: 320,
+          payload: {
+            type: "tool",
+            tool: "relay.repo_search",
+            status: "completed",
+            summary:
+              searchOutput === "No matches found."
+                ? "No matches"
+                : "Repository search completed",
+            output: searchOutput,
+          },
         },
-      },
-      {
-        delay: 240,
-        payload: {
-          type: "text",
-          text: `I inspected the real workspace pinned at ${workspace.commitSHA.slice(0, 12)}. The search and check transcripts above came from the ${workspaceKind}; no repository files were changed.`,
+        {
+          delay: 280,
+          payload: {
+            type: "tool",
+            tool: "relay.run_tests",
+            status: "completed",
+            summary: testOutput.includes("failed")
+              ? "Checks reported a failure"
+              : "Repository checks completed",
+            output: testOutput,
+          },
         },
-      },
-    ];
+        {
+          delay: 240,
+          payload: {
+            type: "text",
+            text: `I inspected the real workspace pinned at ${workspace.commitSHA.slice(0, 12)}. The search and check transcripts above came from the ${workspaceKind}; no repository files were changed.`,
+          },
+        },
+      ];
 
     for (const step of sequence) {
       await wait(step.delay);
@@ -418,13 +491,23 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
           const eventRecord = rawEvent as unknown as Record<string, unknown>;
           const data = (eventRecord.data ?? {}) as Record<string, unknown>;
           const room = this.getRoomOrNull();
-          if (!room?.opencodeSessionID || data.sessionID !== room.opencodeSessionID) continue;
+          if (
+            !room?.opencodeSessionID ||
+            data.sessionID !== room.opencodeSessionID
+          )
+            continue;
           this.captureOpenCodePermission(eventRecord, data);
           this.updateStatusFromOpenCode(eventRecord.type);
           const event = this.insertEvent({
-            id: typeof eventRecord.id === "string" ? eventRecord.id : crypto.randomUUID(),
+            id:
+              typeof eventRecord.id === "string"
+                ? eventRecord.id
+                : crypto.randomUUID(),
             kind: "opencode",
-            createdAt: typeof eventRecord.created === "number" ? eventRecord.created : Date.now(),
+            createdAt:
+              typeof eventRecord.created === "number"
+                ? eventRecord.created
+                : Date.now(),
             payload: { type: "raw", event: eventRecord },
           });
           this.broadcast({ type: "event", event });
@@ -436,7 +519,10 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     })();
   }
 
-  private captureOpenCodePermission(event: Record<string, unknown>, data: Record<string, unknown>) {
+  private captureOpenCodePermission(
+    event: Record<string, unknown>,
+    data: Record<string, unknown>,
+  ) {
     if (event.type === "permission.asked" && typeof data.id === "string") {
       this.ctx.storage.sql.exec(
         "INSERT OR REPLACE INTO relay_permissions (id, session_id, action, resources_json, message, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -448,15 +534,24 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         "pending",
         Date.now(),
       );
-      this.broadcast({ type: "permissions", permissions: this.getPermissions() });
+      this.broadcast({
+        type: "permissions",
+        permissions: this.getPermissions(),
+      });
     }
-    if (event.type === "permission.replied" && typeof data.requestID === "string") {
+    if (
+      event.type === "permission.replied" &&
+      typeof data.requestID === "string"
+    ) {
       this.ctx.storage.sql.exec(
         "UPDATE relay_permissions SET status = ? WHERE id = ?",
         data.reply === "reject" ? "denied" : "approved",
         data.requestID,
       );
-      this.broadcast({ type: "permissions", permissions: this.getPermissions() });
+      this.broadcast({
+        type: "permissions",
+        permissions: this.getPermissions(),
+      });
     }
   }
 
@@ -473,16 +568,28 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     participant: SocketAttachment["participant"],
   ) {
     const permission = this.ctx.storage.sql
-      .exec<PermissionRow>("SELECT * FROM relay_permissions WHERE id = ?", requestID)
+      .exec<PermissionRow>(
+        "SELECT * FROM relay_permissions WHERE id = ?",
+        requestID,
+      )
       .toArray()[0];
-    if (!permission || permission.status !== "pending") throw new Error("Permission request is no longer pending");
+    if (!permission || permission.status !== "pending")
+      throw new Error("Permission request is no longer pending");
 
     if (hasLiveOpenCode(this.env)) {
       const host = await this.opencode;
-      await host.permission.reply({ sessionID: permission.session_id, requestID, reply });
+      await host.permission.reply({
+        sessionID: permission.session_id,
+        requestID,
+        reply,
+      });
     }
     const status = reply === "reject" ? "denied" : "approved";
-    this.ctx.storage.sql.exec("UPDATE relay_permissions SET status = ? WHERE id = ?", status, requestID);
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_permissions SET status = ? WHERE id = ?",
+      status,
+      requestID,
+    );
     const event = this.insertEvent({
       id: crypto.randomUUID(),
       kind: "permission",
@@ -494,7 +601,10 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     this.broadcast({ type: "permissions", permissions: this.getPermissions() });
   }
 
-  private insertEvent(event: Omit<TimelineEvent, "seq">, ignoreDuplicate = true): TimelineEvent {
+  private insertEvent(
+    event: Omit<TimelineEvent, "seq">,
+    ignoreDuplicate = true,
+  ): TimelineEvent {
     const insert = ignoreDuplicate ? "INSERT OR IGNORE" : "INSERT";
     this.ctx.storage.sql.exec(
       `${insert} INTO relay_events (id, kind, created_at, actor_json, payload_json) VALUES (?, ?, ?, ?, ?)`,
@@ -504,7 +614,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       event.actor ? JSON.stringify(event.actor) : null,
       JSON.stringify(event.payload),
     );
-    const row = this.ctx.storage.sql.exec<EventRow>("SELECT * FROM relay_events WHERE id = ?", event.id).one();
+    const row = this.ctx.storage.sql
+      .exec<EventRow>("SELECT * FROM relay_events WHERE id = ?", event.id)
+      .one();
     return this.rowToEvent(row);
   }
 
@@ -543,12 +655,15 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   private getParticipants(): Participant[] {
     const onlineIDs = new Set(
       this.ctx.getWebSockets().flatMap((socket) => {
-        const attachment = socket.deserializeAttachment() as SocketAttachment | null;
+        const attachment =
+          socket.deserializeAttachment() as SocketAttachment | null;
         return attachment ? [attachment.participant.id] : [];
       }),
     );
     return this.ctx.storage.sql
-      .exec<ParticipantRow>("SELECT * FROM relay_participants ORDER BY last_seen DESC")
+      .exec<ParticipantRow>(
+        "SELECT * FROM relay_participants ORDER BY last_seen DESC",
+      )
       .toArray()
       .map((row) => ({
         id: row.id,
@@ -562,7 +677,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
   private getPermissions(): PermissionRequest[] {
     return this.ctx.storage.sql
-      .exec<PermissionRow>("SELECT * FROM relay_permissions ORDER BY created_at DESC")
+      .exec<PermissionRow>(
+        "SELECT * FROM relay_permissions ORDER BY created_at DESC",
+      )
       .toArray()
       .map((row) => ({
         id: row.id,
@@ -577,7 +694,12 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
   private getQueue(events = this.getEvents()): QueuedPrompt[] {
     return events
-      .filter((event) => event.kind === "prompt" && event.payload.delivery === "queue" && event.actor)
+      .filter(
+        (event) =>
+          event.kind === "prompt" &&
+          event.payload.delivery === "queue" &&
+          event.actor,
+      )
       .map((event) => ({
         eventID: event.id,
         participant: event.actor!,
@@ -626,7 +748,10 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   }
 
   private setRoomStatus(status: RoomInfo["agentStatus"]) {
-    this.ctx.storage.sql.exec("UPDATE relay_room SET agent_status = ? WHERE singleton = 1", status);
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_room SET agent_status = ? WHERE singleton = 1",
+      status,
+    );
     this.broadcast({ type: "room", room: this.getRoom() });
   }
 
@@ -664,14 +789,21 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
 function hashCode(value: string): number {
   let hash = 0;
-  for (let index = 0; index < value.length; index += 1) hash = (hash << 5) - hash + value.charCodeAt(index);
+  for (let index = 0; index < value.length; index += 1)
+    hash = (hash << 5) - hash + value.charCodeAt(index);
   return hash | 0;
 }
 
-function cleanPullRequestText(value: string | undefined, fallback: string, maximum: number): string {
+function cleanPullRequestText(
+  value: string | undefined,
+  fallback: string,
+  maximum: number,
+): string {
   const normalized = value?.trim() || fallback;
   if (!normalized || normalized.length > maximum || normalized.includes("\0")) {
-    throw new Error(`Pull request text must be between 1 and ${maximum.toLocaleString()} characters`);
+    throw new Error(
+      `Pull request text must be between 1 and ${maximum.toLocaleString()} characters`,
+    );
   }
   return normalized;
 }
@@ -706,7 +838,9 @@ function extractSearchTerm(prompt: string): string {
   ]);
 
   return (
-    tokens.find((token) => /[A-Z].*[A-Z]/.test(token) || /[_.$-]/.test(token)) ??
+    tokens.find(
+      (token) => /[A-Z].*[A-Z]/.test(token) || /[_.$-]/.test(token),
+    ) ??
     tokens.find((token) => !stopwords.has(token.toLowerCase())) ??
     "WebSocket"
   );

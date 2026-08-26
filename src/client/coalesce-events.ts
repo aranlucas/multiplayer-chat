@@ -8,7 +8,9 @@ const STREAM_BOUNDARIES = new Set([
   "session.text.ended",
 ]);
 
-export function coalesceTimelineEvents(events: TimelineEvent[]): TimelineEvent[] {
+export function coalesceTimelineEvents(
+  events: TimelineEvent[],
+): TimelineEvent[] {
   const result: TimelineEvent[] = [];
   const streams = new Map<string, number>();
 
@@ -21,12 +23,29 @@ export function coalesceTimelineEvents(events: TimelineEvent[]): TimelineEvent[]
     const type = String(raw.type ?? "");
     const data = asRecord(raw.data);
     if (STREAM_TYPES.has(type)) {
-      mergeStream(result, streams, event, type, data, String(data.delta ?? ""), true);
+      mergeStream(
+        result,
+        streams,
+        event,
+        type,
+        data,
+        String(data.delta ?? ""),
+        true,
+      );
       continue;
     }
     if (type === "session.reasoning.ended" || type === "session.text.ended") {
       const deltaType = type.replace(".ended", ".delta");
-      mergeStream(result, streams, event, deltaType, data, String(data.text ?? ""), false, true);
+      mergeStream(
+        result,
+        streams,
+        event,
+        deltaType,
+        data,
+        String(data.text ?? ""),
+        false,
+        true,
+      );
       continue;
     }
     if (STREAM_BOUNDARIES.has(type)) continue;
@@ -89,14 +108,19 @@ function streamEvent(
 }
 
 function streamKey(type: string, data: Record<string, unknown>): string {
-  return [type, data.sessionID, data.assistantMessageID, data.ordinal ?? 0].map(String).join(":");
+  return [type, data.sessionID, data.assistantMessageID, data.ordinal ?? 0]
+    .map(String)
+    .join(":");
 }
 
 function rawEvent(event: TimelineEvent): Record<string, unknown> | undefined {
-  if (event.kind !== "opencode" || event.payload.type !== "raw") return undefined;
+  if (event.kind !== "opencode" || event.payload.type !== "raw")
+    return undefined;
   return asRecord(event.payload.event);
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
 }

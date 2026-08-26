@@ -80,13 +80,27 @@ export type ClientMessage =
       reply: "once" | "always" | "reject";
     }
   | { type: "agent.pause" }
-  | { type: "room.configure"; repository: string; branch: string; requestID?: string }
+  | {
+      type: "room.configure";
+      repository: string;
+      branch: string;
+      requestID?: string;
+    }
   | { type: "ping" };
 
-export const PARTICIPANT_COLORS = ["#a978e8", "#3f9c70", "#488dcc", "#d88952", "#c46a82"];
+export const PARTICIPANT_COLORS = [
+  "#a978e8",
+  "#3f9c70",
+  "#488dcc",
+  "#d88952",
+  "#c46a82",
+];
 
 export function safeRoomID(value: string): string {
-  const normalized = value.toLowerCase().replace(/[^a-z0-9-_]/g, "-").replace(/-+/g, "-");
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]/g, "-")
+    .replace(/-+/g, "-");
   return normalized.slice(0, 64) || "reconnect-loop";
 }
 
@@ -100,7 +114,8 @@ export function parseClientMessage(value: unknown): ClientMessage {
   const message = value as Record<string, unknown>;
   if (message.type === "prompt") {
     const text = typeof message.text === "string" ? message.text.trim() : "";
-    if (!text || text.length > 8_000) throw new Error("Prompt must be between 1 and 8,000 characters");
+    if (!text || text.length > 8_000)
+      throw new Error("Prompt must be between 1 and 8,000 characters");
     if (message.delivery !== "steer" && message.delivery !== "queue") {
       throw new Error("Invalid delivery mode");
     }
@@ -108,27 +123,41 @@ export function parseClientMessage(value: unknown): ClientMessage {
       type: "prompt",
       text,
       delivery: message.delivery,
-      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
+      requestID:
+        typeof message.requestID === "string" ? message.requestID : undefined,
     };
   }
   if (message.type === "permission.reply") {
-    if (typeof message.requestID !== "string") throw new Error("Missing permission request ID");
-    if (message.reply !== "once" && message.reply !== "always" && message.reply !== "reject") {
+    if (typeof message.requestID !== "string")
+      throw new Error("Missing permission request ID");
+    if (
+      message.reply !== "once" &&
+      message.reply !== "always" &&
+      message.reply !== "reject"
+    ) {
       throw new Error("Invalid permission reply");
     }
-    return { type: "permission.reply", requestID: message.requestID, reply: message.reply };
+    return {
+      type: "permission.reply",
+      requestID: message.requestID,
+      reply: message.reply,
+    };
   }
   if (message.type === "agent.pause") return { type: "agent.pause" };
   if (message.type === "room.configure") {
-    const repository = typeof message.repository === "string" ? message.repository.trim() : "";
-    const branch = typeof message.branch === "string" ? message.branch.trim() : "";
-    if (!repository || repository.length > 200) throw new Error("Repository is required");
+    const repository =
+      typeof message.repository === "string" ? message.repository.trim() : "";
+    const branch =
+      typeof message.branch === "string" ? message.branch.trim() : "";
+    if (!repository || repository.length > 200)
+      throw new Error("Repository is required");
     if (!branch || branch.length > 200) throw new Error("Branch is required");
     return {
       type: "room.configure",
       repository,
       branch,
-      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
+      requestID:
+        typeof message.requestID === "string" ? message.requestID : undefined,
     };
   }
   if (message.type === "ping") return { type: "ping" };

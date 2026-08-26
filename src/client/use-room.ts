@@ -37,15 +37,21 @@ const initialState: RoomState = {
 
 function appendEvent(events: TimelineEvent[], incoming: TimelineEvent) {
   const existing = events.findIndex((event) => event.id === incoming.id);
-  const next = existing < 0
-    ? [...events, incoming]
-    : events.map((event, index) => index === existing ? incoming : event);
+  const next =
+    existing < 0
+      ? [...events, incoming]
+      : events.map((event, index) => (index === existing ? incoming : event));
   return coalesceTimelineEvents(next);
 }
 
 function deriveQueue(events: TimelineEvent[]): QueuedPrompt[] {
   return events
-    .filter((event) => event.kind === "prompt" && event.payload.delivery === "queue" && event.actor)
+    .filter(
+      (event) =>
+        event.kind === "prompt" &&
+        event.payload.delivery === "queue" &&
+        event.actor,
+    )
     .map((event) => ({
       eventID: event.id,
       participant: event.actor!,
@@ -57,11 +63,15 @@ function deriveQueue(events: TimelineEvent[]): QueuedPrompt[] {
 export function getIdentity(roomID: string): RoomIdentity {
   const params = new URLSearchParams(window.location.search);
   const requestedName = params.get("name")?.trim() || "You";
-  const requestedRole = params.get("role") === "contributor" ? "contributor" : "maintainer";
+  const requestedRole =
+    params.get("role") === "contributor" ? "contributor" : "maintainer";
   const storageKey = `relay:${roomID}:${requestedName}:participant`;
   let id = window.localStorage.getItem(storageKey);
   if (!id) {
-    id = requestedName === "You" ? crypto.randomUUID() : requestedName.toLowerCase().replace(/[^a-z0-9]/g, "-");
+    id =
+      requestedName === "You"
+        ? crypto.randomUUID()
+        : requestedName.toLowerCase().replace(/[^a-z0-9]/g, "-");
     window.localStorage.setItem(storageKey, id);
   }
   return { id, name: requestedName, role: requestedRole };
@@ -91,10 +101,13 @@ export function useRoom(roomID: string, identity: RoomIdentity) {
         const events = appendEvent(current.events, message.event);
         return { ...current, events, queue: deriveQueue(events) };
       }
-      if (message.type === "presence") return { ...current, participants: message.participants };
+      if (message.type === "presence")
+        return { ...current, participants: message.participants };
       if (message.type === "room") return { ...current, room: message.room };
-      if (message.type === "permissions") return { ...current, permissions: message.permissions };
-      if (message.type === "error") return { ...current, error: message.message };
+      if (message.type === "permissions")
+        return { ...current, permissions: message.permissions };
+      if (message.type === "error")
+        return { ...current, error: message.message };
       return current;
     });
   }, []);
@@ -109,7 +122,9 @@ export function useRoom(roomID: string, identity: RoomIdentity) {
         name: identity.name,
         role: identity.role,
       });
-      const socket = new WebSocket(`${protocol}//${window.location.host}/api/rooms/${roomID}/ws?${params}`);
+      const socket = new WebSocket(
+        `${protocol}//${window.location.host}/api/rooms/${roomID}/ws?${params}`,
+      );
       socketRef.current = socket;
       setState((current) => ({
         ...current,
@@ -118,20 +133,30 @@ export function useRoom(roomID: string, identity: RoomIdentity) {
 
       socket.addEventListener("open", () => {
         retryCountRef.current = 0;
-        setState((current) => ({ ...current, connection: "connected", error: undefined }));
+        setState((current) => ({
+          ...current,
+          connection: "connected",
+          error: undefined,
+        }));
       });
       socket.addEventListener("message", (event) => {
         try {
           handleMessage(JSON.parse(event.data as string) as ServerMessage);
         } catch {
-          setState((current) => ({ ...current, error: "Received an unreadable room event" }));
+          setState((current) => ({
+            ...current,
+            error: "Received an unreadable room event",
+          }));
         }
       });
       socket.addEventListener("close", () => {
         if (disposed) return;
         retryCountRef.current += 1;
         setState((current) => ({ ...current, connection: "reconnecting" }));
-        retryRef.current = window.setTimeout(connect, Math.min(1_000 * 2 ** retryCountRef.current, 10_000));
+        retryRef.current = window.setTimeout(
+          connect,
+          Math.min(1_000 * 2 ** retryCountRef.current, 10_000),
+        );
       });
       socket.addEventListener("error", () => socket.close());
     };
@@ -147,7 +172,10 @@ export function useRoom(roomID: string, identity: RoomIdentity) {
   const send = useCallback((message: ClientMessage) => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-      setState((current) => ({ ...current, error: "The room is reconnecting. Your message was not sent." }));
+      setState((current) => ({
+        ...current,
+        error: "The room is reconnecting. Your message was not sent.",
+      }));
       return false;
     }
     socket.send(JSON.stringify(message));
@@ -157,7 +185,12 @@ export function useRoom(roomID: string, identity: RoomIdentity) {
   const actions = useMemo(
     () => ({
       prompt(text: string, delivery: DeliveryMode) {
-        return send({ type: "prompt", text, delivery, requestID: crypto.randomUUID() });
+        return send({
+          type: "prompt",
+          text,
+          delivery,
+          requestID: crypto.randomUUID(),
+        });
       },
       reply(requestID: string, reply: "once" | "always" | "reject") {
         return send({ type: "permission.reply", requestID, reply });
@@ -166,7 +199,12 @@ export function useRoom(roomID: string, identity: RoomIdentity) {
         return send({ type: "agent.pause" });
       },
       configureRepository(repository: string, branch: string) {
-        return send({ type: "room.configure", repository, branch, requestID: crypto.randomUUID() });
+        return send({
+          type: "room.configure",
+          repository,
+          branch,
+          requestID: crypto.randomUUID(),
+        });
       },
     }),
     [send],

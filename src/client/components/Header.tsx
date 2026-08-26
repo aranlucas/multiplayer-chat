@@ -1,6 +1,21 @@
-import { Check, ChevronDown, GitBranch, GitPullRequest, LoaderCircle, MessageSquarePlus, Pause, Share2, Zap } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  GitBranch,
+  GitPullRequest,
+  LoaderCircle,
+  MessageSquarePlus,
+  Pause,
+  Share2,
+  Zap,
+} from "lucide-react";
 import { useState } from "react";
-import { DEFAULT_BRANCH, DEFAULT_REPOSITORY, type Participant, type RoomInfo } from "../../shared/protocol";
+import {
+  DEFAULT_BRANCH,
+  DEFAULT_REPOSITORY,
+  type Participant,
+  type RoomInfo,
+} from "../../shared/protocol";
 
 interface HeaderProps {
   room?: RoomInfo;
@@ -33,7 +48,9 @@ export function Header({
 }: HeaderProps) {
   const [copied, setCopied] = useState(false);
   const [editingRepository, setEditingRepository] = useState(false);
-  const [repository, setRepository] = useState(room?.repository ?? DEFAULT_REPOSITORY);
+  const [repository, setRepository] = useState(
+    room?.repository ?? DEFAULT_REPOSITORY,
+  );
   const [branch, setBranch] = useState(room?.branch ?? DEFAULT_BRANCH);
   const online = participants.filter((participant) => participant.online);
   const running = room?.agentStatus === "running";
@@ -46,7 +63,8 @@ export function Header({
 
   function configureRepository(event: React.FormEvent) {
     event.preventDefault();
-    if (onConfigure(repository.trim(), branch.trim())) setEditingRepository(false);
+    if (onConfigure(repository.trim(), branch.trim()))
+      setEditingRepository(false);
   }
 
   return (
@@ -88,13 +106,20 @@ export function Header({
           </label>
           <label>
             Branch
-            <input value={branch} onChange={(event) => setBranch(event.target.value)} placeholder="main" />
+            <input
+              value={branch}
+              onChange={(event) => setBranch(event.target.value)}
+              placeholder="main"
+            />
           </label>
           <div>
             <button type="button" onClick={() => setEditingRepository(false)}>
               Cancel
             </button>
-            <button type="submit" disabled={!repository.trim() || !branch.trim()}>
+            <button
+              type="submit"
+              disabled={!repository.trim() || !branch.trim()}
+            >
               Clone workspace
             </button>
           </div>
@@ -115,13 +140,16 @@ export function Header({
               : room?.workspaceStatus === "error"
                 ? "Workspace error"
                 : running
-              ? "Agent running"
-              : room?.agentStatus === "paused"
-                ? "Agent paused"
-                : "Agent ready"}
+                  ? "Agent running"
+                  : room?.agentStatus === "paused"
+                    ? "Agent paused"
+                    : "Agent ready"}
         </span>
       </div>
-      <div className="header-avatars" aria-label={`${online.length} participants online`}>
+      <div
+        className="header-avatars"
+        aria-label={`${online.length} participants online`}
+      >
         {online.slice(0, 4).map((participant) => (
           <span
             className="avatar avatar-small"
@@ -133,7 +161,11 @@ export function Header({
           </span>
         ))}
       </div>
-      <button className="header-button new-thread-button" type="button" onClick={onNewThread}>
+      <button
+        className="header-button new-thread-button"
+        type="button"
+        onClick={onNewThread}
+      >
         <MessageSquarePlus size={16} />
         <span>New thread</span>
       </button>
@@ -141,17 +173,40 @@ export function Header({
         className="header-button pr-button"
         type="button"
         onClick={onPullRequest}
-        disabled={!githubConfigured || creatingPullRequest || room?.workspaceStatus !== "ready"}
-        title={githubLogin ? `GitHub: @${githubLogin}` : "Connect GitHub to create a pull request"}
+        disabled={
+          !githubConfigured ||
+          creatingPullRequest ||
+          room?.workspaceStatus !== "ready"
+        }
+        title={
+          githubLogin
+            ? `GitHub: @${githubLogin}`
+            : "Connect GitHub to create a pull request"
+        }
       >
-        {creatingPullRequest ? <LoaderCircle className="spin" size={16} /> : <GitPullRequest size={16} />}
-        <span>{pullRequestURL ? "View PR" : githubLogin ? "Create PR" : "Connect GitHub"}</span>
+        {creatingPullRequest ? (
+          <LoaderCircle className="spin" size={16} />
+        ) : (
+          <GitPullRequest size={16} />
+        )}
+        <span>
+          {pullRequestURL
+            ? "View PR"
+            : githubLogin
+              ? "Create PR"
+              : "Connect GitHub"}
+        </span>
       </button>
       <button className="header-button" type="button" onClick={share}>
         {copied ? <Check size={16} /> : <Share2 size={16} />}
         <span>{copied ? "Copied" : "Share"}</span>
       </button>
-      <button className="header-button pause-button" type="button" onClick={onPause} disabled={!running}>
+      <button
+        className="header-button pause-button"
+        type="button"
+        onClick={onPause}
+        disabled={!running}
+      >
         <Pause size={16} />
         <span>Pause agent</span>
       </button>

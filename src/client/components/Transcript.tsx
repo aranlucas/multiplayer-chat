@@ -22,11 +22,21 @@ interface TranscriptProps {
   onReply: (id: string, reply: "once" | "reject") => void;
 }
 
-export function Transcript({ events, selectedID, pendingPermission, canApprove, onReply }: TranscriptProps) {
+export function Transcript({
+  events,
+  selectedID,
+  pendingPermission,
+  canApprove,
+  onReply,
+}: TranscriptProps) {
   const selectedRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (selectedID) selectedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (selectedID)
+      selectedRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
   }, [selectedID]);
 
   return (
@@ -43,7 +53,12 @@ export function Transcript({ events, selectedID, pendingPermission, canApprove, 
           ))}
           {pendingPermission ? (
             <div className="mobile-inline-permission">
-              <PermissionCard permission={pendingPermission} canApprove={canApprove} onReply={onReply} compact />
+              <PermissionCard
+                permission={pendingPermission}
+                canApprove={canApprove}
+                onReply={onReply}
+                compact
+              />
             </div>
           ) : null}
         </div>
@@ -64,11 +79,16 @@ function TranscriptEvent({
   const display = displayEvent(event);
 
   if (display.type === "tool") {
-    return <ToolEvent event={event} selected={selected} elementRef={elementRef} />;
+    return (
+      <ToolEvent event={event} selected={selected} elementRef={elementRef} />
+    );
   }
 
   return (
-    <div className={`transcript-event event-${display.type} ${selected ? "is-selected" : ""}`} ref={elementRef}>
+    <div
+      className={`transcript-event event-${display.type} ${selected ? "is-selected" : ""}`}
+      ref={elementRef}
+    >
       <div className="event-gutter">
         <span className="event-time">{formatTime(event.createdAt)}</span>
         <span className="event-marker">
@@ -86,8 +106,12 @@ function TranscriptEvent({
       <div className="event-body">
         <div className="event-heading">
           <strong>{display.title}</strong>
-          {display.type === "prompt" && display.delivery === "queue" ? <span className="queue-label">Queued</span> : null}
-          {display.type === "reasoning" && display.streaming ? <LoaderCircle className="spin" size={14} /> : null}
+          {display.type === "prompt" && display.delivery === "queue" ? (
+            <span className="queue-label">Queued</span>
+          ) : null}
+          {display.type === "reasoning" && display.streaming ? (
+            <LoaderCircle className="spin" size={14} />
+          ) : null}
         </div>
         {display.type === "diff" ? (
           <div className="diff-summary">
@@ -118,7 +142,10 @@ function ToolEvent({
   const successful = display.status === "completed";
 
   return (
-    <div className={`transcript-event event-tool ${selected ? "is-selected" : ""}`} ref={elementRef}>
+    <div
+      className={`transcript-event event-tool ${selected ? "is-selected" : ""}`}
+      ref={elementRef}
+    >
       <div className="event-gutter">
         <span className="event-time">{formatTime(event.createdAt)}</span>
         <span className="event-marker">
@@ -126,16 +153,26 @@ function ToolEvent({
         </span>
       </div>
       <div className="event-body tool-event-body">
-        <button className="tool-header" type="button" onClick={() => setExpanded((value) => !value)}>
+        <button
+          className="tool-header"
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+        >
           <Terminal size={15} />
           <code>{display.title}</code>
           <span className="tool-spacer" />
-          {display.status === "running" ? <LoaderCircle className="spin" size={15} /> : null}
+          {display.status === "running" ? (
+            <LoaderCircle className="spin" size={15} />
+          ) : null}
           {successful ? <Check className="tool-success" size={16} /> : null}
           {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
-        {display.detail ? <div className="tool-summary">{display.detail}</div> : null}
-        {expanded && display.output ? <pre className="tool-output">{display.output}</pre> : null}
+        {display.detail ? (
+          <div className="tool-summary">{display.detail}</div>
+        ) : null}
+        {expanded && display.output ? (
+          <pre className="tool-output">{display.output}</pre>
+        ) : null}
       </div>
     </div>
   );

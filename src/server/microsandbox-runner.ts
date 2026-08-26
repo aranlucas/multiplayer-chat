@@ -39,10 +39,15 @@ export class MicrosandboxRunnerClient {
   }
 
   get configured(): boolean {
-    return Boolean(this.env.MICROSANDBOX_RUNNER_URL && this.env.MICROSANDBOX_RUNNER_TOKEN);
+    return Boolean(
+      this.env.MICROSANDBOX_RUNNER_URL && this.env.MICROSANDBOX_RUNNER_TOKEN,
+    );
   }
 
-  async execute(request: ExecuteRequest, onEvent?: (event: RunnerEvent) => void | Promise<void>): Promise<string> {
+  async execute(
+    request: ExecuteRequest,
+    onEvent?: (event: RunnerEvent) => void | Promise<void>,
+  ): Promise<string> {
     const endpoint = this.endpoint();
     const response = await this.fetcher(new URL("/v1/execute", endpoint), {
       method: "POST",
@@ -51,12 +56,16 @@ export class MicrosandboxRunnerClient {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(request),
-      signal: AbortSignal.timeout(Math.min((request.timeoutMs ?? 300_000) + 60_000, 660_000)),
+      signal: AbortSignal.timeout(
+        Math.min((request.timeoutMs ?? 300_000) + 60_000, 660_000),
+      ),
     });
 
     if (!response.ok || !response.body) {
       const detail = (await response.text()).slice(0, 2_000);
-      throw new Error(`Microsandbox runner rejected the command (${response.status}): ${detail || response.statusText}`);
+      throw new Error(
+        `Microsandbox runner rejected the command (${response.status}): ${detail || response.statusText}`,
+      );
     }
 
     const reader = response.body.getReader();
@@ -86,15 +95,24 @@ export class MicrosandboxRunnerClient {
     }
     await consume(buffer);
 
-    if (exitCode === undefined) throw new Error("Microsandbox runner ended without an exit result");
-    if (exitCode !== 0) throw new Error(output.trim() || `Sandbox command exited with ${exitCode}`);
+    if (exitCode === undefined)
+      throw new Error("Microsandbox runner ended without an exit result");
+    if (exitCode !== 0)
+      throw new Error(
+        output.trim() || `Sandbox command exited with ${exitCode}`,
+      );
     return output.trim() || "✓ Sandbox command passed";
   }
 
   private endpoint(): URL {
-    if (!this.configured) throw new Error("Microsandbox runner is not configured");
+    if (!this.configured)
+      throw new Error("Microsandbox runner is not configured");
     const endpoint = new URL(this.env.MICROSANDBOX_RUNNER_URL!);
-    if (endpoint.protocol !== "https:" && endpoint.hostname !== "127.0.0.1" && endpoint.hostname !== "localhost") {
+    if (
+      endpoint.protocol !== "https:" &&
+      endpoint.hostname !== "127.0.0.1" &&
+      endpoint.hostname !== "localhost"
+    ) {
       throw new Error("Microsandbox runner must use HTTPS unless it is local");
     }
     return endpoint;
@@ -108,14 +126,27 @@ export function parseRunnerEvent(line: string): RunnerEvent {
   } catch {
     throw new Error("Microsandbox runner returned invalid streamed output");
   }
-  if (!value || typeof value !== "object") throw new Error("Microsandbox runner returned an invalid event");
+  if (!value || typeof value !== "object")
+    throw new Error("Microsandbox runner returned an invalid event");
   const event = value as Record<string, unknown>;
-  if (event.type === "status" && typeof event.message === "string") return { type: "status", message: event.message };
-  if ((event.type === "stdout" || event.type === "stderr") && typeof event.data === "string") {
+  if (event.type === "status" && typeof event.message === "string")
+    return { type: "status", message: event.message };
+  if (
+    (event.type === "stdout" || event.type === "stderr") &&
+    typeof event.data === "string"
+  ) {
     return { type: event.type, data: event.data };
   }
-  if (event.type === "result" && Number.isInteger(event.exitCode) && typeof event.durationMs === "number") {
-    return { type: "result", exitCode: Number(event.exitCode), durationMs: event.durationMs };
+  if (
+    event.type === "result" &&
+    Number.isInteger(event.exitCode) &&
+    typeof event.durationMs === "number"
+  ) {
+    return {
+      type: "result",
+      exitCode: Number(event.exitCode),
+      durationMs: event.durationMs,
+    };
   }
   throw new Error("Microsandbox runner returned an unsupported event");
 }

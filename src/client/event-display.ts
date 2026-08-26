@@ -1,9 +1,20 @@
 import type { TimelineEvent } from "../shared/protocol";
 
 export type DisplayEvent =
-  | { type: "prompt"; title: string; detail: string; delivery: "steer" | "queue" }
+  | {
+      type: "prompt";
+      title: string;
+      detail: string;
+      delivery: "steer" | "queue";
+    }
   | { type: "reasoning"; title: string; detail: string; streaming?: boolean }
-  | { type: "tool"; title: string; detail?: string; output?: string; status: "running" | "completed" | "failed" }
+  | {
+      type: "tool";
+      title: string;
+      detail?: string;
+      output?: string;
+      status: "running" | "completed" | "failed";
+    }
   | { type: "text"; title: string; detail: string; streaming?: boolean }
   | { type: "diff"; title: string; additions: number; deletions: number }
   | { type: "permission"; title: string; detail: string; status: string }
@@ -11,7 +22,9 @@ export type DisplayEvent =
   | { type: "system"; title: string; detail: string };
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function stringifyToolInput(value: unknown) {
@@ -29,7 +42,11 @@ function textFromContent(value: unknown) {
   return value
     .map((item) => {
       const record = asRecord(item);
-      return record.type === "text" ? String(record.text ?? "") : record.name ? `[file] ${String(record.name)}` : "";
+      return record.type === "text"
+        ? String(record.text ?? "")
+        : record.name
+          ? `[file] ${String(record.name)}`
+          : "";
     })
     .filter(Boolean)
     .join("\n");
@@ -46,7 +63,11 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
     };
   }
   if (event.kind === "participant") {
-    return { type: "participant", title: event.actor?.name ?? "Participant", detail: String(payload.action ?? "joined") };
+    return {
+      type: "participant",
+      title: event.actor?.name ?? "Participant",
+      detail: String(payload.action ?? "joined"),
+    };
   }
   if (event.kind === "permission") {
     return {
@@ -57,7 +78,11 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
     };
   }
   if (payload.type === "reasoning") {
-    return { type: "reasoning", title: "OpenCode reasoning", detail: String(payload.text ?? "") };
+    return {
+      type: "reasoning",
+      title: "OpenCode reasoning",
+      detail: String(payload.text ?? ""),
+    };
   }
   if (payload.type === "tool") {
     return {
@@ -65,11 +90,20 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
       title: String(payload.tool ?? "tool call"),
       detail: payload.summary ? String(payload.summary) : undefined,
       output: payload.output ? String(payload.output) : undefined,
-      status: payload.status === "running" ? "running" : payload.status === "failed" ? "failed" : "completed",
+      status:
+        payload.status === "running"
+          ? "running"
+          : payload.status === "failed"
+            ? "failed"
+            : "completed",
     };
   }
   if (payload.type === "text") {
-    return { type: "text", title: "OpenCode", detail: String(payload.text ?? "") };
+    return {
+      type: "text",
+      title: "OpenCode",
+      detail: String(payload.text ?? ""),
+    };
   }
   if (payload.type === "diff") {
     return {
@@ -84,10 +118,20 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
     const data = asRecord(raw.data);
     const type = String(raw.type ?? "OpenCode event");
     if (type === "session.reasoning.delta") {
-      return { type: "reasoning", title: "OpenCode reasoning", detail: String(data.delta ?? ""), streaming: data.streaming !== false };
+      return {
+        type: "reasoning",
+        title: "OpenCode reasoning",
+        detail: String(data.delta ?? ""),
+        streaming: data.streaming !== false,
+      };
     }
     if (type === "session.text.delta") {
-      return { type: "text", title: "OpenCode", detail: String(data.delta ?? ""), streaming: data.streaming !== false };
+      return {
+        type: "text",
+        title: "OpenCode",
+        detail: String(data.delta ?? ""),
+        streaming: data.streaming !== false,
+      };
     }
     if (type === "session.tool.called") {
       const input = stringifyToolInput(data.input);
@@ -126,9 +170,16 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
     const readable = type.replace(/^session\./, "").replaceAll(".", " ");
     return { type: "system", title: "OpenCode", detail: readable };
   }
-  return { type: "system", title: "Relay", detail: String(payload.text ?? payload.type ?? "Session updated") };
+  return {
+    type: "system",
+    title: "Relay",
+    detail: String(payload.text ?? payload.type ?? "Session updated"),
+  };
 }
 
 export function formatTime(timestamp: number) {
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(timestamp);
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(timestamp);
 }

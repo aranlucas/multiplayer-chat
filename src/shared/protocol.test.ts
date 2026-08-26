@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_BRANCH, DEFAULT_REPOSITORY, parseClientMessage, safeParticipantName, safeRoomID } from "./protocol";
+import {
+  DEFAULT_BRANCH,
+  DEFAULT_REPOSITORY,
+  parseClientMessage,
+  safeParticipantName,
+  safeRoomID,
+} from "./protocol";
 
 describe("room protocol", () => {
   it("defaults new rooms to the Relay source repository", () => {
@@ -13,13 +19,25 @@ describe("room protocol", () => {
   });
 
   it("accepts steer and queued prompts", () => {
-    expect(parseClientMessage({ type: "prompt", text: " investigate ", delivery: "steer" })).toEqual({
+    expect(
+      parseClientMessage({
+        type: "prompt",
+        text: " investigate ",
+        delivery: "steer",
+      }),
+    ).toEqual({
       type: "prompt",
       text: "investigate",
       delivery: "steer",
       requestID: undefined,
     });
-    expect(parseClientMessage({ type: "prompt", text: "follow up", delivery: "queue" })).toMatchObject({
+    expect(
+      parseClientMessage({
+        type: "prompt",
+        text: "follow up",
+        delivery: "queue",
+      }),
+    ).toMatchObject({
       delivery: "queue",
     });
   });
@@ -41,8 +59,22 @@ describe("room protocol", () => {
   });
 
   it("rejects malformed or overlong messages", () => {
-    expect(() => parseClientMessage({ type: "prompt", text: "", delivery: "steer" })).toThrow();
-    expect(() => parseClientMessage({ type: "prompt", text: "x".repeat(8_001), delivery: "steer" })).toThrow();
-    expect(() => parseClientMessage({ type: "permission.reply", requestID: "p1", reply: "maybe" })).toThrow();
+    expect(() =>
+      parseClientMessage({ type: "prompt", text: "", delivery: "steer" }),
+    ).toThrow();
+    expect(() =>
+      parseClientMessage({
+        type: "prompt",
+        text: "x".repeat(8_001),
+        delivery: "steer",
+      }),
+    ).toThrow();
+    expect(() =>
+      parseClientMessage({
+        type: "permission.reply",
+        requestID: "p1",
+        reply: "maybe",
+      }),
+    ).toThrow();
   });
 });

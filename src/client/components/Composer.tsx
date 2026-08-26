@@ -19,11 +19,23 @@ export function Composer({ disabled, onSend }: ComposerProps) {
 
   return (
     <div className="composer-wrap">
-      <div className="delivery-switch" role="group" aria-label="Message delivery">
-        <button className={delivery === "steer" ? "is-active" : ""} type="button" onClick={() => setDelivery("steer")}>
+      <div
+        className="delivery-switch"
+        role="group"
+        aria-label="Message delivery"
+      >
+        <button
+          className={delivery === "steer" ? "is-active" : ""}
+          type="button"
+          onClick={() => setDelivery("steer")}
+        >
           <Zap size={15} /> Steer now
         </button>
-        <button className={delivery === "queue" ? "is-active" : ""} type="button" onClick={() => setDelivery("queue")}>
+        <button
+          className={delivery === "queue" ? "is-active" : ""}
+          type="button"
+          onClick={() => setDelivery("queue")}
+        >
           <Clock3 size={15} /> Queue next
         </button>
       </div>
@@ -43,13 +55,24 @@ export function Composer({ disabled, onSend }: ComposerProps) {
           disabled={disabled}
         />
         <div className="composer-tools">
-          <button type="button" aria-label="Attach file" disabled title="Attachments are coming next">
+          <button
+            type="button"
+            aria-label="Attach file"
+            disabled
+            title="Attachments are coming next"
+          >
             <Paperclip size={17} />
           </button>
           <span>
             <CornerDownLeft size={13} /> Enter to send
           </span>
-          <button className="send-button" type="button" onClick={submit} disabled={disabled || !text.trim()} aria-label="Send">
+          <button
+            className="send-button"
+            type="button"
+            onClick={submit}
+            disabled={disabled || !text.trim()}
+            aria-label="Send"
+          >
             <ArrowUp size={18} />
           </button>
         </div>
