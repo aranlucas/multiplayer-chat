@@ -774,6 +774,16 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       await this.runNativeOpenCodeTurn(message.text, message.delivery);
     } catch (error) {
       this.setRoomStatus("error");
+      const failed = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: Date.now(),
+        payload: {
+          type: "runner_error",
+          text: `Agent turn failed: ${error instanceof Error ? error.message : "Unknown runner error"}`,
+        },
+      });
+      this.broadcast({ type: "event", event: failed });
       throw error;
     }
   }
@@ -895,6 +905,16 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   }
 
   private handleNativeRunnerEvent(event: NativeRunnerEvent) {
+    if (event.type === "status") {
+      const status = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: Date.now(),
+        payload: { type: "runner_status", text: event.message },
+      });
+      this.broadcast({ type: "event", event: status });
+      return;
+    }
     if (event.type === "session") {
       this.ctx.storage.sql.exec(
         "UPDATE relay_room SET opencode_session_id = ? WHERE singleton = 1",

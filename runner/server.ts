@@ -511,12 +511,15 @@ console.log(JSON.stringify({ type: "session", sessionID }));
 const eventURL = "/api/session/" + encodeURIComponent(sessionID) + "/event" +
   (input.after ? "?after=" + encodeURIComponent(input.after) : "");
 const eventResponsePromise = request(eventURL, { headers: { accept: "text/event-stream" } });
-await request("/api/session/" + encodeURIComponent(sessionID) + "/prompt", {
+let promptError;
+const promptPromise = request("/api/session/" + encodeURIComponent(sessionID) + "/prompt", {
   method: "POST",
   body: JSON.stringify({
     prompt: { text: input.prompt },
     delivery: input.delivery,
   }),
+}).catch((error) => {
+  promptError = error;
 });
 const eventResponse = await eventResponsePromise;
 const reader = eventResponse.body.getReader();
@@ -566,6 +569,8 @@ outer: while (true) {
   }
 }
 await reader.cancel().catch(() => undefined);
+await promptPromise;
+if (promptError) throw promptError;
 if (!terminal) throw new Error("OpenCode event stream ended before execution completed");
 console.log(JSON.stringify({ type: "terminal", status: terminal }));
 `;
