@@ -1,4 +1,3 @@
-import { CircleHelp, Clock3, GitBranch, MessageSquareText, Settings, TerminalSquare } from "lucide-react";
 import { useMemo, useState } from "react";
 import { getIdentity, useRoom } from "./use-room";
 import { useGitHub } from "./use-github";
@@ -63,27 +62,6 @@ export function App() {
         queued={state.queue.length}
         onChange={setMobileTab}
       />
-      <aside className="icon-rail" aria-label="Workspace navigation">
-        <button className="is-active" type="button" aria-label="Session transcript">
-          <MessageSquareText size={19} />
-        </button>
-        <button type="button" aria-label="Branches">
-          <GitBranch size={19} />
-        </button>
-        <button type="button" aria-label="Files">
-          <TerminalSquare size={19} />
-        </button>
-        <button type="button" aria-label="History">
-          <Clock3 size={19} />
-        </button>
-        <span className="icon-spacer" />
-        <button type="button" aria-label="Settings">
-          <Settings size={19} />
-        </button>
-        <button type="button" aria-label="Help">
-          <CircleHelp size={19} />
-        </button>
-      </aside>
       <ActivityRail events={state.events} selectedID={selectedID} onSelect={setSelectedID} />
       <main className={`main-column mobile-tab-${mobileTab}`}>
         {mobileTab === "people" ? (

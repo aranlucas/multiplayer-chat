@@ -68,9 +68,9 @@ pre {
 .app-shell {
   display: grid;
   grid-template:
-    "header header header header" 52px
-    "icons activity main collab" minmax(0, 1fr) /
-    48px 264px minmax(460px, 1fr) 316px;
+    "header header header" 52px
+    "activity main collab" minmax(0, 1fr) /
+    264px minmax(460px, 1fr) 316px;
   width: 100vw;
   height: 100vh;
   background: var(--bg);
@@ -224,7 +224,6 @@ pre {
 }
 
 .header-spacer,
-.icon-spacer,
 .tool-spacer {
   flex: 1;
 }
@@ -323,18 +322,6 @@ pre {
   font-size: 10px;
 }
 
-.icon-rail {
-  grid-area: icons;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  padding: 11px 6px 9px;
-  border-right: 1px solid var(--border);
-  background: #090c0e;
-}
-
-.icon-rail button,
 .rail-heading button {
   display: grid;
   place-items: center;
@@ -348,26 +335,9 @@ pre {
   cursor: pointer;
 }
 
-.icon-rail button:hover,
-.icon-rail button.is-active,
 .rail-heading button:hover {
   color: var(--text);
   background: var(--panel-soft);
-}
-
-.icon-rail button.is-active {
-  position: relative;
-  color: var(--lime);
-}
-
-.icon-rail button.is-active::before {
-  position: absolute;
-  left: -6px;
-  width: 2px;
-  height: 20px;
-  border-radius: 0 3px 3px 0;
-  background: var(--lime);
-  content: "";
 }
 
 .activity-rail {
@@ -1151,7 +1121,7 @@ pre {
 
 @media (max-width: 1180px) {
   .app-shell {
-    grid-template-columns: 48px 224px minmax(420px, 1fr) 276px;
+    grid-template-columns: 224px minmax(420px, 1fr) 276px;
   }
 
   .session-context {
@@ -1188,7 +1158,6 @@ pre {
   .header-avatars,
   .header-button span,
   .pause-button,
-  .icon-rail,
   .activity-rail,
   .collaboration-rail {
     display: none;
