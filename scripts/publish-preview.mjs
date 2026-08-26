@@ -7,10 +7,14 @@ const controlOrigin = process.env.RELAY_CONTROL_ORIGIN;
 const webhookSecret = process.env.RELAY_DEPLOYMENT_WEBHOOK_SECRET;
 const roomID = roomFromBranch(branch);
 
-if (!branch || !commitSHA || !roomID) {
-  throw new Error(
-    "Preview publishing requires a Relay PR branch and its exact commit SHA",
+if (!branch || !commitSHA) {
+  throw new Error("Preview publishing requires a branch and exact commit SHA");
+}
+if (!roomID) {
+  process.stdout.write(
+    `Skipping room preview for non-Relay branch ${branch}.\n`,
   );
+  process.exit(0);
 }
 if (!controlOrigin || !webhookSecret) {
   throw new Error(

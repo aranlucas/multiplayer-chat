@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { hasLiveOpenCode, type WorkerEnv } from "./opencode";
+import {
+  hasLiveOpenCode,
+  liveOpenCodeConfigurationError,
+  type WorkerEnv,
+} from "./opencode";
 
 function env(overrides: Partial<WorkerEnv>): WorkerEnv {
   return {
@@ -24,9 +28,22 @@ describe("hasLiveOpenCode", () => {
     expect(
       hasLiveOpenCode(env({ MICROSANDBOX_RUNNER_TOKEN: undefined })),
     ).toBe(false);
+    expect(
+      liveOpenCodeConfigurationError(
+        env({ MICROSANDBOX_RUNNER_URL: undefined }),
+      ),
+    ).toBe("The native OpenCode runner URL is not configured.");
+    expect(
+      liveOpenCodeConfigurationError(
+        env({ MICROSANDBOX_RUNNER_TOKEN: undefined }),
+      ),
+    ).toBe("The native OpenCode runner token is not configured.");
   });
 
   it("keeps simulation mode offline", () => {
     expect(hasLiveOpenCode(env({ OPENCODE_MODE: "simulation" }))).toBe(false);
+    expect(
+      liveOpenCodeConfigurationError(env({ OPENCODE_MODE: "simulation" })),
+    ).toBeUndefined();
   });
 });

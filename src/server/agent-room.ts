@@ -14,7 +14,11 @@ import {
   type ServerMessage,
   type TimelineEvent,
 } from "../shared/protocol";
-import { hasLiveOpenCode, type WorkerEnv } from "./opencode";
+import {
+  hasLiveOpenCode,
+  liveOpenCodeConfigurationError,
+  type WorkerEnv,
+} from "./opencode";
 import {
   MicrosandboxRunnerClient,
   type NativeRunnerEvent,
@@ -741,6 +745,22 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     });
     this.broadcast({ type: "event", event });
     this.send(socket, { type: "ack", requestID: message.requestID });
+
+    const configurationError = liveOpenCodeConfigurationError(this.env);
+    if (configurationError) {
+      this.setRoomStatus("error");
+      const unavailable = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "opencode",
+        createdAt: Date.now(),
+        payload: {
+          type: "text",
+          text: `Agent unavailable: ${configurationError}`,
+        },
+      });
+      this.broadcast({ type: "event", event: unavailable });
+      return;
+    }
 
     if (!hasLiveOpenCode(this.env)) {
       if (message.delivery === "queue") return;
