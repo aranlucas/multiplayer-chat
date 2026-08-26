@@ -13,6 +13,7 @@ export function coalesceTimelineEvents(
 ): TimelineEvent[] {
   const result: TimelineEvent[] = [];
   const streams = new Map<string, number>();
+  const tools = new Map<string, number>();
 
   for (const event of [...events].sort((left, right) => left.seq - right.seq)) {
     const raw = rawEvent(event);
@@ -22,6 +23,10 @@ export function coalesceTimelineEvents(
     }
     const type = String(raw.type ?? "");
     const data = asRecord(raw.data);
+    if (type.startsWith("session.tool.")) {
+      mergeToolLifecycle(result, tools, event, type, data);
+      continue;
+    }
     if (STREAM_TYPES.has(type)) {
       mergeStream(
         result,
@@ -54,6 +59,88 @@ export function coalesceTimelineEvents(
   return result;
 }
 
+function mergeToolLifecycle(
+  result: TimelineEvent[],
+  tools: Map<string, number>,
+  event: TimelineEvent,
+  type: string,
+  data: Record<string, unknown>,
+) {
+  const key = toolKey(event, data);
+  const existingIndex = tools.get(key);
+  const existing =
+    existingIndex === undefined ? undefined : result[existingIndex];
+  const existingRaw = existing ? rawEvent(existing) : undefined;
+  const existingData = asRecord(existingRaw?.data);
+  const tool = String(
+    data.tool ??
+      data.name ??
+      existingData.tool ??
+      existingData.name ??
+      "tool call",
+  );
+  const parsedInput =
+    data.input ?? parseToolInput(data.text) ?? existingData.input ?? {};
+  const finalType =
+    type === "session.tool.success" || type === "session.tool.failed"
+      ? type
+      : "session.tool.called";
+  const mergedData = {
+    ...existingData,
+    ...data,
+    id: data.id ?? existingData.id ?? key,
+    tool,
+    input: parsedInput,
+  };
+  const merged = toolEvent(existing ?? event, key, finalType, mergedData);
+
+  if (existingIndex === undefined) {
+    tools.set(key, result.length);
+    result.push(merged);
+    return;
+  }
+  result[existingIndex] = merged;
+}
+
+function toolEvent(
+  source: TimelineEvent,
+  key: string,
+  type: string,
+  data: Record<string, unknown>,
+): TimelineEvent {
+  const raw = rawEvent(source) ?? {};
+  return {
+    ...source,
+    id: `tool:${key}`,
+    payload: {
+      type: "raw",
+      event: { ...raw, type, data },
+    },
+  };
+}
+
+function toolKey(
+  event: TimelineEvent,
+  data: Record<string, unknown>,
+): string {
+  return [
+    data.sessionID ?? "session",
+    data.assistantMessageID ?? "message",
+    data.id ?? event.id,
+  ]
+    .map(String)
+    .join(":");
+}
+
+function parseToolInput(value: unknown): unknown {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
 function mergeStream(
   result: TimelineEvent[],
   streams: Map<string, number>,
@@ -67,6 +154,7 @@ function mergeStream(
   const key = streamKey(type, data);
   const index = streams.get(key);
   if (index === undefined) {
+    if (text.length === 0) return;
     streams.set(key, result.length);
     result.push(streamEvent(event, key, type, data, text, streaming));
     return;
@@ -79,7 +167,9 @@ function mergeStream(
     key,
     type,
     data,
-    replace ? text : String(existingData.delta ?? "") + text,
+    replace && text.length > 0
+      ? text
+      : String(existingData.delta ?? "") + (replace ? "" : text),
     streaming,
   );
 }

@@ -1,14 +1,13 @@
-export type ExecutionTarget = "auto" | "test" | "typecheck" | "build";
+import {
+  parseWorkspaceChanges,
+  type WorkspaceChange,
+} from "../shared/workspace-change";
+
+export type { WorkspaceChange } from "../shared/workspace-change";
 
 export interface MicrosandboxRunnerEnv {
   MICROSANDBOX_RUNNER_URL?: string;
   MICROSANDBOX_RUNNER_TOKEN?: string;
-}
-
-export interface WorkspaceChange {
-  [key: string]: string;
-  path: string;
-  content: string;
 }
 
 export interface ExecuteRequest {
@@ -16,15 +15,21 @@ export interface ExecuteRequest {
   repository: string;
   commitSHA: string;
   changes: WorkspaceChange[];
-  target?: ExecutionTarget;
-  command?: string;
+  command: string;
   timeoutMs?: number;
 }
 
 export type RunnerEvent =
   | { type: "status"; message: string }
   | { type: "stdout" | "stderr"; data: string }
+  | { type: "changes"; changes: WorkspaceChange[] }
   | { type: "result"; exitCode: number; durationMs: number };
+
+export interface RunnerExecution {
+  output: string;
+  exitCode: number;
+  changes: WorkspaceChange[];
+}
 
 const MAX_OUTPUT = 60_000;
 
@@ -47,7 +52,7 @@ export class MicrosandboxRunnerClient {
   async execute(
     request: ExecuteRequest,
     onEvent?: (event: RunnerEvent) => void | Promise<void>,
-  ): Promise<string> {
+  ): Promise<RunnerExecution> {
     const endpoint = this.endpoint();
     const response = await this.fetcher(new URL("/v1/execute", endpoint), {
       method: "POST",
@@ -73,6 +78,7 @@ export class MicrosandboxRunnerClient {
     let buffer = "";
     let output = "";
     let exitCode: number | undefined;
+    let changes: WorkspaceChange[] | undefined;
 
     const consume = async (line: string) => {
       if (!line.trim()) return;
@@ -80,6 +86,8 @@ export class MicrosandboxRunnerClient {
       await onEvent?.(event);
       if (event.type === "stdout" || event.type === "stderr") {
         output = appendOutput(output, event.data);
+      } else if (event.type === "changes") {
+        changes = event.changes;
       } else if (event.type === "result") {
         exitCode = event.exitCode;
       }
@@ -97,11 +105,15 @@ export class MicrosandboxRunnerClient {
 
     if (exitCode === undefined)
       throw new Error("Microsandbox runner ended without an exit result");
-    if (exitCode !== 0)
+    if (!changes)
       throw new Error(
-        output.trim() || `Sandbox command exited with ${exitCode}`,
+        output.trim() || "Microsandbox runner ended without workspace changes",
       );
-    return output.trim() || "✓ Sandbox command passed";
+    return {
+      output: output.trim() || `Process exited ${exitCode}`,
+      exitCode,
+      changes,
+    };
   }
 
   private endpoint(): URL {
@@ -136,6 +148,12 @@ export function parseRunnerEvent(line: string): RunnerEvent {
     typeof event.data === "string"
   ) {
     return { type: event.type, data: event.data };
+  }
+  if (event.type === "changes") {
+    return {
+      type: "changes",
+      changes: parseWorkspaceChanges(event.changes),
+    };
   }
   if (
     event.type === "result" &&

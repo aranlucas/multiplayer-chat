@@ -1,10 +1,15 @@
-# Local development defaults to OpenCode simulation mode and needs no key.
-# To exercise OpenCode Zen locally, copy this file to .dev.vars, set
-# OPENCODE_MODE=live, and provide a Zen API key.
+# Local development defaults to OpenCode simulation mode. Set OPENCODE_MODE=live
+# to exercise the configured free Zen model without a key. Paid Zen models still
+# require OPENCODE_ZEN_API_KEY.
 OPENCODE_MODE=simulation
 OPENCODE_PROVIDER=opencode-zen
-OPENCODE_MODEL=opencode/x-preview-f-free
+OPENCODE_MODEL=opencode/mimo-v2.5-free
 OPENCODE_ZEN_API_KEY=
+
+# Optional local hardware-isolated Bash runner. Use the same 32+ character token
+# when starting `pnpm runner`.
+MICROSANDBOX_RUNNER_URL=http://127.0.0.1:7777
+MICROSANDBOX_RUNNER_TOKEN=
 
 # Alternative provider:
 # OPENCODE_PROVIDER=cloudflare-workers-ai

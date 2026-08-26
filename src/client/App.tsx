@@ -58,6 +58,7 @@ export function App() {
         onPause={actions.pause}
         canConfigure={identity.role === "maintainer"}
         onConfigure={actions.configureRepository}
+        onRenameRoom={actions.renameRoom}
       />
       <MobileTabs
         active={mobileTab}

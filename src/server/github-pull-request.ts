@@ -55,21 +55,24 @@ export class GitHubPullRequestClient {
       input.baseCommitSHA,
     );
     const blobs = await Promise.all(
-      input.changes.map(async (change) => ({
-        path: change.path,
-        sha: (
-          await this.request<{ sha: string }>(
-            `/repos/${writeRepository}/git/blobs`,
-            {
-              method: "POST",
-              body: JSON.stringify({
-                content: change.content,
-                encoding: "utf-8",
-              }),
-            },
-          )
-        ).sha,
-      })),
+      input.changes.map(async (change) => {
+        if (change.content === null) return { path: change.path, sha: null };
+        return {
+          path: change.path,
+          sha: (
+            await this.request<{ sha: string }>(
+              `/repos/${writeRepository}/git/blobs`,
+              {
+                method: "POST",
+                body: JSON.stringify({
+                  content: change.content,
+                  encoding: "utf-8",
+                }),
+              },
+            )
+          ).sha,
+        };
+      }),
     );
     const tree = await this.request<{ sha: string }>(
       `/repos/${writeRepository}/git/trees`,

@@ -198,6 +198,13 @@ export function useRoom(roomID: string, identity: RoomIdentity) {
       pause() {
         return send({ type: "agent.pause" });
       },
+      renameRoom(title: string) {
+        return send({
+          type: "room.rename",
+          title,
+          requestID: crypto.randomUUID(),
+        });
+      },
       configureRepository(repository: string, branch: string) {
         return send({
           type: "room.configure",

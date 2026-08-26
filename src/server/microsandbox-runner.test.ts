@@ -11,7 +11,7 @@ describe("MicrosandboxRunnerClient", () => {
       receiver = this;
       return Promise.resolve(
         new Response(
-          `${JSON.stringify({ type: "result", exitCode: 0, durationMs: 1 })}\n`,
+          `${JSON.stringify({ type: "changes", changes: [] })}\n${JSON.stringify({ type: "result", exitCode: 0, durationMs: 1 })}\n`,
         ),
       );
     } as typeof fetch;
@@ -39,6 +39,10 @@ describe("MicrosandboxRunnerClient", () => {
       { type: "status", message: "Booting" },
       { type: "stdout", data: "tests " },
       { type: "stderr", data: "running\n" },
+      {
+        type: "changes",
+        changes: [{ path: "src/index.ts", content: "updated\n" }],
+      },
       { type: "result", exitCode: 0, durationMs: 25 },
     ]
       .map((event) => JSON.stringify(event))
@@ -52,25 +56,35 @@ describe("MicrosandboxRunnerClient", () => {
       fetcher,
     );
     const events: string[] = [];
-    const output = await client.execute(
+    const execution = await client.execute(
       {
         roomID: "room",
         repository: "owner/repo",
         commitSHA: "a".repeat(40),
         changes: [],
-        target: "test",
+        command: "pnpm test",
       },
       (event) => {
         events.push(event.type);
       },
     );
-    expect(output).toBe("tests running");
-    expect(events).toEqual(["status", "stdout", "stderr", "result"]);
+    expect(execution).toEqual({
+      output: "tests running",
+      exitCode: 0,
+      changes: [{ path: "src/index.ts", content: "updated\n" }],
+    });
+    expect(events).toEqual([
+      "status",
+      "stdout",
+      "stderr",
+      "changes",
+      "result",
+    ]);
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
-  it("turns non-zero exits into tool errors", async () => {
-    const body = `${JSON.stringify({ type: "stderr", data: "failed\n" })}\n${JSON.stringify({ type: "result", exitCode: 2, durationMs: 8 })}\n`;
+  it("returns non-zero exits with their durable mutations", async () => {
+    const body = `${JSON.stringify({ type: "stderr", data: "failed\n" })}\n${JSON.stringify({ type: "changes", changes: [{ path: "removed.ts", content: null }] })}\n${JSON.stringify({ type: "result", exitCode: 2, durationMs: 8 })}\n`;
     const client = new MicrosandboxRunnerClient(
       {
         MICROSANDBOX_RUNNER_URL: "http://localhost:7777",
@@ -86,7 +100,11 @@ describe("MicrosandboxRunnerClient", () => {
         changes: [],
         command: "false",
       }),
-    ).rejects.toThrow("failed");
+    ).resolves.toEqual({
+      output: "failed",
+      exitCode: 2,
+      changes: [{ path: "removed.ts", content: null }],
+    });
   });
 
   it("rejects malformed streamed events", () => {

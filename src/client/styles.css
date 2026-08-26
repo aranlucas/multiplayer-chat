@@ -144,7 +144,8 @@ pre {
   cursor: default;
 }
 
-.repository-popover {
+.repository-popover,
+.title-popover {
   position: absolute;
   z-index: 30;
   top: 46px;
@@ -159,18 +160,26 @@ pre {
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.48);
 }
 
-.repository-popover strong {
+.title-popover {
+  left: 470px;
+  width: min(320px, calc(100vw - 24px));
+}
+
+.repository-popover strong,
+.title-popover strong {
   font-size: 12px;
 }
 
-.repository-popover label {
+.repository-popover label,
+.title-popover label {
   display: grid;
   gap: 5px;
   color: var(--muted);
   font-size: 10px;
 }
 
-.repository-popover input {
+.repository-popover input,
+.title-popover input {
   height: 34px;
   padding: 0 9px;
   border: 1px solid var(--border);
@@ -183,18 +192,21 @@ pre {
     monospace;
 }
 
-.repository-popover input:focus {
+.repository-popover input:focus,
+.title-popover input:focus {
   border-color: #66834f;
   box-shadow: 0 0 0 2px rgba(149, 232, 83, 0.09);
 }
 
-.repository-popover > div {
+.repository-popover > div,
+.title-popover > div {
   display: flex;
   justify-content: flex-end;
   gap: 7px;
 }
 
-.repository-popover button {
+.repository-popover button,
+.title-popover button {
   height: 30px;
   padding: 0 10px;
   border: 1px solid var(--border);
@@ -205,7 +217,8 @@ pre {
   cursor: pointer;
 }
 
-.repository-popover button[type="submit"] {
+.repository-popover button[type="submit"],
+.title-popover button[type="submit"] {
   border-color: #66834f;
   background: #23351d;
   color: #d7ffc0;
@@ -221,7 +234,13 @@ pre {
   max-width: 224px;
   background: transparent;
   border-color: transparent;
+  font: inherit;
   font-weight: 600;
+  cursor: pointer;
+}
+
+.session-context:disabled {
+  cursor: default;
 }
 
 .repository-icon {
@@ -1137,7 +1156,8 @@ pre {
     grid-template-columns: 224px minmax(420px, 1fr) 276px;
   }
 
-  .session-context {
+  .session-context,
+  .title-popover {
     display: none;
   }
 
@@ -1166,6 +1186,7 @@ pre {
 
   .repository-context,
   .repository-popover,
+  .title-popover,
   .branch-context,
   .session-context,
   .header-avatars,

@@ -44,6 +44,7 @@ describe("GitHubPullRequestClient", () => {
       changes: [
         { path: "README.md", content: "updated" },
         { path: "src/index.ts", content: "export {};" },
+        { path: "src/removed.ts", content: null },
       ],
       title: "Relay update",
       body: "Created by Relay",
@@ -59,6 +60,7 @@ describe("GitHubPullRequestClient", () => {
       tree: [
         { path: "README.md", mode: "100644", type: "blob", sha: "blob-1" },
         { path: "src/index.ts", mode: "100644", type: "blob", sha: "blob-2" },
+        { path: "src/removed.ts", mode: "100644", type: "blob", sha: null },
       ],
     });
     const pull = requests.find((request) =>
