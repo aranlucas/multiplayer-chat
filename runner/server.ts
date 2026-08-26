@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
 import { MiB, NetworkPolicy, Sandbox } from "microsandbox";
 import {
@@ -21,9 +20,6 @@ const image =
   process.env.MICROSANDBOX_IMAGE ??
   "ghcr.io/anomalyco/opencode:1.18.17";
 const maxBodyBytes = 2_000_000;
-const openCodePassword = token
-  ? createHash("sha256").update(token).digest("hex")
-  : "";
 const locks = new Map<string, Promise<void>>();
 const activeRuntimes = new Map<
   string,
@@ -132,7 +128,6 @@ async function runTurn(input: OpenCodeTurnRequest, response: ServerResponse) {
       prompt: input.prompt,
       delivery: input.delivery,
       model: parseModelRef(input.model),
-      password: openCodePassword,
     };
     const stream = await sandbox.execStreamWith("node", (exec) =>
       exec
@@ -196,10 +191,10 @@ async function runTurn(input: OpenCodeTurnRequest, response: ServerResponse) {
 async function interrupt(roomID: string, sessionID: string): Promise<boolean> {
   const active = activeRuntimes.get(roomID);
   if (!active) return false;
-  const script = `const [id,password]=process.argv.slice(1);const response=await fetch("http://127.0.0.1:4096/api/session/"+encodeURIComponent(id)+"/interrupt",{method:"POST",headers:{authorization:"Basic "+Buffer.from("opencode:"+password).toString("base64")}});if(!response.ok)throw new Error(await response.text());`;
+  const script = `const id=process.argv[1];const response=await fetch("http://127.0.0.1:4096/api/session/"+encodeURIComponent(id)+"/interrupt",{method:"POST"});if(!response.ok)throw new Error(await response.text());`;
   const result = await active.sandbox.execWith("node", (exec) =>
     exec
-      .args(["-e", script, sessionID, openCodePassword])
+      .args(["-e", script, sessionID])
       .timeout(20_000)
       .stdinNull(),
   );
@@ -262,7 +257,6 @@ async function startOpenCodeServer(sandbox: Sandbox, timeoutMs: number) {
   return sandbox.execStreamWith("opencode", (exec) =>
     exec
       .args(["serve", "--hostname", "127.0.0.1", "--port", "4096"])
-      .env("OPENCODE_SERVER_PASSWORD", openCodePassword)
       .env("OPENCODE_CONFIG_CONTENT", config)
       .cwd("/workspace/repository")
       .timeout(Math.min(timeoutMs + 60_000, 960_000))
@@ -271,12 +265,15 @@ async function startOpenCodeServer(sandbox: Sandbox, timeoutMs: number) {
 }
 
 async function waitForOpenCode(sandbox: Sandbox) {
-  const script = `const password=process.argv[1];const auth="Basic "+Buffer.from("opencode:"+password).toString("base64");for(let attempt=0;attempt<360;attempt++){try{const response=await fetch("http://127.0.0.1:4096/global/health",{headers:{authorization:auth}});if(response.ok)process.exit(0)}catch{}await new Promise(resolve=>setTimeout(resolve,250))}throw new Error("OpenCode server did not become healthy")`;
-  const result = await sandbox.execWith("node", (exec) =>
-    exec.args(["-e", script, openCodePassword]).timeout(95_000).stdinNull(),
-  );
-  if (!result.success)
-    throw new Error(result.stderr().trim() || "OpenCode server did not start");
+  const probe = `fetch("http://127.0.0.1:4096/global/health",{signal:AbortSignal.timeout(2000)}).then(response=>{if(!response.ok)process.exitCode=1}).catch(()=>{process.exitCode=1})`;
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const result = await sandbox.execWith("node", (exec) =>
+      exec.args(["-e", probe]).timeout(5_000).stdinNull(),
+    );
+    if (result.success) return;
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+  throw new Error("OpenCode server did not start");
 }
 
 async function prepareWorkspace(sandbox: Sandbox, input: OpenCodeTurnRequest) {
@@ -491,7 +488,6 @@ const OPEN_CODE_BRIDGE = String.raw`
 const input = JSON.parse(process.argv[1]);
 const base = "http://127.0.0.1:4096";
 const headers = {
-  authorization: "Basic " + Buffer.from("opencode:" + input.password).toString("base64"),
   "content-type": "application/json",
 };
 const request = async (path, init = {}) => {

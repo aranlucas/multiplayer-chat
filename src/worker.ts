@@ -1,7 +1,10 @@
 import { Hono } from "hono";
 import { safeParticipantName, safeRoomID } from "./shared/protocol";
 import { AgentRoom } from "./server/agent-room";
-import type { WorkerEnv } from "./server/opencode";
+import {
+  liveOpenCodeConfigurationError,
+  type WorkerEnv,
+} from "./server/opencode";
 import {
   beginGitHubAuthorization,
   clearGitHubSessionCookie,
@@ -40,6 +43,7 @@ app.get("/api/health", async (context) => {
     service: "relay-multiplayer-agent",
     opencodeMode: context.env.OPENCODE_MODE,
     opencodeProvider: context.env.OPENCODE_PROVIDER,
+    opencodeConfigurationError: liveOpenCodeConfigurationError(context.env),
     sandboxExecutor,
     sandboxReachable,
     githubOAuthConfigured: githubOAuthConfigured(context.env),

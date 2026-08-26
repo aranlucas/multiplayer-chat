@@ -16,9 +16,16 @@ export interface WorkerEnv extends GitHubOAuthEnv, MicrosandboxRunnerEnv {
 }
 
 export function hasLiveOpenCode(env: WorkerEnv) {
-  return Boolean(
-    env.OPENCODE_MODE === "live" &&
-      env.MICROSANDBOX_RUNNER_URL &&
-      env.MICROSANDBOX_RUNNER_TOKEN,
-  );
+  return env.OPENCODE_MODE === "live" && !liveOpenCodeConfigurationError(env);
+}
+
+export function liveOpenCodeConfigurationError(
+  env: WorkerEnv,
+): string | undefined {
+  if (env.OPENCODE_MODE !== "live") return undefined;
+  if (!env.MICROSANDBOX_RUNNER_URL)
+    return "The native OpenCode runner URL is not configured.";
+  if (!env.MICROSANDBOX_RUNNER_TOKEN)
+    return "The native OpenCode runner token is not configured.";
+  return undefined;
 }
