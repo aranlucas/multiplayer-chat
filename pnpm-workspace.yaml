@@ -1,0 +1,8 @@
+allowBuilds:
+  '@parcel/watcher': true
+  esbuild: true
+  msgpackr-extract: true
+  protobufjs: true
+  tree-sitter-bash: true
+  tree-sitter-powershell: true
+  workerd: true

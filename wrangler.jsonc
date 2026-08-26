@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "relay-multiplayer-agent",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AGENT_ROOMS",
+        "class_name": "AgentRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["AgentRoom"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["Sandbox"]
+    }
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "OPENCODE_MODE": "live",
+    "OPENCODE_PROVIDER": "opencode-zen",
+    "CLOUDFLARE_ACCOUNT_ID": "d93c650f72e597f96785abba389b0ce4",
+    "OPENCODE_MODEL": "opencode/x-preview-f-free",
+    "GITHUB_OAUTH_CLIENT_ID": "Ov23li43DfrritRncWry",
+    "MICROSANDBOX_RUNNER_URL": "https://towns-requires-mls-tions.trycloudflare.com"
+  }
+}

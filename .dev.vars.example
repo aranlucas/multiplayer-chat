@@ -1,0 +1,11 @@
+# Local development defaults to OpenCode simulation mode and needs no key.
+# To exercise OpenCode Zen locally, copy this file to .dev.vars, set
+# OPENCODE_MODE=live, and provide a Zen API key.
+OPENCODE_MODE=simulation
+OPENCODE_PROVIDER=opencode-zen
+OPENCODE_MODEL=opencode/x-preview-f-free
+OPENCODE_ZEN_API_KEY=
+
+# Alternative provider:
+# OPENCODE_PROVIDER=cloudflare-workers-ai
+# CLOUDFLARE_API_TOKEN=

@@ -1,0 +1,12 @@
+node_modules
+dist
+.wrangler
+.dev.vars
+.runner.env
+.runner-token
+.github-oauth-secret
+.github-session-secret
+worker-configuration.d.ts
+*.tsbuildinfo
+.DS_Store
+coverage
