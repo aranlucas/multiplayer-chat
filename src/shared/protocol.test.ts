@@ -58,6 +58,20 @@ describe("room protocol", () => {
     });
   });
 
+  it("accepts trimmed room titles", () => {
+    expect(
+      parseClientMessage({
+        type: "room.rename",
+        title: " Fix the reconnect loop ",
+        requestID: "rename-1",
+      }),
+    ).toEqual({
+      type: "room.rename",
+      title: "Fix the reconnect loop",
+      requestID: "rename-1",
+    });
+  });
+
   it("rejects malformed or overlong messages", () => {
     expect(() =>
       parseClientMessage({ type: "prompt", text: "", delivery: "steer" }),
@@ -75,6 +89,12 @@ describe("room protocol", () => {
         requestID: "p1",
         reply: "maybe",
       }),
+    ).toThrow();
+    expect(() =>
+      parseClientMessage({ type: "room.rename", title: "   " }),
+    ).toThrow();
+    expect(() =>
+      parseClientMessage({ type: "room.rename", title: "x".repeat(101) }),
     ).toThrow();
   });
 });

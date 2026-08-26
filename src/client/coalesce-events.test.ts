@@ -82,4 +82,60 @@ describe("coalesceTimelineEvents", () => {
       ),
     ).toEqual(["One", "Two"]);
   });
+
+  it("drops empty stream boundaries", () => {
+    expect(
+      coalesceTimelineEvents([
+        raw(1, "session.reasoning.started", {
+          sessionID: "session",
+          assistantMessageID: "message",
+        }),
+        raw(2, "session.reasoning.ended", {
+          sessionID: "session",
+          assistantMessageID: "message",
+          text: "",
+        }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("renders one card for a complete tool lifecycle", () => {
+    const identity = {
+      sessionID: "session",
+      assistantMessageID: "message",
+      id: "call-1",
+    };
+    const events = coalesceTimelineEvents([
+      raw(1, "session.tool.input.started", { ...identity, name: "shell" }),
+      raw(2, "session.tool.input.ended", {
+        ...identity,
+        text: JSON.stringify({ command: "pnpm test" }),
+      }),
+      raw(3, "session.tool.called", {
+        ...identity,
+        input: { command: "pnpm test" },
+        executed: true,
+      }),
+      raw(4, "session.tool.progress", {
+        ...identity,
+        metadata: { status: "Running" },
+      }),
+      raw(5, "session.tool.success", {
+        ...identity,
+        content: [{ type: "text", text: "passed" }],
+        executed: true,
+      }),
+    ]);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].id).toContain("call-1");
+    expect(events[0].payload.event).toMatchObject({
+      type: "session.tool.success",
+      data: {
+        tool: "shell",
+        input: { command: "pnpm test" },
+        content: [{ type: "text", text: "passed" }],
+      },
+    });
+  });
 });

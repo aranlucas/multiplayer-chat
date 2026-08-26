@@ -30,6 +30,7 @@ interface HeaderProps {
   onPause: () => void;
   canConfigure: boolean;
   onConfigure: (repository: string, branch: string) => boolean;
+  onRenameRoom: (title: string) => boolean;
 }
 
 export function Header({
@@ -45,13 +46,16 @@ export function Header({
   onPause,
   canConfigure,
   onConfigure,
+  onRenameRoom,
 }: HeaderProps) {
   const [copied, setCopied] = useState(false);
   const [editingRepository, setEditingRepository] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
   const [repository, setRepository] = useState(
     room?.repository ?? DEFAULT_REPOSITORY,
   );
   const [branch, setBranch] = useState(room?.branch ?? DEFAULT_BRANCH);
+  const [title, setTitle] = useState(room?.title ?? "");
   const online = participants.filter((participant) => participant.online);
   const running = room?.agentStatus === "running";
 
@@ -67,6 +71,11 @@ export function Header({
       setEditingRepository(false);
   }
 
+  function renameRoom(event: React.FormEvent) {
+    event.preventDefault();
+    if (onRenameRoom(title.trim())) setEditingTitle(false);
+  }
+
   return (
     <header className="app-header">
       <div className="brand">
@@ -78,6 +87,7 @@ export function Header({
         type="button"
         disabled={!canConfigure}
         onClick={() => {
+          setEditingTitle(false);
           setRepository(room?.repository ?? repository);
           setBranch(room?.branch ?? branch);
           setEditingRepository((current) => !current);
@@ -125,10 +135,49 @@ export function Header({
           </div>
         </form>
       ) : null}
-      <div className="header-context session-context">
+      <button
+        className="header-context session-context"
+        type="button"
+        disabled={!canConfigure || !room}
+        aria-label={canConfigure ? "Rename room" : undefined}
+        aria-expanded={editingTitle}
+        aria-controls="room-title-editor"
+        onClick={() => {
+          setEditingRepository(false);
+          setTitle(room?.title ?? "");
+          setEditingTitle((current) => !current);
+        }}
+      >
         <span>{room?.title ?? "Investigate reconnect loop"}</span>
         <ChevronDown size={14} aria-hidden />
-      </div>
+      </button>
+      {editingTitle ? (
+        <form
+          id="room-title-editor"
+          className="title-popover"
+          onSubmit={renameRoom}
+        >
+          <strong>Room title</strong>
+          <label>
+            Shared with everyone in this room
+            <input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              maxLength={100}
+              autoFocus
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          </label>
+          <div>
+            <button type="button" onClick={() => setEditingTitle(false)}>
+              Cancel
+            </button>
+            <button type="submit" disabled={!title.trim()}>
+              Save title
+            </button>
+          </div>
+        </form>
+      ) : null}
       <div className="header-spacer" />
       <div className={`agent-state ${running ? "is-running" : ""}`}>
         <span className="status-dot" />

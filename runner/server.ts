@@ -3,8 +3,14 @@ import { MiB, NetworkPolicy, Sandbox } from "microsandbox";
 import {
   parseExecuteRequest,
   type ExecuteRequest,
-  type ExecutionTarget,
 } from "./protocol";
+import {
+  MAX_WORKSPACE_CHANGE_BYTES,
+  MAX_WORKSPACE_FILE_BYTES,
+  parseGitChangePaths,
+  parseWorkspaceChanges,
+  type WorkspaceChange,
+} from "../src/shared/workspace-change";
 
 const port = parseInteger(
   process.env.MICROSANDBOX_RUNNER_PORT,
@@ -65,32 +71,27 @@ server.listen(port, host, () => {
 async function execute(input: ExecuteRequest, response: ServerResponse) {
   const startedAt = Date.now();
   const sandboxName = `relay-${input.roomID}`;
-  writeEvent(response, { type: "status", message: `Booting ${sandboxName}` });
-  const sandbox = await Sandbox.builder(sandboxName)
-    .image(image)
-    .cpus(2)
-    .memory(MiB(2_048))
-    .rootDisk(8_192)
-    .maxDuration(Math.ceil(input.timeoutMs / 1_000) + 120)
-    .network((network) =>
-      network.policy(NetworkPolicy.fromProfiles(["public"])),
-    )
-    .replaceWithTimeout(15_000)
-    .create();
+  const { sandbox, reused } = await openSandbox(sandboxName);
+  writeEvent(response, {
+    type: "status",
+    message: reused
+      ? `Resumed ${sandboxName}`
+      : `Booted ${sandboxName}`,
+  });
 
   try {
     writeEvent(response, {
       type: "status",
       message: `Checking out ${input.repository}@${input.commitSHA.slice(0, 12)}`,
     });
-    await checkedShell(
-      sandbox,
-      `mkdir -p /workspace && git clone --filter=blob:none --no-checkout ${shellQuote(`https://github.com/${input.repository}.git`)} /workspace/repository && git -C /workspace/repository checkout --detach ${shellQuote(input.commitSHA)}`,
-      120_000,
-    );
+    await prepareWorkspace(sandbox, input);
     const fs = sandbox.fs();
     for (const change of input.changes) {
       const fullPath = `/workspace/repository/${change.path}`;
+      if (change.content === null) {
+        if (await fs.exists(fullPath)) await fs.remove(fullPath);
+        continue;
+      }
       await checkedShell(
         sandbox,
         `mkdir -p ${shellQuote(parentDirectory(fullPath))}`,
@@ -105,8 +106,7 @@ async function execute(input: ExecuteRequest, response: ServerResponse) {
       });
     }
 
-    const command =
-      input.command ?? (await testCommand(sandbox, input.target!));
+    const command = `export PATH=/usr/local/lib/node_modules/corepack/shims:$PATH; ${input.command}`;
     writeEvent(response, { type: "status", message: `$ ${command}` });
     const stream = await sandbox.execStreamWith("sh", (exec) =>
       exec
@@ -127,6 +127,8 @@ async function execute(input: ExecuteRequest, response: ServerResponse) {
         exitCode = event.code;
       }
     }
+    const changes = await collectWorkspaceChanges(sandbox, input.commitSHA);
+    writeEvent(response, { type: "changes", changes });
     writeEvent(response, {
       type: "result",
       exitCode,
@@ -138,38 +140,94 @@ async function execute(input: ExecuteRequest, response: ServerResponse) {
   }
 }
 
-async function testCommand(
-  sandbox: Sandbox,
-  target: ExecutionTarget,
-): Promise<string> {
-  const packageFile = await sandbox
-    .fs()
-    .readToString("/workspace/repository/package.json")
-    .catch(() => undefined);
-  const packageJSON = packageFile
-    ? (JSON.parse(packageFile) as { scripts?: Record<string, string> })
-    : undefined;
-  const scripts = packageJSON?.scripts ?? {};
-  const selected =
-    target === "auto"
-      ? ["test", "typecheck", "build"].find((name) => scripts[name])
-      : target;
-  if (!selected || !scripts[selected])
-    return "git ls-files -z '*.js' '*.mjs' '*.cjs' | xargs -0 -r -n1 node --check";
-  const install = await installCommand(sandbox);
-  return `if [ ! -d node_modules ]; then ${install}; fi && npm run ${shellQuote(selected)}`;
+async function openSandbox(sandboxName: string) {
+  try {
+    return { sandbox: await Sandbox.start(sandboxName), reused: true };
+  } catch {
+    const sandbox = await Sandbox.builder(sandboxName)
+      .image(image)
+      .cpus(2)
+      .memory(MiB(2_048))
+      .rootDisk(8_192)
+      .maxDuration(720)
+      .network((network) =>
+        network.policy(NetworkPolicy.fromProfiles(["public"])),
+      )
+      .replaceWithTimeout(15_000)
+      .create();
+    return { sandbox, reused: false };
+  }
 }
 
-async function installCommand(sandbox: Sandbox): Promise<string> {
-  const entries = await sandbox.fs().list("/workspace/repository");
-  const names = new Set(entries.map((entry) => entry.path.split("/").pop()));
-  if (names.has("pnpm-lock.yaml"))
-    return "corepack pnpm install --frozen-lockfile";
-  if (names.has("yarn.lock")) return "corepack yarn install --immutable";
-  if (names.has("bun.lock") || names.has("bun.lockb"))
-    return "bun install --frozen-lockfile";
-  if (names.has("package-lock.json")) return "npm ci";
-  return "npm install";
+async function prepareWorkspace(
+  sandbox: Sandbox,
+  input: ExecuteRequest,
+) {
+  const expectedRemote = `https://github.com/${input.repository}.git`;
+  const existingRemote = await checkedShellOutput(
+    sandbox,
+    "git -C /workspace/repository remote get-url origin",
+    10_000,
+  ).catch(() => "");
+
+  if (existingRemote.trim() !== expectedRemote) {
+    await checkedShell(
+      sandbox,
+      `rm -rf /workspace/repository && mkdir -p /workspace && git clone --filter=blob:none --no-checkout ${shellQuote(expectedRemote)} /workspace/repository`,
+      120_000,
+    );
+  }
+  await checkedShell(
+    sandbox,
+    `git -C /workspace/repository fetch --filter=blob:none origin ${shellQuote(input.commitSHA)} && git -C /workspace/repository checkout --detach ${shellQuote(input.commitSHA)} && git -C /workspace/repository reset --hard ${shellQuote(input.commitSHA)} && git -C /workspace/repository clean -fd`,
+    120_000,
+  );
+}
+
+async function collectWorkspaceChanges(
+  sandbox: Sandbox,
+  baseCommitSHA: string,
+): Promise<WorkspaceChange[]> {
+  const nameStatus = await checkedShellOutput(
+    sandbox,
+    `git -C /workspace/repository diff --name-status -z ${shellQuote(baseCommitSHA)} --`,
+    30_000,
+  );
+  const untracked = await checkedShellOutput(
+    sandbox,
+    "git -C /workspace/repository ls-files --others --exclude-standard -z",
+    30_000,
+  );
+  const paths = parseGitChangePaths(nameStatus, untracked);
+  const fs = sandbox.fs();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const changes: WorkspaceChange[] = [];
+  let totalBytes = 0;
+
+  for (const change of paths) {
+    if (change.deleted) {
+      changes.push({ path: change.path, content: null });
+      continue;
+    }
+    const fullPath = `/workspace/repository/${change.path}`;
+    const metadata = await fs.stat(fullPath);
+    if (metadata.kind !== "file")
+      throw new Error(`Changed path is not a regular file: ${change.path}`);
+    if (metadata.size > MAX_WORKSPACE_FILE_BYTES)
+      throw new Error(`Changed file is too large: ${change.path}`);
+    const bytes = await fs.read(fullPath);
+    totalBytes += bytes.byteLength;
+    if (totalBytes > MAX_WORKSPACE_CHANGE_BYTES)
+      throw new Error("Workspace changes are too large");
+    let content: string;
+    try {
+      content = decoder.decode(bytes);
+    } catch {
+      throw new Error(`Changed file is not UTF-8 text: ${change.path}`);
+    }
+    changes.push({ path: change.path, content });
+  }
+  return parseWorkspaceChanges(changes);
 }
 
 async function checkedShell(
@@ -186,6 +244,23 @@ async function checkedShell(
         result.stdout().trim() ||
         `Command exited with ${result.code}`,
     );
+}
+
+async function checkedShellOutput(
+  sandbox: Sandbox,
+  command: string,
+  timeoutMs: number,
+) {
+  const result = await sandbox.execWith("sh", (exec) =>
+    exec.args(["-lc", command]).timeout(timeoutMs).stdinNull(),
+  );
+  if (!result.success)
+    throw new Error(
+      result.stderr().trim() ||
+        result.stdout().trim() ||
+        `Command exited with ${result.code}`,
+    );
+  return result.stdout();
 }
 
 async function withRoomLock(roomID: string, operation: () => Promise<void>) {

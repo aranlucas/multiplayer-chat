@@ -360,6 +360,18 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       return;
     }
 
+    if (message.type === "room.rename") {
+      if (participant.role !== "maintainer")
+        throw new Error("Only maintainers can rename the room");
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_room SET title = ? WHERE singleton = 1",
+        message.title,
+      );
+      this.broadcast({ type: "room", room: this.getRoom() });
+      this.send(socket, { type: "ack", requestID: message.requestID });
+      return;
+    }
+
     if (message.type === "agent.pause") {
       const room = this.getRoom();
       if (room.opencodeSessionID) {
@@ -409,11 +421,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     const searchTerm = extractSearchTerm(prompt);
     const workspace = await this.workspace.ensureReady();
     const searchOutput = await this.workspace.search(searchTerm);
-    const testOutput = await this.workspace
-      .runTests("auto")
-      .catch((error) =>
-        error instanceof Error ? error.message : "Repository checks failed",
-      );
+    const diffOutput = await this.workspace.diff();
     const workspaceKind = workspace.directory.startsWith("github://")
       ? "Workers-native GitHub snapshot"
       : "Cloudflare Sandbox";
@@ -423,14 +431,14 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
           delay: 180,
           payload: {
             type: "reasoning",
-            text: `I’ll inspect ${workspace.repository}@${workspace.commitSHA.slice(0, 8)} for ${searchTerm}, then run the repository's available checks.`,
+            text: `I’ll inspect ${workspace.repository}@${workspace.commitSHA.slice(0, 8)} for ${searchTerm}, then read the shared Git diff.`,
           },
         },
         {
           delay: 260,
           payload: {
             type: "tool",
-            tool: "relay.repo_search",
+            tool: "bash",
             status: "running",
             summary: "Searching the repository…",
           },
@@ -439,7 +447,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
           delay: 320,
           payload: {
             type: "tool",
-            tool: "relay.repo_search",
+            tool: "bash",
             status: "completed",
             summary:
               searchOutput === "No matches found."
@@ -452,19 +460,17 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
           delay: 280,
           payload: {
             type: "tool",
-            tool: "relay.run_tests",
+            tool: "bash",
             status: "completed",
-            summary: testOutput.includes("failed")
-              ? "Checks reported a failure"
-              : "Repository checks completed",
-            output: testOutput,
+            summary: "Shared Git diff inspected",
+            output: diffOutput,
           },
         },
         {
           delay: 240,
           payload: {
             type: "text",
-            text: `I inspected the real workspace pinned at ${workspace.commitSHA.slice(0, 12)}. The search and check transcripts above came from the ${workspaceKind}; no repository files were changed.`,
+            text: `I inspected the real workspace pinned at ${workspace.commitSHA.slice(0, 12)}. The search and diff transcripts above came from the ${workspaceKind}; no repository files were changed.`,
           },
         },
       ];
@@ -622,7 +628,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
   private getEvents(): TimelineEvent[] {
     return this.ctx.storage.sql
-      .exec<EventRow>("SELECT * FROM relay_events ORDER BY seq ASC LIMIT 500")
+      .exec<EventRow>(
+        "SELECT * FROM (SELECT * FROM relay_events ORDER BY seq DESC LIMIT 500) ORDER BY seq ASC",
+      )
       .toArray()
       .map((row) => this.rowToEvent(row));
   }

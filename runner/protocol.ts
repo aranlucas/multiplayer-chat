@@ -1,17 +1,16 @@
-export type ExecutionTarget = "auto" | "test" | "typecheck" | "build";
+import {
+  parseWorkspaceChanges,
+  type WorkspaceChange,
+} from "../src/shared/workspace-change";
 
-export interface WorkspaceChange {
-  path: string;
-  content: string;
-}
+export type { WorkspaceChange } from "../src/shared/workspace-change";
 
 export interface ExecuteRequest {
   roomID: string;
   repository: string;
   commitSHA: string;
   changes: WorkspaceChange[];
-  target?: ExecutionTarget;
-  command?: string;
+  command: string;
   timeoutMs: number;
 }
 
@@ -36,17 +35,11 @@ export function parseExecuteRequest(value: unknown): ExecuteRequest {
     !COMMIT_PATTERN.test(input.commitSHA)
   )
     throw new Error("Invalid commit SHA");
-  if (!Array.isArray(input.changes) || input.changes.length > 500)
-    throw new Error("Invalid workspace changes");
-  const changes = input.changes.map(parseChange);
-  const target = parseTarget(input.target);
+  const changes = parseWorkspaceChanges(input.changes);
   const command =
     typeof input.command === "string" ? input.command.trim() : undefined;
   if (command && command.length > 4_000) throw new Error("Command is too long");
-  if (!command && !target)
-    throw new Error("A command or test target is required");
-  if (command && target)
-    throw new Error("Choose either a command or test target");
+  if (!command) throw new Error("A command is required");
   const timeoutMs =
     typeof input.timeoutMs === "number" ? Math.floor(input.timeoutMs) : 300_000;
   if (timeoutMs < 1_000 || timeoutMs > 600_000)
@@ -56,38 +49,7 @@ export function parseExecuteRequest(value: unknown): ExecuteRequest {
     repository: input.repository,
     commitSHA: input.commitSHA,
     changes,
-    target,
     command,
     timeoutMs,
   };
-}
-
-function parseChange(value: unknown): WorkspaceChange {
-  if (!value || typeof value !== "object")
-    throw new Error("Invalid workspace change");
-  const change = value as Record<string, unknown>;
-  if (typeof change.path !== "string" || !isSafePath(change.path))
-    throw new Error("Invalid changed file path");
-  if (typeof change.content !== "string" || change.content.length > 500_000)
-    throw new Error("Invalid changed file content");
-  return { path: change.path, content: change.content };
-}
-
-function parseTarget(value: unknown): ExecutionTarget | undefined {
-  return value === "auto" ||
-    value === "test" ||
-    value === "typecheck" ||
-    value === "build"
-    ? value
-    : undefined;
-}
-
-function isSafePath(path: string): boolean {
-  return (
-    Boolean(path) &&
-    path.length <= 500 &&
-    !path.startsWith("/") &&
-    !path.includes("\\") &&
-    !path.split("/").includes("..")
-  );
 }

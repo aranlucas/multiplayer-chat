@@ -1,12 +1,17 @@
 import { getSandbox, type Sandbox } from "@cloudflare/sandbox";
 import {
   MicrosandboxRunnerClient,
-  type ExecutionTarget,
   type MicrosandboxRunnerEnv,
   type RunnerEvent,
-  type WorkspaceChange,
 } from "./microsandbox-runner";
-import { applyUnifiedDiff } from "./unified-diff";
+import {
+  MAX_WORKSPACE_CHANGE_BYTES,
+  MAX_WORKSPACE_FILE_BYTES,
+  parseGitChangePaths,
+  parseWorkspaceChanges,
+  type WorkspaceChange,
+} from "../shared/workspace-change";
+import { replaceExact } from "../shared/exact-edit";
 
 export interface WorkspaceEnv extends MicrosandboxRunnerEnv {
   Sandbox?: DurableObjectNamespace<Sandbox>;
@@ -66,11 +71,10 @@ export class RepositoryWorkspace {
     if (this.env.Sandbox) {
       const sandbox = this.sandbox(this.room().room_id);
       await sandbox.exec(`rm -rf ${WORKSPACE_DIRECTORY}`, { timeout: 30_000 });
-    } else {
-      this.ensureRemoteSchema();
-      this.storage.sql.exec("DELETE FROM relay_workspace_files");
-      this.storage.sql.exec("DELETE FROM relay_workspace_changes");
     }
+    this.ensureRemoteSchema();
+    this.storage.sql.exec("DELETE FROM relay_workspace_files");
+    this.storage.sql.exec("DELETE FROM relay_workspace_changes");
     return this.ensureReady();
   }
 
@@ -129,14 +133,20 @@ export class RepositoryWorkspace {
     if (!this.env.Sandbox) {
       this.ensureRemoteSchema();
       const changes = this.storage.sql
-        .exec<{ path: string; original: string; content: string }>(
-          "SELECT path, original, content FROM relay_workspace_changes ORDER BY path",
+        .exec<{
+          path: string;
+          original: string;
+          content: string;
+          deleted: number;
+        }>(
+          "SELECT path, original, content, deleted FROM relay_workspace_changes ORDER BY path",
         )
         .toArray();
       if (!changes.length) return "Working tree is clean.";
       return truncate(
         changes
           .map((change) => {
+            if (change.deleted) return ` D ${change.path}`;
             const before = change.original.split("\n").length;
             const after = change.content.split("\n").length;
             return ` M ${change.path} (${before} → ${after} lines)`;
@@ -158,102 +168,48 @@ export class RepositoryWorkspace {
     return truncate(result.stdout || "Working tree is clean.");
   }
 
-  async applyPatch(patch: string): Promise<string> {
-    if (!patch.trim() || patch.length > 250_000)
-      throw new Error("Patch must be between 1 and 250,000 characters");
-    await this.ensureReady();
-    if (!this.env.Sandbox) {
-      const changed = this.applyRemotePatch(patch);
-      return `${changed.map((path) => ` M ${path}`).join("\n")}\n${await this.diff()}`;
-    }
-    const sandbox = this.sandbox(this.room().room_id);
-    const patchPath = `/tmp/relay-${crypto.randomUUID()}.patch`;
-    await sandbox.writeFile(patchPath, patch);
-    try {
-      const result = await sandbox.exec(
-        `git apply --whitespace=nowarn ${shellQuote(patchPath)}`,
-        {
-          cwd: WORKSPACE_DIRECTORY,
-          timeout: 60_000,
-        },
-      );
-      if (!result.success)
-        throw new Error(compactFailure("Patch could not be applied", result));
-      return this.diff();
-    } finally {
-      await sandbox.deleteFile(patchPath).catch(() => undefined);
-    }
-  }
-
-  async runTests(
-    target: ExecutionTarget,
-    onEvent?: (event: RunnerEvent) => void | Promise<void>,
+  async editFile(
+    filePath: string,
+    oldString: string,
+    newString: string,
+    replaceAll = false,
   ): Promise<string> {
-    const workspace = await this.ensureReady();
-    if (this.runner.configured) {
-      return this.runner.execute(
-        {
-          roomID: this.room().room_id,
-          repository: workspace.repository,
-          commitSHA: workspace.commitSHA,
-          changes: this.workspaceChanges(),
-          target,
-          timeoutMs: 300_000,
-        },
-        onEvent,
+    const path = normalizeWorkspacePath(filePath);
+    if (!oldString || oldString.length > 250_000)
+      throw new Error("oldString must be between 1 and 250,000 characters");
+    if (newString.length > 250_000)
+      throw new Error("newString must not exceed 250,000 characters");
+    if (oldString === newString)
+      throw new Error("oldString and newString must be different");
+    await this.ensureReady();
+    if (this.env.Sandbox) {
+      const sandbox = this.sandbox(this.room().room_id);
+      const file = await sandbox
+        .readFile(`${WORKSPACE_DIRECTORY}/${path}`)
+        .catch(() => undefined);
+      if (!file) throw new Error(`File does not exist: ${path}`);
+      const content = replaceExact(
+        file.content,
+        oldString,
+        newString,
+        replaceAll,
       );
-    }
-    if (!this.env.Sandbox) return this.checkRemoteSnapshot(target);
-    const sandbox = this.sandbox(this.room().room_id);
-    const packageFile = await sandbox
-      .readFile(`${WORKSPACE_DIRECTORY}/package.json`)
-      .catch(() => undefined);
-    const packageJSON = packageFile
-      ? (JSON.parse(packageFile.content) as {
-          scripts?: Record<string, string>;
-        })
-      : undefined;
-    const scripts = packageJSON?.scripts ?? {};
-    const selected =
-      target === "auto"
-        ? ["test", "typecheck", "build"].find((name) => scripts[name])
-        : target;
-
-    let command: string;
-    if (selected && scripts[selected]) {
-      const dependencies = await sandbox.exec("test -d node_modules", {
-        cwd: WORKSPACE_DIRECTORY,
-        timeout: 5_000,
-      });
-      if (!dependencies.success) {
-        const install = await sandbox.exec(await this.installCommand(sandbox), {
-          cwd: WORKSPACE_DIRECTORY,
-          timeout: 300_000,
-        });
-        if (!install.success)
-          throw new Error(
-            compactFailure("Dependency installation failed", install),
-          );
-      }
-      command = `npm run ${shellQuote(selected)}`;
+      ensureFileSize(path, content);
+      await sandbox.writeFile(`${WORKSPACE_DIRECTORY}/${path}`, content);
+      this.replaceWorkspaceChanges(await this.sandboxChanges(sandbox));
     } else {
-      command =
-        "git ls-files -z '*.js' '*.mjs' '*.cjs' | xargs -0 -r -n1 node --check";
-    }
-
-    const result = await sandbox.exec(command, {
-      cwd: WORKSPACE_DIRECTORY,
-      timeout: 300_000,
-    });
-    const output = [result.stdout, result.stderr].filter(Boolean).join("\n");
-    if (!result.success)
-      throw new Error(
-        truncate(output || `Command exited with ${result.exitCode}`),
+      const current = this.remoteFiles().get(path);
+      if (current === undefined) throw new Error(`File does not exist: ${path}`);
+      const content = replaceExact(
+        current,
+        oldString,
+        newString,
+        replaceAll,
       );
-    return truncate(
-      output ||
-        `✓ ${selected ? `npm run ${selected}` : "JavaScript syntax checks"} passed`,
-    );
+      ensureFileSize(path, content);
+      this.storeWorkspaceChange({ path, content });
+    }
+    return this.diff();
   }
 
   async runCommand(
@@ -266,7 +222,7 @@ export class RepositoryWorkspace {
     const workspace = await this.ensureReady();
     if (this.runner.configured) {
       try {
-        return await this.runner.execute(
+        const execution = await this.runner.execute(
           {
             roomID: this.room().room_id,
             repository: workspace.repository,
@@ -277,6 +233,9 @@ export class RepositoryWorkspace {
           },
           onEvent,
         );
+        this.replaceWorkspaceChanges(execution.changes);
+        if (execution.exitCode !== 0) throw new Error(execution.output);
+        return execution.output;
       } catch (error) {
         console.error("Microsandbox command execution failed", error);
         throw error;
@@ -290,6 +249,9 @@ export class RepositoryWorkspace {
       cwd: WORKSPACE_DIRECTORY,
       timeout: 300_000,
     });
+    this.replaceWorkspaceChanges(
+      await this.sandboxChanges(this.sandbox(this.room().room_id)),
+    );
     const output = [result.stdout, result.stderr].filter(Boolean).join("\n");
     if (!result.success)
       throw new Error(
@@ -306,20 +268,6 @@ export class RepositoryWorkspace {
         "There are no shared workspace changes to put in a pull request",
       );
     return { ...workspace, changes };
-  }
-
-  private async installCommand(
-    sandbox: ReturnType<typeof getSandbox>,
-  ): Promise<string> {
-    const files = await sandbox.listFiles(WORKSPACE_DIRECTORY);
-    const names = new Set(files.files.map((file) => file.name));
-    if (names.has("pnpm-lock.yaml"))
-      return "corepack pnpm install --frozen-lockfile";
-    if (names.has("yarn.lock")) return "corepack yarn install --immutable";
-    if (names.has("bun.lock") || names.has("bun.lockb"))
-      return "bun install --frozen-lockfile";
-    if (names.has("package-lock.json")) return "npm ci";
-    return "npm install";
   }
 
   private async prepare(): Promise<WorkspaceInfo> {
@@ -425,9 +373,18 @@ export class RepositoryWorkspace {
       CREATE TABLE IF NOT EXISTS relay_workspace_changes (
         path TEXT PRIMARY KEY,
         original TEXT NOT NULL,
-        content TEXT NOT NULL
+        content TEXT NOT NULL,
+        deleted INTEGER NOT NULL DEFAULT 0
       );
     `);
+    const columns = this.storage.sql
+      .exec<{ name: string }>("PRAGMA table_info(relay_workspace_changes)")
+      .toArray();
+    if (!columns.some((column) => column.name === "deleted")) {
+      this.storage.sql.exec(
+        "ALTER TABLE relay_workspace_changes ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0",
+      );
+    }
   }
 
   private async prepareRemote(
@@ -499,30 +456,17 @@ export class RepositoryWorkspace {
     return matches.length ? truncate(matches.join("\n")) : "No matches found.";
   }
 
-  private checkRemoteSnapshot(
-    target: "auto" | "test" | "typecheck" | "build",
-  ): string {
-    this.ensureRemoteSchema();
-    const files = this.remoteFiles();
-    const packageFile = files.get("package.json");
-    if (packageFile) JSON.parse(packageFile);
-    return [
-      `✓ Workers-native ${target} preflight passed`,
-      `✓ ${files.size} commit-pinned text files are readable`,
-      packageFile
-        ? "✓ package.json is valid JSON"
-        : "• no package.json; package-script execution skipped",
-      "• full command execution requires the free Microsandbox runner to be online",
-    ].join("\n");
-  }
-
   private workspaceChanges(): WorkspaceChange[] {
     this.ensureRemoteSchema();
     return this.storage.sql
-      .exec<WorkspaceChange>(
-        "SELECT path, content FROM relay_workspace_changes ORDER BY path",
+      .exec<{ path: string; content: string; deleted: number }>(
+        "SELECT path, content, deleted FROM relay_workspace_changes ORDER BY path",
       )
-      .toArray();
+      .toArray()
+      .map((change) => ({
+        path: change.path,
+        content: change.deleted ? null : change.content,
+      }));
   }
 
   private remoteFiles(): Map<string, string> {
@@ -536,37 +480,107 @@ export class RepositoryWorkspace {
         .map((file) => [file.path, file.content] as const),
     );
     for (const change of this.storage.sql
-      .exec<{ path: string; content: string }>(
-        "SELECT path, content FROM relay_workspace_changes",
+      .exec<{ path: string; content: string; deleted: number }>(
+        "SELECT path, content, deleted FROM relay_workspace_changes",
       )
       .toArray()) {
-      files.set(change.path, change.content);
+      if (change.deleted) files.delete(change.path);
+      else files.set(change.path, change.content);
     }
     return files;
   }
 
-  private applyRemotePatch(patch: string): string[] {
+  private storeWorkspaceChange(change: WorkspaceChange) {
     this.ensureRemoteSchema();
-    const files = this.remoteFiles();
-    const changes = applyUnifiedDiff(files, patch);
-    for (const change of changes) {
-      const existing = this.storage.sql
-        .exec<{ original: string }>(
-          "SELECT original FROM relay_workspace_changes WHERE path = ?",
-          change.path,
-        )
-        .toArray()[0];
-      this.storage.sql.exec(
-        "INSERT INTO relay_workspace_changes (path, original, content) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET content = excluded.content",
-        change.path,
-        existing?.original ?? change.original,
-        change.content,
-      );
-    }
     this.storage.sql.exec(
       "UPDATE relay_room SET pull_request_url = NULL, pull_request_branch = NULL WHERE singleton = 1",
     );
-    return changes.map((change) => change.path);
+    const base = this.storage.sql
+      .exec<{ content: string }>(
+        "SELECT content FROM relay_workspace_files WHERE path = ?",
+        change.path,
+      )
+      .toArray()[0];
+    if (
+      (base && change.content === base.content) ||
+      (!base && change.content === null)
+    ) {
+      this.storage.sql.exec(
+        "DELETE FROM relay_workspace_changes WHERE path = ?",
+        change.path,
+      );
+      return;
+    }
+    const existing = this.storage.sql
+      .exec<{ original: string }>(
+        "SELECT original FROM relay_workspace_changes WHERE path = ?",
+        change.path,
+      )
+      .toArray()[0];
+    this.storage.sql.exec(
+      "INSERT INTO relay_workspace_changes (path, original, content, deleted) VALUES (?, ?, ?, ?) ON CONFLICT(path) DO UPDATE SET content = excluded.content, deleted = excluded.deleted",
+      change.path,
+      existing?.original ?? base?.content ?? "",
+      change.content ?? "",
+      change.content === null ? 1 : 0,
+    );
+  }
+
+  private replaceWorkspaceChanges(value: WorkspaceChange[]) {
+    const changes = parseWorkspaceChanges(value);
+    this.ensureRemoteSchema();
+    this.storage.sql.exec(
+      "UPDATE relay_room SET pull_request_url = NULL, pull_request_branch = NULL WHERE singleton = 1",
+    );
+    this.storage.sql.exec("DELETE FROM relay_workspace_changes");
+    for (const change of changes) this.storeWorkspaceChange(change);
+  }
+
+  private async sandboxChanges(
+    sandbox: ReturnType<typeof getSandbox>,
+  ): Promise<WorkspaceChange[]> {
+    const baseCommitSHA = this.room().commit_sha;
+    if (!baseCommitSHA) throw new Error("Repository commit is not pinned");
+    const nameStatus = await sandbox.exec(
+      `git diff --name-status -z ${shellQuote(baseCommitSHA)} --`,
+      { cwd: WORKSPACE_DIRECTORY, timeout: 30_000 },
+    );
+    if (!nameStatus.success)
+      throw new Error(
+        compactFailure("Unable to inspect changed files", nameStatus),
+      );
+    const untracked = await sandbox.exec(
+      "git ls-files --others --exclude-standard -z",
+      { cwd: WORKSPACE_DIRECTORY, timeout: 30_000 },
+    );
+    if (!untracked.success)
+      throw new Error(
+        compactFailure("Unable to inspect untracked files", untracked),
+      );
+    const paths = parseGitChangePaths(nameStatus.stdout, untracked.stdout);
+    const changes: WorkspaceChange[] = [];
+    let totalBytes = 0;
+    for (const change of paths) {
+      if (change.deleted) {
+        changes.push({ path: change.path, content: null });
+        continue;
+      }
+      const regular = await sandbox.exec(
+        `test -f ${shellQuote(change.path)} && test ! -L ${shellQuote(change.path)}`,
+        { cwd: WORKSPACE_DIRECTORY, timeout: 5_000 },
+      );
+      if (!regular.success)
+        throw new Error(`Changed path is not a regular file: ${change.path}`);
+      const file = await sandbox.readFile(
+        `${WORKSPACE_DIRECTORY}/${change.path}`,
+      );
+      ensureFileSize(change.path, file.content);
+      totalBytes += new TextEncoder().encode(file.content).byteLength;
+      if (totalBytes > MAX_WORKSPACE_CHANGE_BYTES)
+        throw new Error("Workspace changes are too large");
+      changes.push({ path: change.path, content: file.content });
+    }
+    return parseWorkspaceChanges(changes);
   }
 }
 
@@ -704,6 +718,19 @@ function validateRelativePath(value: string): string {
     throw new Error("File path must stay within the repository");
   }
   return normalized;
+}
+
+function normalizeWorkspacePath(value: string): string {
+  const trimmed = value.trim();
+  const relative = trimmed.startsWith(`${WORKSPACE_DIRECTORY}/`)
+    ? trimmed.slice(WORKSPACE_DIRECTORY.length + 1)
+    : trimmed;
+  return validateRelativePath(relative);
+}
+
+function ensureFileSize(path: string, content: string) {
+  if (new TextEncoder().encode(content).byteLength > MAX_WORKSPACE_FILE_BYTES)
+    throw new Error(`Changed file is too large: ${path}`);
 }
 
 function shellQuote(value: string): string {

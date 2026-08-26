@@ -37,6 +37,22 @@ function stringifyToolInput(value: unknown) {
   }
 }
 
+function summarizeToolInput(tool: string, value: unknown) {
+  const input = asRecord(value);
+  if (
+    (tool === "bash" || tool === "shell") &&
+    typeof input.command === "string"
+  )
+    return `$ ${input.command}`;
+  if (tool === "edit" && typeof input.filePath === "string")
+    return `Editing ${input.filePath}${input.replaceAll === true ? " (all matches)" : ""}`;
+  return stringifyToolInput(value);
+}
+
+function displayToolName(tool: string) {
+  return tool === "shell" ? "bash" : tool;
+}
+
 function textFromContent(value: unknown) {
   if (!Array.isArray(value)) return undefined;
   return value
@@ -93,7 +109,7 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
       status:
         payload.status === "running"
           ? "running"
-          : payload.status === "failed"
+          : payload.status === "failed" || payload.status === "error"
             ? "failed"
             : "completed",
     };
@@ -134,11 +150,11 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
       };
     }
     if (type === "session.tool.called") {
-      const input = stringifyToolInput(data.input);
+      const tool = String(data.tool ?? data.name ?? "tool call");
       return {
         type: "tool",
-        title: String(data.tool ?? data.name ?? "tool call"),
-        detail: input,
+        title: displayToolName(tool),
+        detail: summarizeToolInput(tool, data.input),
         status: "running",
       };
     }
@@ -151,19 +167,24 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
       };
     }
     if (type === "session.tool.success") {
+      const tool = String(data.tool ?? data.name ?? "tool call");
       return {
         type: "tool",
-        title: String(data.tool ?? data.name ?? "tool call"),
-        detail: data.executed === false ? "Not executed" : "Completed",
+        title: displayToolName(tool),
+        detail: summarizeToolInput(tool, data.input) || "Completed",
         output: textFromContent(data.content),
         status: "completed",
       };
     }
     if (type === "session.tool.failed") {
+      const tool = String(data.tool ?? data.name ?? "tool call");
       return {
         type: "tool",
-        title: String(data.tool ?? "tool call"),
-        detail: String(data.error ?? "Tool failed"),
+        title: displayToolName(tool),
+        detail:
+          typeof data.error === "string"
+            ? data.error
+            : stringifyToolInput(data.error) || "Tool failed",
         status: "failed",
       };
     }

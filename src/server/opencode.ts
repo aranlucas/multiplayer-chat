@@ -19,166 +19,81 @@ export interface WorkerEnv extends GitHubOAuthEnv {
   MICROSANDBOX_RUNNER_TOKEN?: string;
 }
 
-export function relayPlugin(workspace: RepositoryWorkspace): Plugin {
+function relayPlugin(workspace: RepositoryWorkspace): Plugin {
   return {
     id: "relay.collaboration",
     async setup(ctx) {
       await ctx.agent.transform((agents) => {
         agents.update("build", (agent) => {
-          agent.description =
-            "Investigates and modifies the room's real, commit-pinned GitHub workspace. Use Relay tools for status, search, file reads, diffs, tests, and patches. relay.read_file adds a line-number gutter for display; never include that gutter in patch context. relay.apply_patch accepts only a standard unified diff with ---/+++/numeric @@ headers, never the *** Begin Patch format. Explain evidence from tool output. This room runs in dangerous always-allow mode, so tools do not pause for approval.";
+          const instructions =
+            "Investigates and modifies the room's real, commit-pinned GitHub workspace. Use bash or its shell alias for repository inspection, search, Git status and diffs, file creation or deletion, dependency installation, and verification commands. Bash starts from the room's durable overlay and writes all resulting UTF-8 file changes back to it, even when a command exits non-zero. Each room keeps its isolated sandbox disk between Bash calls, so installed dependencies and caches remain available. Use edit for precise replacements in existing files; paths are relative to the repository. Explain evidence from tool output. This room runs in dangerous always-allow mode, so tools do not pause for approval.";
+          agent.description = instructions;
+          agent.system = `${instructions} Your only repository tools are bash, shell, and edit. Do not use read, write, glob, grep, apply_patch, or other built-in filesystem tools because they address the Workerd bundle rather than the shared repository.`;
+          agent.permissions = relayPermissions();
         });
-      });
-
-      await ctx.permission.hook("evaluate", (event) => {
-        event.effect = "allow";
       });
 
       await ctx.tool.transform((tools) => {
-        tools.add({
-          name: "repo_status",
-          description:
-            "Return the selected GitHub repository, branch, and pinned commit for this room.",
-          input: {
-            type: "object",
-            properties: {},
-            additionalProperties: false,
-          },
-          options: { namespace: "relay", codemode: true },
-          async execute(_input, tool) {
-            await tool.progress({
-              status: "Preparing the commit-pinned workspace",
-            });
-            const info = await workspace.ensureReady();
-            return {
-              content: `repository: ${info.repository}\nbranch: ${info.branch}\ncommit: ${info.commitSHA}\nworkspace: ${info.directory}`,
-            };
-          },
-        });
-
-        tools.add({
-          name: "repo_search",
-          description:
-            "Search the connected repository for a string or symbol.",
-          input: {
-            type: "object",
-            properties: { query: { type: "string" } },
-            required: ["query"],
-            additionalProperties: false,
-          },
-          options: { namespace: "relay", codemode: true },
-          async execute(input, tool) {
-            const query = String((input as { query: string }).query);
-            await tool.progress({ status: `Searching for ${query}` });
-            return { content: await workspace.search(query) };
-          },
-        });
-
-        tools.add({
-          name: "read_file",
-          description:
-            "Read a UTF-8 file from the connected repository with an `N │ ` line-number gutter for display. Omit the gutter when constructing patches.",
-          input: {
-            type: "object",
-            properties: { path: { type: "string" } },
-            required: ["path"],
-            additionalProperties: false,
-          },
-          options: { namespace: "relay", codemode: true },
-          async execute(input, tool) {
-            const path = String((input as { path: string }).path);
-            await tool.progress({ status: `Reading ${path}` });
-            return { content: await workspace.readFile(path) };
-          },
-        });
-
-        tools.add({
-          name: "git_diff",
-          description:
-            "Read the current uncommitted diff in the shared repository workspace.",
-          input: {
-            type: "object",
-            properties: {},
-            additionalProperties: false,
-          },
-          options: { namespace: "relay", codemode: true },
-          async execute(_input, tool) {
-            await tool.progress({ status: "Reading the workspace diff" });
-            return { content: await workspace.diff() };
-          },
-        });
-
-        tools.add({
-          name: "run_tests",
-          description:
-            "Run the repository test target and return the terminal transcript.",
-          input: {
-            type: "object",
-            properties: {
-              target: {
-                type: "string",
-                enum: ["auto", "test", "typecheck", "build"],
-              },
+        for (const name of ["bash", "shell"] as const) {
+          tools.add({
+            name,
+            description:
+              "Execute one shell command in the room's commit-pinned repository. The command runs in a hardware-isolated Linux sandbox with dangerous always-allow authority. Tracked, untracked, modified, and deleted UTF-8 text files are synchronized back to the shared Durable Object after the command, including when it exits non-zero. Use shell commands such as rg, sed, git, and package-manager scripts for all repository inspection and verification.",
+            input: {
+              type: "object",
+              properties: { command: { type: "string" } },
+              required: ["command"],
+              additionalProperties: false,
             },
-            required: ["target"],
-            additionalProperties: false,
-          },
-          options: { namespace: "relay", codemode: true },
-          async execute(input, tool) {
-            const target = String((input as { target: string }).target) as
-              "auto" | "test" | "typecheck" | "build";
-            await tool.progress({ status: `Running ${target}` });
-            return {
-              content: await workspace.runTests(target, (event) =>
-                tool.progress({ status: runnerProgress(event) }),
-              ),
-            };
-          },
-        });
+            options: { permission: name, codemode: false },
+            async execute(input, tool) {
+              const command = String((input as { command: string }).command);
+              await tool.progress({ status: `$ ${command.slice(0, 160)}` });
+              return {
+                content: await workspace.runCommand(command, (event) =>
+                  tool.progress({ status: runnerProgress(event) }),
+                ),
+              };
+            },
+          });
+        }
 
         tools.add({
-          name: "run_command",
+          name: "edit",
           description:
-            "Run an arbitrary shell command in the commit-pinned Microsandbox workspace and stream its terminal output.",
-          input: {
-            type: "object",
-            properties: { command: { type: "string" } },
-            required: ["command"],
-            additionalProperties: false,
-          },
-          options: { namespace: "relay", permission: "bash", codemode: true },
-          async execute(input, tool) {
-            const command = String((input as { command: string }).command);
-            await tool.progress({ status: `$ ${command.slice(0, 160)}` });
-            return {
-              content: await workspace.runCommand(command, (event) =>
-                tool.progress({ status: runnerProgress(event) }),
-              ),
-            };
-          },
-        });
-
-        tools.add({
-          name: "apply_patch",
-          description:
-            "Apply a standard unified diff to the shared repository workspace immediately in dangerous always-allow mode. The patch must use `--- a/path`, `+++ b/path`, and numeric `@@ -oldStart,oldCount +newStart,newCount @@` headers. Do not use `*** Begin Patch`, `*** Update File`, or unnumbered `@@` markers.",
+            "Perform an exact string replacement in an existing UTF-8 repository file and persist it to the shared Durable Object. oldString must match exactly, including whitespace. By default it must match once; set replaceAll only when every exact occurrence should change.",
           input: {
             type: "object",
             properties: {
-              patch: {
+              filePath: {
                 type: "string",
                 description:
-                  "Standard unified diff, for example: `--- a/README.md\\n+++ b/README.md\\n@@ -1,1 +1,2 @@\\n # Project\\n+Verified.`",
+                  "Repository-relative path, or an absolute path beneath /workspace/repository.",
               },
+              oldString: { type: "string" },
+              newString: { type: "string" },
+              replaceAll: { type: "boolean", default: false },
             },
-            required: ["patch"],
+            required: ["filePath", "oldString", "newString"],
             additionalProperties: false,
           },
-          options: { namespace: "relay", permission: "edit", codemode: true },
+          options: { permission: "edit", codemode: false },
           async execute(input, tool) {
-            const patch = String((input as { patch: string }).patch);
-            await tool.progress({ status: "Applying the patch" });
-            return { content: await workspace.applyPatch(patch) };
+            const edit = input as {
+              filePath: string;
+              oldString: string;
+              newString: string;
+              replaceAll?: boolean;
+            };
+            await tool.progress({ status: `Editing ${edit.filePath}` });
+            return {
+              content: await workspace.editFile(
+                String(edit.filePath),
+                String(edit.oldString),
+                String(edit.newString),
+                edit.replaceAll === true,
+              ),
+            };
           },
         });
       });
@@ -188,6 +103,8 @@ export function relayPlugin(workspace: RepositoryWorkspace): Plugin {
 
 function runnerProgress(event: RunnerEvent): string {
   if (event.type === "status") return event.message.slice(0, 500);
+  if (event.type === "changes")
+    return `${event.changes.length} changed file${event.changes.length === 1 ? "" : "s"} synchronized`;
   if (event.type === "result")
     return `Process exited ${event.exitCode} in ${(event.durationMs / 1_000).toFixed(1)}s`;
   const line = event.data.trim();
@@ -203,10 +120,20 @@ function parseModelRef(ref: string) {
   return { providerID, model: modelParts.join("/") };
 }
 
+function relayPermissions() {
+  return [
+    { action: "*", resource: "*", effect: "deny" as const },
+    { action: "bash", resource: "*", effect: "allow" as const },
+    { action: "shell", resource: "*", effect: "allow" as const },
+    { action: "edit", resource: "*", effect: "allow" as const },
+  ];
+}
+
 export function hasLiveOpenCode(env: WorkerEnv) {
   if (env.OPENCODE_MODE !== "live") return false;
   return env.OPENCODE_PROVIDER === "opencode-zen"
-    ? Boolean(env.OPENCODE_ZEN_API_KEY)
+    ? Boolean(env.OPENCODE_ZEN_API_KEY) ||
+        parseModelRef(env.OPENCODE_MODEL).model.endsWith("-free")
     : Boolean(env.CLOUDFLARE_API_TOKEN);
 }
 
@@ -222,7 +149,7 @@ export async function createOpenCode(
     env.OPENCODE_PROVIDER === "opencode-zen"
       ? ({
           default_agent: "build",
-          permissions: [{ action: "*", resource: "*", effect: "allow" }],
+          permissions: relayPermissions(),
           model: selected,
           providers: {
             opencode: {
@@ -230,7 +157,9 @@ export async function createOpenCode(
               package: "@opencode-ai/ai/providers/openai-compatible",
               settings: {
                 baseURL: "https://opencode.ai/zen/v1",
-                apiKey: env.OPENCODE_ZEN_API_KEY,
+                ...(env.OPENCODE_ZEN_API_KEY
+                  ? { apiKey: env.OPENCODE_ZEN_API_KEY }
+                  : {}),
               },
               models: {
                 [selected.model]: {
@@ -248,7 +177,7 @@ export async function createOpenCode(
         } as OpenCodeWorkerd.Configuration)
       : ({
           default_agent: "build",
-          permissions: [{ action: "*", resource: "*", effect: "allow" }],
+          permissions: relayPermissions(),
           model: selected,
           providers: {
             "cloudflare-workers-ai": {
@@ -276,7 +205,7 @@ export async function createOpenCode(
     ? liveConfig
     : ({
         default_agent: "build",
-        permissions: [{ action: "*", resource: "*", effect: "allow" }],
+        permissions: relayPermissions(),
       } as OpenCodeWorkerd.Configuration);
 
   return OpenCodeWorkerd.create({

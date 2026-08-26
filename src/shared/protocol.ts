@@ -74,6 +74,7 @@ export type ServerMessage =
 
 export type ClientMessage =
   | { type: "prompt"; text: string; delivery: DeliveryMode; requestID?: string }
+  | { type: "room.rename"; title: string; requestID?: string }
   | {
       type: "permission.reply";
       requestID: string;
@@ -141,6 +142,18 @@ export function parseClientMessage(value: unknown): ClientMessage {
       type: "permission.reply",
       requestID: message.requestID,
       reply: message.reply,
+    };
+  }
+  if (message.type === "room.rename") {
+    const title = typeof message.title === "string" ? message.title.trim() : "";
+    if (!title || title.length > 100 || title.includes("\0")) {
+      throw new Error("Room title must be between 1 and 100 characters");
+    }
+    return {
+      type: "room.rename",
+      title,
+      requestID:
+        typeof message.requestID === "string" ? message.requestID : undefined,
     };
   }
   if (message.type === "agent.pause") return { type: "agent.pause" };
