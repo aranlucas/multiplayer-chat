@@ -736,6 +736,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       return;
     }
 
+    const isFirstPrompt = this.countPromptEvents() === 0;
     const event = this.insertEvent({
       id: crypto.randomUUID(),
       kind: "prompt",
@@ -745,6 +746,8 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     });
     this.broadcast({ type: "event", event });
     this.send(socket, { type: "ack", requestID: message.requestID });
+
+    if (isFirstPrompt) this.setRoomTitle(deriveThreadTitle(message.text));
 
     const configurationError = liveOpenCodeConfigurationError(this.env);
     if (configurationError) {
@@ -1292,6 +1295,22 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     this.broadcast({ type: "room", room: this.getRoom() });
   }
 
+  private setRoomTitle(title: string) {
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_room SET title = ? WHERE singleton = 1",
+      title,
+    );
+    this.broadcast({ type: "room", room: this.getRoom() });
+  }
+
+  private countPromptEvents(): number {
+    return this.ctx.storage.sql
+      .exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM relay_events WHERE kind = 'prompt'",
+      )
+      .one().count;
+  }
+
   private async snapshot(): Promise<RoomSnapshot> {
     const events = this.getEvents();
     return {
@@ -1413,6 +1432,12 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function deriveThreadTitle(text: string): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= 100) return collapsed;
+  return `${collapsed.slice(0, 99).trimEnd()}…`;
 }
 
 function cleanPullRequestText(
