@@ -66,6 +66,23 @@ export interface TimelineEvent {
   payload: Record<string, unknown>;
 }
 
+export function queuedPrompts(events: TimelineEvent[]): QueuedPrompt[] {
+  return events
+    .filter(
+      (event) =>
+        event.kind === "prompt" &&
+        event.payload.delivery === "queue" &&
+        event.payload.queueStatus === "pending" &&
+        event.actor,
+    )
+    .map((event) => ({
+      eventID: event.id,
+      participant: event.actor!,
+      text: String(event.payload.text ?? ""),
+      createdAt: event.createdAt,
+    }));
+}
+
 export interface PermissionRequest {
   id: string;
   sessionID: string;

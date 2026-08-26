@@ -3,6 +3,7 @@ import {
   DEFAULT_BRANCH,
   DEFAULT_REPOSITORY,
   parseClientMessage,
+  queuedPrompts,
   safeParticipantName,
   safeRoomID,
 } from "./protocol";
@@ -40,6 +41,33 @@ describe("room protocol", () => {
     ).toMatchObject({
       delivery: "queue",
     });
+  });
+
+  it("keeps only pending prompts in the queue", () => {
+    const actor = {
+      id: "participant-1",
+      name: "Maya",
+      role: "maintainer" as const,
+      color: "#fff",
+    };
+    const prompt = (id: string, queueStatus?: string) => ({
+      seq: Number(id),
+      id,
+      kind: "prompt" as const,
+      createdAt: Number(id),
+      actor,
+      payload: { text: `Prompt ${id}`, delivery: "queue", queueStatus },
+    });
+
+    expect(
+      queuedPrompts([
+        prompt("1", "consumed"),
+        prompt("2", "pending"),
+        prompt("3"),
+      ]),
+    ).toEqual([
+      expect.objectContaining({ eventID: "2", text: "Prompt 2" }),
+    ]);
   });
 
   it("accepts repository configuration messages", () => {
