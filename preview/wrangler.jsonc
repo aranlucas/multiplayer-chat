@@ -10,6 +10,6 @@
   },
   "preview_urls": true,
   "vars": {
-    "RELAY_CONTROL_ORIGIN": "https://relay.com"
+    "RELAY_CONTROL_ORIGIN": "https://relay-multiplayer-agent.aranlucas.workers.dev"
   }
 }

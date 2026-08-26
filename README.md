@@ -125,7 +125,7 @@ pnpm deploy:preview
 The preview build requires these build variables/secrets:
 
 ```text
-RELAY_CONTROL_ORIGIN=https://relay.com
+RELAY_CONTROL_ORIGIN=https://relay-multiplayer-agent.aranlucas.workers.dev
 RELAY_DEPLOYMENT_WEBHOOK_SECRET=<same secret configured on the control Worker>
 ```
 
