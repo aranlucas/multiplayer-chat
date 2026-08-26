@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDotDashed,
+  Copy,
   GitPullRequest,
   LoaderCircle,
   Terminal,
@@ -139,7 +140,21 @@ function ToolEvent({
   const display = displayEvent(event);
   if (display.type !== "tool") return null;
   const [expanded, setExpanded] = useState(Boolean(display.output));
+  const [copied, setCopied] = useState(false);
   const successful = display.status === "completed";
+  const command = display.command;
+  const copyable = successful && Boolean(command);
+
+  async function copyCommand() {
+    if (!command) return;
+    try {
+      await copyText(command);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  }
 
   return (
     <div
@@ -153,20 +168,33 @@ function ToolEvent({
         </span>
       </div>
       <div className="event-body tool-event-body">
-        <button
-          className="tool-header"
-          type="button"
-          onClick={() => setExpanded((value) => !value)}
-        >
-          <Terminal size={15} />
-          <code>{display.title}</code>
-          <span className="tool-spacer" />
-          {display.status === "running" ? (
-            <LoaderCircle className="spin" size={15} />
+        <div className="tool-header-wrap">
+          <button
+            className="tool-header"
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+          >
+            <Terminal size={15} />
+            <code>{display.title}</code>
+            <span className="tool-spacer" />
+            {display.status === "running" ? (
+              <LoaderCircle className="spin" size={15} />
+            ) : null}
+            {successful ? <Check className="tool-success" size={16} /> : null}
+            {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </button>
+          {copyable ? (
+            <button
+              className="tool-copy"
+              type="button"
+              onClick={copyCommand}
+              aria-label={copied ? "Copied command" : "Copy command"}
+              title={copied ? "Copied" : "Copy command"}
+            >
+              {copied ? <Check size={15} /> : <Copy size={15} />}
+            </button>
           ) : null}
-          {successful ? <Check className="tool-success" size={16} /> : null}
-          {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        </button>
+        </div>
         {display.detail ? (
           <div className="tool-summary">{display.detail}</div>
         ) : null}
@@ -176,4 +204,22 @@ function ToolEvent({
       </div>
     </div>
   );
+}
+
+async function copyText(value: string) {
+  try {
+    await navigator.clipboard.writeText(value);
+    return;
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.append(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    if (!copied) throw new Error("Clipboard copy was rejected");
+  }
 }

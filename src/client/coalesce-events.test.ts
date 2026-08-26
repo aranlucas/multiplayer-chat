@@ -138,4 +138,39 @@ describe("coalesceTimelineEvents", () => {
       },
     });
   });
+
+  it("coalesces native OpenCode tool events by callID", () => {
+    const identity = {
+      sessionID: "session",
+      assistantMessageID: "message",
+      callID: "native-call-1",
+    };
+    const events = coalesceTimelineEvents([
+      raw(1, "session.tool.input.started", { ...identity, name: "bash" }),
+      raw(2, "session.tool.input.ended", {
+        ...identity,
+        text: JSON.stringify({ command: "git status --short" }),
+      }),
+      raw(3, "session.tool.called", {
+        ...identity,
+        tool: "bash",
+        input: { command: "git status --short" },
+      }),
+      raw(4, "session.tool.success", {
+        ...identity,
+        content: [{ type: "text", text: "clean" }],
+      }),
+    ]);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].id).toContain("native-call-1");
+    expect(events[0].payload.event).toMatchObject({
+      type: "session.tool.success",
+      data: {
+        tool: "bash",
+        input: { command: "git status --short" },
+        content: [{ type: "text", text: "clean" }],
+      },
+    });
+  });
 });

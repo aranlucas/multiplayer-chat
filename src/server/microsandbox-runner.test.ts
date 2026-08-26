@@ -1,49 +1,31 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   MicrosandboxRunnerClient,
-  parseRunnerEvent,
+  parseNativeRunnerEvent,
 } from "./microsandbox-runner";
 
+const request = {
+  roomID: "room",
+  repository: "owner/repo",
+  commitSHA: "a".repeat(40),
+  changes: [],
+  prompt: "Build it",
+  delivery: "steer" as const,
+  model: "opencode/hy3-free",
+};
+
 describe("MicrosandboxRunnerClient", () => {
-  it("invokes injected fetch with the global receiver required by Workers", async () => {
-    let receiver: unknown;
-    const fetcher = function (this: unknown) {
-      receiver = this;
-      return Promise.resolve(
-        new Response(
-          `${JSON.stringify({ type: "changes", changes: [] })}\n${JSON.stringify({ type: "result", exitCode: 0, durationMs: 1 })}\n`,
-        ),
-      );
-    } as typeof fetch;
-    const client = new MicrosandboxRunnerClient(
-      {
-        MICROSANDBOX_RUNNER_URL: "https://runner.example",
-        MICROSANDBOX_RUNNER_TOKEN: "secret",
-      },
-      fetcher,
-    );
-
-    await client.execute({
-      roomID: "room",
-      repository: "owner/repo",
-      commitSHA: "a".repeat(40),
-      changes: [],
-      command: "true",
-    });
-
-    expect(receiver).toBe(globalThis);
-  });
-
-  it("streams events and returns combined command output", async () => {
+  it("streams native OpenCode events and durable workspace changes", async () => {
+    const raw = {
+      id: "evt_1",
+      type: "session.execution.succeeded",
+      data: { sessionID: "ses_1" },
+    };
     const body = [
-      { type: "status", message: "Booting" },
-      { type: "stdout", data: "tests " },
-      { type: "stderr", data: "running\n" },
-      {
-        type: "changes",
-        changes: [{ path: "src/index.ts", content: "updated\n" }],
-      },
-      { type: "result", exitCode: 0, durationMs: 25 },
+      { type: "session", sessionID: "ses_1" },
+      { type: "opencode", cursor: "12", event: raw },
+      { type: "changes", changes: [{ path: "src/a.ts", content: "x\n" }] },
+      { type: "result", status: "succeeded", durationMs: 10 },
     ]
       .map((event) => JSON.stringify(event))
       .join("\n");
@@ -56,59 +38,64 @@ describe("MicrosandboxRunnerClient", () => {
       fetcher,
     );
     const events: string[] = [];
-    const execution = await client.execute(
-      {
-        roomID: "room",
-        repository: "owner/repo",
-        commitSHA: "a".repeat(40),
-        changes: [],
-        command: "pnpm test",
-      },
-      (event) => {
+    await expect(
+      client.turn(request, (event) => {
         events.push(event.type);
-      },
-    );
-    expect(execution).toEqual({
-      output: "tests running",
-      exitCode: 0,
-      changes: [{ path: "src/index.ts", content: "updated\n" }],
+      }),
+    ).resolves.toEqual({
+      sessionID: "ses_1",
+      status: "succeeded",
+      changes: [{ path: "src/a.ts", content: "x\n" }],
+      cursor: "12",
     });
-    expect(events).toEqual([
-      "status",
-      "stdout",
-      "stderr",
-      "changes",
-      "result",
-    ]);
+    expect(events).toEqual(["session", "opencode", "changes", "result"]);
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
-  it("returns non-zero exits with their durable mutations", async () => {
-    const body = `${JSON.stringify({ type: "stderr", data: "failed\n" })}\n${JSON.stringify({ type: "changes", changes: [{ path: "removed.ts", content: null }] })}\n${JSON.stringify({ type: "result", exitCode: 2, durationMs: 8 })}\n`;
+  it("invokes injected fetch with the Workers global receiver", async () => {
+    let receiver: unknown;
+    const fetcher = function (this: unknown) {
+      receiver = this;
+      return Promise.resolve(
+        new Response(
+          [
+            { type: "session", sessionID: "ses_1" },
+            { type: "changes", changes: [] },
+            { type: "result", status: "succeeded", durationMs: 1 },
+          ]
+            .map((event) => JSON.stringify(event))
+            .join("\n"),
+        ),
+      );
+    } as typeof fetch;
+    const client = new MicrosandboxRunnerClient(
+      {
+        MICROSANDBOX_RUNNER_URL: "https://runner.example",
+        MICROSANDBOX_RUNNER_TOKEN: "secret",
+      },
+      fetcher,
+    );
+    await client.turn(request);
+    expect(receiver).toBe(globalThis);
+  });
+
+  it("sends interrupts through a separate bounded endpoint", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null));
     const client = new MicrosandboxRunnerClient(
       {
         MICROSANDBOX_RUNNER_URL: "http://localhost:7777",
         MICROSANDBOX_RUNNER_TOKEN: "x".repeat(32),
       },
-      vi.fn<typeof fetch>().mockResolvedValue(new Response(body)),
+      fetcher,
     );
-    await expect(
-      client.execute({
-        roomID: "room",
-        repository: "owner/repo",
-        commitSHA: "a".repeat(40),
-        changes: [],
-        command: "false",
-      }),
-    ).resolves.toEqual({
-      output: "failed",
-      exitCode: 2,
-      changes: [{ path: "removed.ts", content: null }],
-    });
+    await client.interrupt("room", "ses_1");
+    expect(fetcher.mock.calls[0]?.[0].toString()).toContain(
+      "/v1/opencode/interrupt",
+    );
   });
 
   it("rejects malformed streamed events", () => {
-    expect(() => parseRunnerEvent("not json")).toThrow(
+    expect(() => parseNativeRunnerEvent("not json")).toThrow(
       "invalid streamed output",
     );
   });

@@ -126,7 +126,7 @@ function toolKey(
   return [
     data.sessionID ?? "session",
     data.assistantMessageID ?? "message",
-    data.id ?? event.id,
+    data.callID ?? data.id ?? event.id,
   ]
     .map(String)
     .join(":");

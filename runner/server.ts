@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
 import { MiB, NetworkPolicy, Sandbox } from "microsandbox";
 import {
-  parseExecuteRequest,
-  type ExecuteRequest,
+  parseOpenCodeInterruptRequest,
+  parseOpenCodeTurnRequest,
+  type OpenCodeTurnRequest,
 } from "./protocol";
 import {
   MAX_WORKSPACE_CHANGE_BYTES,
@@ -12,22 +14,27 @@ import {
   type WorkspaceChange,
 } from "../src/shared/workspace-change";
 
-const port = parseInteger(
-  process.env.MICROSANDBOX_RUNNER_PORT,
-  7777,
-  1,
-  65_535,
-);
+const port = parseInteger(process.env.MICROSANDBOX_RUNNER_PORT, 7777, 1, 65_535);
 const host = process.env.MICROSANDBOX_RUNNER_HOST ?? "127.0.0.1";
 const token = process.env.MICROSANDBOX_RUNNER_TOKEN;
-const image = process.env.MICROSANDBOX_IMAGE ?? "node:22-bookworm";
+const image =
+  process.env.MICROSANDBOX_IMAGE ??
+  "ghcr.io/anomalyco/opencode:1.18.17";
 const maxBodyBytes = 2_000_000;
+const openCodePassword = token
+  ? createHash("sha256").update(token).digest("hex")
+  : "";
 const locks = new Map<string, Promise<void>>();
+const activeRuntimes = new Map<
+  string,
+  {
+    sandbox: Sandbox;
+    server: Awaited<ReturnType<Sandbox["execStreamWith"]>>;
+  }
+>();
 
 if (!token || token.length < 32)
-  throw new Error(
-    "MICROSANDBOX_RUNNER_TOKEN must contain at least 32 characters",
-  );
+  throw new Error("MICROSANDBOX_RUNNER_TOKEN must contain at least 32 characters");
 
 const server = createServer(async (request, response) => {
   try {
@@ -36,27 +43,42 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.url === "/health" && request.method === "GET") {
-      sendJSON(response, 200, { ok: true, runtime: "microsandbox", image });
+      sendJSON(response, 200, {
+        ok: true,
+        runtime: "native-opencode-microsandbox",
+        image,
+      });
       return;
     }
-    if (request.url !== "/v1/execute" || request.method !== "POST") {
-      sendJSON(response, 404, { error: "Not found" });
+    if (request.url === "/v1/opencode/interrupt" && request.method === "POST") {
+      const input = parseOpenCodeInterruptRequest(
+        JSON.parse(await readBody(request)),
+      );
+      const interrupted = await interrupt(input.roomID, input.sessionID);
+      sendJSON(response, 200, { interrupted });
       return;
     }
-    const input = parseExecuteRequest(JSON.parse(await readBody(request)));
-    response.writeHead(200, {
-      "Content-Type": "application/x-ndjson; charset=utf-8",
-      "Cache-Control": "no-store",
-      Connection: "keep-alive",
-    });
-    await withRoomLock(input.roomID, () => execute(input, response));
+    if (request.url === "/v1/opencode/turn" && request.method === "POST") {
+      const input = parseOpenCodeTurnRequest(JSON.parse(await readBody(request)));
+      response.writeHead(200, {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-store",
+        Connection: "keep-alive",
+      });
+      await withRoomLock(input.roomID, () => runTurn(input, response));
+      return;
+    }
+    sendJSON(response, 404, { error: "Not found" });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Runner request failed";
+    const message = error instanceof Error ? error.message : "Runner request failed";
     if (!response.headersSent) sendJSON(response, 400, { error: message });
-    else {
-      writeEvent(response, { type: "stderr", data: `${message}\n` });
-      writeEvent(response, { type: "result", exitCode: 1, durationMs: 0 });
+    else if (!response.writableEnded) {
+      writeEvent(response, { type: "status", message: `Runner error: ${message}` });
+      writeEvent(response, {
+        type: "result",
+        status: "failed",
+        durationMs: 0,
+      });
       response.end();
     }
   }
@@ -64,92 +86,141 @@ const server = createServer(async (request, response) => {
 
 server.listen(port, host, () => {
   process.stdout.write(
-    `Relay Microsandbox runner listening on http://${host}:${port}\n`,
+    `Relay native OpenCode runner listening on http://${host}:${port}\n`,
   );
 });
 
-async function execute(input: ExecuteRequest, response: ServerResponse) {
+async function runTurn(input: OpenCodeTurnRequest, response: ServerResponse) {
   const startedAt = Date.now();
   const sandboxName = `relay-${input.roomID}`;
   const { sandbox, reused } = await openSandbox(sandboxName);
   writeEvent(response, {
     type: "status",
-    message: reused
-      ? `Resumed ${sandboxName}`
-      : `Booted ${sandboxName}`,
+    message: reused ? `Resumed ${sandboxName}` : `Booted ${sandboxName}`,
   });
 
+  let openCodeServer:
+    | Awaited<ReturnType<Sandbox["execStreamWith"]>>
+    | undefined;
+  let terminalStatus: "succeeded" | "failed" | "interrupted" | undefined;
+  let stderr = "";
   try {
+    await prepareRuntime(sandbox, response);
     writeEvent(response, {
       type: "status",
       message: `Checking out ${input.repository}@${input.commitSHA.slice(0, 12)}`,
     });
     await prepareWorkspace(sandbox, input);
-    const fs = sandbox.fs();
-    for (const change of input.changes) {
-      const fullPath = `/workspace/repository/${change.path}`;
-      if (change.content === null) {
-        if (await fs.exists(fullPath)) await fs.remove(fullPath);
-        continue;
-      }
-      await checkedShell(
-        sandbox,
-        `mkdir -p ${shellQuote(parentDirectory(fullPath))}`,
-        10_000,
-      );
-      await fs.write(fullPath, change.content);
-    }
-    if (input.changes.length) {
+    await applyWorkspaceChanges(sandbox, input.changes);
+    if (input.changes.length)
       writeEvent(response, {
         type: "status",
         message: `Applied ${input.changes.length} shared workspace change${input.changes.length === 1 ? "" : "s"}`,
       });
-    }
 
-    const command = `export PATH=/usr/local/lib/node_modules/corepack/shims:$PATH; ${input.command}`;
-    writeEvent(response, { type: "status", message: `$ ${command}` });
-    const stream = await sandbox.execStreamWith("sh", (exec) =>
+    openCodeServer = await startOpenCodeServer(sandbox, input.timeoutMs);
+    activeRuntimes.set(input.roomID, { sandbox, server: openCodeServer });
+    await waitForOpenCode(sandbox);
+    writeEvent(response, {
+      type: "status",
+      message: "OpenCode is using its native repository tools in Microsandbox",
+    });
+
+    const bridgeInput = {
+      sessionID: input.sessionID,
+      after: input.after,
+      prompt: input.prompt,
+      delivery: input.delivery,
+      model: parseModelRef(input.model),
+      password: openCodePassword,
+    };
+    const stream = await sandbox.execStreamWith("node", (exec) =>
       exec
-        .args(["-lc", command])
+        .args(["-e", OPEN_CODE_BRIDGE, JSON.stringify(bridgeInput)])
         .cwd("/workspace/repository")
         .timeout(input.timeoutMs)
         .stdinNull(),
     );
-    let exitCode = 1;
     const decoder = new TextDecoder();
+    let stdoutBuffer = "";
     for await (const event of stream) {
-      if (event.kind === "stdout" || event.kind === "stderr") {
-        writeEvent(response, {
-          type: event.kind,
-          data: decoder.decode(event.data, { stream: true }),
-        });
-      } else if (event.kind === "exited") {
-        exitCode = event.code;
+      if (event.kind === "stdout") {
+        stdoutBuffer += decoder.decode(event.data, { stream: true });
+        const lines = stdoutBuffer.split("\n");
+        stdoutBuffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const parsed = parseBridgeEvent(line);
+          if (parsed.type === "terminal") terminalStatus = parsed.status;
+          else writeEvent(response, parsed);
+        }
+      } else if (event.kind === "stderr") {
+        stderr = appendBounded(stderr, decoder.decode(event.data, { stream: true }));
       }
     }
+    if (stdoutBuffer.trim()) {
+      const parsed = parseBridgeEvent(stdoutBuffer);
+      if (parsed.type === "terminal") terminalStatus = parsed.status;
+      else writeEvent(response, parsed);
+    }
+    if (!terminalStatus)
+      throw new Error(stderr.trim() || "OpenCode ended without a terminal event");
+
     const changes = await collectWorkspaceChanges(sandbox, input.commitSHA);
     writeEvent(response, { type: "changes", changes });
     writeEvent(response, {
       type: "result",
-      exitCode,
+      status: terminalStatus,
+      durationMs: Date.now() - startedAt,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Native OpenCode turn failed";
+    writeEvent(response, { type: "status", message: `Runner error: ${message}` });
+    const changes = await collectWorkspaceChanges(sandbox, input.commitSHA).catch(
+      () => input.changes,
+    );
+    writeEvent(response, { type: "changes", changes });
+    writeEvent(response, {
+      type: "result",
+      status: terminalStatus ?? "failed",
       durationMs: Date.now() - startedAt,
     });
   } finally {
+    activeRuntimes.delete(input.roomID);
+    await openCodeServer?.kill().catch(() => undefined);
     await sandbox.stopWithTimeout(10_000).catch(() => undefined);
     response.end();
   }
 }
 
+async function interrupt(roomID: string, sessionID: string): Promise<boolean> {
+  const active = activeRuntimes.get(roomID);
+  if (!active) return false;
+  const script = `const [id,password]=process.argv.slice(1);const response=await fetch("http://127.0.0.1:4096/api/session/"+encodeURIComponent(id)+"/interrupt",{method:"POST",headers:{authorization:"Basic "+Buffer.from("opencode:"+password).toString("base64")}});if(!response.ok)throw new Error(await response.text());`;
+  const result = await active.sandbox.execWith("node", (exec) =>
+    exec
+      .args(["-e", script, sessionID, openCodePassword])
+      .timeout(20_000)
+      .stdinNull(),
+  );
+  if (!result.success)
+    throw new Error(result.stderr().trim() || "OpenCode interrupt failed");
+  return true;
+}
+
 async function openSandbox(sandboxName: string) {
   try {
-    return { sandbox: await Sandbox.start(sandboxName), reused: true };
+    const handle = await Sandbox.get(sandboxName);
+    const sandbox =
+      handle.status === "running" ? await handle.connect() : await handle.start();
+    return { sandbox, reused: true };
   } catch {
     const sandbox = await Sandbox.builder(sandboxName)
       .image(image)
       .cpus(2)
       .memory(MiB(2_048))
       .rootDisk(8_192)
-      .maxDuration(720)
+      .maxDuration(960)
       .network((network) =>
         network.policy(NetworkPolicy.fromProfiles(["public"])),
       )
@@ -159,29 +230,93 @@ async function openSandbox(sandboxName: string) {
   }
 }
 
-async function prepareWorkspace(
-  sandbox: Sandbox,
-  input: ExecuteRequest,
-) {
+async function prepareRuntime(sandbox: Sandbox, response: ServerResponse) {
+  const probe = await sandbox.execWith("/bin/sh", (exec) =>
+    exec
+      .args([
+        "-lc",
+        "command -v opencode && command -v bash && command -v git && command -v node && command -v rg && command -v corepack",
+      ])
+      .timeout(10_000)
+      .stdinNull(),
+  );
+  if (probe.success) return;
+  writeEvent(response, {
+    type: "status",
+    message: "Provisioning Git, Bash, Node, Corepack, and ripgrep in the OpenCode image",
+  });
+  await checkedShell(
+    sandbox,
+    "apk add --no-cache bash git nodejs npm ripgrep && npm install --global corepack && corepack enable",
+    180_000,
+  );
+}
+
+async function startOpenCodeServer(sandbox: Sandbox, timeoutMs: number) {
+  const config = JSON.stringify({
+    permission: { "*": "allow" },
+    instructions: [
+      "You are working in /workspace/repository. Use OpenCode's native read, glob, grep, edit, write, and bash tools directly. Implement requested changes, inspect evidence, and run appropriate verification. The repository is isolated in Microsandbox and tools are allowed without approval.",
+    ],
+  });
+  return sandbox.execStreamWith("opencode", (exec) =>
+    exec
+      .args(["serve", "--hostname", "127.0.0.1", "--port", "4096"])
+      .env("OPENCODE_SERVER_PASSWORD", openCodePassword)
+      .env("OPENCODE_CONFIG_CONTENT", config)
+      .cwd("/workspace/repository")
+      .timeout(Math.min(timeoutMs + 60_000, 960_000))
+      .stdinNull(),
+  );
+}
+
+async function waitForOpenCode(sandbox: Sandbox) {
+  const script = `const password=process.argv[1];const auth="Basic "+Buffer.from("opencode:"+password).toString("base64");for(let attempt=0;attempt<360;attempt++){try{const response=await fetch("http://127.0.0.1:4096/global/health",{headers:{authorization:auth}});if(response.ok)process.exit(0)}catch{}await new Promise(resolve=>setTimeout(resolve,250))}throw new Error("OpenCode server did not become healthy")`;
+  const result = await sandbox.execWith("node", (exec) =>
+    exec.args(["-e", script, openCodePassword]).timeout(95_000).stdinNull(),
+  );
+  if (!result.success)
+    throw new Error(result.stderr().trim() || "OpenCode server did not start");
+}
+
+async function prepareWorkspace(sandbox: Sandbox, input: OpenCodeTurnRequest) {
   const expectedRemote = `https://github.com/${input.repository}.git`;
   const existingRemote = await checkedShellOutput(
     sandbox,
     "git -C /workspace/repository remote get-url origin",
     10_000,
   ).catch(() => "");
-
-  if (existingRemote.trim() !== expectedRemote) {
+  if (existingRemote.trim() !== expectedRemote)
     await checkedShell(
       sandbox,
       `rm -rf /workspace/repository && mkdir -p /workspace && git clone --filter=blob:none --no-checkout ${shellQuote(expectedRemote)} /workspace/repository`,
       120_000,
     );
-  }
   await checkedShell(
     sandbox,
     `git -C /workspace/repository fetch --filter=blob:none origin ${shellQuote(input.commitSHA)} && git -C /workspace/repository checkout --detach ${shellQuote(input.commitSHA)} && git -C /workspace/repository reset --hard ${shellQuote(input.commitSHA)} && git -C /workspace/repository clean -fd`,
     120_000,
   );
+}
+
+async function applyWorkspaceChanges(
+  sandbox: Sandbox,
+  changes: WorkspaceChange[],
+) {
+  const fs = sandbox.fs();
+  for (const change of changes) {
+    const fullPath = `/workspace/repository/${change.path}`;
+    if (change.content === null) {
+      if (await fs.exists(fullPath)) await fs.remove(fullPath);
+      continue;
+    }
+    await checkedShell(
+      sandbox,
+      `mkdir -p ${shellQuote(parentDirectory(fullPath))}`,
+      10_000,
+    );
+    await fs.write(fullPath, change.content);
+  }
 }
 
 async function collectWorkspaceChanges(
@@ -203,7 +338,6 @@ async function collectWorkspaceChanges(
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const changes: WorkspaceChange[] = [];
   let totalBytes = 0;
-
   for (const change of paths) {
     if (change.deleted) {
       changes.push({ path: change.path, content: null });
@@ -235,7 +369,7 @@ async function checkedShell(
   command: string,
   timeoutMs: number,
 ) {
-  const result = await sandbox.execWith("sh", (exec) =>
+  const result = await sandbox.execWith("/bin/sh", (exec) =>
     exec.args(["-lc", command]).timeout(timeoutMs).stdinNull(),
   );
   if (!result.success)
@@ -251,7 +385,7 @@ async function checkedShellOutput(
   command: string,
   timeoutMs: number,
 ) {
-  const result = await sandbox.execWith("sh", (exec) =>
+  const result = await sandbox.execWith("/bin/sh", (exec) =>
     exec.args(["-lc", command]).timeout(timeoutMs).stdinNull(),
   );
   if (!result.success)
@@ -292,6 +426,19 @@ async function readBody(request: NodeJS.ReadableStream): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+function parseBridgeEvent(line: string): Record<string, unknown> & {
+  type: string;
+  status?: "succeeded" | "failed" | "interrupted";
+} {
+  const parsed = JSON.parse(line) as Record<string, unknown> & {
+    type: string;
+    status?: "succeeded" | "failed" | "interrupted";
+  };
+  if (!parsed || typeof parsed !== "object" || typeof parsed.type !== "string")
+    throw new Error("OpenCode bridge returned an invalid event");
+  return parsed;
+}
+
 function writeEvent(response: ServerResponse, event: Record<string, unknown>) {
   response.write(`${JSON.stringify(event)}\n`);
 }
@@ -308,6 +455,11 @@ function sendJSON(
   response.end(JSON.stringify(value));
 }
 
+function parseModelRef(value: string) {
+  const [providerID, ...parts] = value.split("/");
+  return { providerID, id: parts.join("/") };
+}
+
 function parentDirectory(path: string): string {
   const index = path.lastIndexOf("/");
   return index <= 0 ? "/" : path.slice(0, index);
@@ -317,14 +469,107 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
+function appendBounded(current: string, chunk: string) {
+  const next = current + chunk;
+  return next.length <= 60_000 ? next : next.slice(-60_000);
+}
+
 function parseInteger(
   value: string | undefined,
   fallback: number,
-  minimum: number,
-  maximum: number,
-): number {
-  const parsed = value ? Number.parseInt(value, 10) : fallback;
-  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum)
+  min: number,
+  max: number,
+) {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max)
     throw new Error("Invalid numeric runner setting");
   return parsed;
 }
+
+const OPEN_CODE_BRIDGE = String.raw`
+const input = JSON.parse(process.argv[1]);
+const base = "http://127.0.0.1:4096";
+const headers = {
+  authorization: "Basic " + Buffer.from("opencode:" + input.password).toString("base64"),
+  "content-type": "application/json",
+};
+const request = async (path, init = {}) => {
+  const response = await fetch(base + path, { ...init, headers: { ...headers, ...init.headers } });
+  if (!response.ok) throw new Error(response.status + " " + (await response.text()));
+  return response;
+};
+let sessionID = input.sessionID;
+if (!sessionID) {
+  const response = await request("/api/session", {
+    method: "POST",
+    body: JSON.stringify({
+      agent: "build",
+      model: input.model,
+      location: { directory: "/workspace/repository" },
+    }),
+  });
+  sessionID = (await response.json()).data.id;
+}
+console.log(JSON.stringify({ type: "session", sessionID }));
+const eventURL = "/api/session/" + encodeURIComponent(sessionID) + "/event" +
+  (input.after ? "?after=" + encodeURIComponent(input.after) : "");
+const eventResponsePromise = request(eventURL, { headers: { accept: "text/event-stream" } });
+await request("/api/session/" + encodeURIComponent(sessionID) + "/prompt", {
+  method: "POST",
+  body: JSON.stringify({
+    prompt: { text: input.prompt },
+    delivery: input.delivery,
+  }),
+});
+const eventResponse = await eventResponsePromise;
+const reader = eventResponse.body.getReader();
+const decoder = new TextDecoder();
+let buffer = "";
+let terminal;
+outer: while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  buffer += decoder.decode(value, { stream: true });
+  const blocks = buffer.split("\n\n");
+  buffer = blocks.pop() || "";
+  for (const block of blocks) {
+    let cursor;
+    const dataLines = [];
+    for (const line of block.split("\n")) {
+      if (line.startsWith("id:")) cursor = line.slice(3).trim();
+      if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+    }
+    if (!dataLines.length) continue;
+    let event = JSON.parse(dataLines.join("\n"));
+    if (typeof event === "string") event = JSON.parse(event);
+    if (!cursor && event && typeof event === "object" && event.durable) {
+      cursor = String(event.durable.seq || "") || undefined;
+    }
+    console.log(JSON.stringify({ type: "opencode", cursor, event }));
+    const eventType = event && typeof event === "object"
+      ? String(event.type || (event.event && event.event.type) || "")
+      : "";
+    if (eventType === "session.execution.succeeded") terminal = "succeeded";
+    if (eventType === "session.execution.failed") terminal = "failed";
+    if (eventType === "session.execution.interrupted") terminal = "interrupted";
+    if (eventType === "session.next.step.ended" && event.data && event.data.finish !== "tool-calls") {
+      terminal = "succeeded";
+    }
+    if (eventType === "session.next.step.failed") {
+      const detail = JSON.stringify(event.data && event.data.error || "").toLowerCase();
+      terminal = detail.includes("interrupt") || detail.includes("abort")
+        ? "interrupted"
+        : "failed";
+    }
+    if (eventType === "session.next.tool.failed") {
+      const detail = JSON.stringify(event.data && event.data.error || "").toLowerCase();
+      if (detail.includes("interrupt") || detail.includes("abort")) terminal = "interrupted";
+    }
+    if (terminal) break outer;
+  }
+}
+await reader.cancel().catch(() => undefined);
+if (!terminal) throw new Error("OpenCode event stream ended before execution completed");
+console.log(JSON.stringify({ type: "terminal", status: terminal }));
+`;

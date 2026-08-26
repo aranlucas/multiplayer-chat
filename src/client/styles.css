@@ -650,11 +650,17 @@ pre {
   background: #0d1215;
 }
 
+.tool-header-wrap {
+  display: flex;
+  align-items: stretch;
+}
+
 .tool-header {
   display: flex;
   align-items: center;
   gap: 9px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 40px;
   padding: 0 12px;
   border: 0;
@@ -664,13 +670,39 @@ pre {
   cursor: pointer;
 }
 
-.tool-header:hover {
+.tool-header:hover,
+.tool-copy:hover {
   background: #13191c;
 }
 
 .tool-header code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #dce1e4;
   font-size: 11px;
+}
+
+.tool-copy {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.tool-copy:hover {
+  color: #aeb7bd;
+}
+
+.tool-copy:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
 }
 
 .tool-summary {
