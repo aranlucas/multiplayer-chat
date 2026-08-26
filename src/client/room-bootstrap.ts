@@ -11,9 +11,18 @@ export interface RelayBootstrap {
   };
 }
 
+export function createThread() {
+  const nextRoomID = `session-${crypto.randomUUID()}`;
+  window.location.assign(`/r/${nextRoomID}${window.location.search}`);
+}
+
 export async function resolveRelayBootstrap(): Promise<RelayBootstrap> {
-  const roomID =
-    window.location.pathname.match(/^\/r\/([^/]+)/)?.[1] ?? "reconnect-loop";
+  const roomMatch = window.location.pathname.match(/^\/r\/([^/]+)/);
+  if (!roomMatch) {
+    createThread();
+    return new Promise<RelayBootstrap>(() => {});
+  }
+  const roomID = roomMatch[1];
   const params = new URLSearchParams(window.location.search);
   const storedControl = window.sessionStorage.getItem("relay:control-origin");
   const controlOrigin = safeOrigin(
