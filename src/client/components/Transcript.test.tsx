@@ -32,7 +32,13 @@ function toolEvent(
 
 function render(event: TimelineEvent) {
   return renderToStaticMarkup(
-    <Transcript events={[event]} canApprove={false} onReply={() => {}} />,
+    <Transcript
+      events={[event]}
+      canApprove={false}
+      onReply={() => {}}
+      onQuestionReply={() => true}
+      onQuestionCancel={() => true}
+    />,
   );
 }
 
@@ -69,5 +75,54 @@ describe("Bash tool card copy button", () => {
     );
     expect(html).toContain('class="tool-header-wrap"');
     expect(html).toContain('class="tool-copy"');
+  });
+});
+
+describe("question card", () => {
+  it("renders choices, multi-select controls, and a custom answer", () => {
+    const html = render({
+      seq: 2,
+      id: "question",
+      kind: "opencode",
+      createdAt: 2,
+      payload: {
+        type: "raw",
+        event: {
+          type: "form.created",
+          data: {
+            form: {
+              id: "frm_1",
+              sessionID: "ses_1",
+              title: "Questions",
+              metadata: { kind: "question" },
+              fields: [
+                {
+                  key: "q0",
+                  title: "README updates",
+                  description:
+                    "What specific changes would you like made to the README?",
+                  type: "multiselect",
+                  options: [
+                    {
+                      value: "Document API/protocol",
+                      label: "Document API/protocol",
+                      description: "Add WebSocket protocol details",
+                    },
+                  ],
+                  custom: true,
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    expect(html).toContain("OpenCode has a question");
+    expect(html).toContain("README updates");
+    expect(html).toContain("Document API/protocol");
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain("Type your own answer");
+    expect(html).toContain("Submit answer");
   });
 });

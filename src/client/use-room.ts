@@ -224,6 +224,27 @@ export function useRoom(
       reply(requestID: string, reply: "once" | "always" | "reject") {
         return send({ type: "permission.reply", requestID, reply });
       },
+      answerQuestion(
+        sessionID: string,
+        formID: string,
+        answer: Record<string, string | string[]>,
+      ) {
+        return send({
+          type: "question.reply",
+          sessionID,
+          formID,
+          answer,
+          requestID: crypto.randomUUID(),
+        });
+      },
+      dismissQuestion(sessionID: string, formID: string) {
+        return send({
+          type: "question.cancel",
+          sessionID,
+          formID,
+          requestID: crypto.randomUUID(),
+        });
+      },
       pause() {
         return send({ type: "agent.pause" });
       },

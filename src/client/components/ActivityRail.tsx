@@ -2,6 +2,7 @@ import {
   Bot,
   Check,
   CircleEllipsis,
+  CircleHelp,
   GitPullRequest,
   ListFilter,
   Terminal,
@@ -50,6 +51,8 @@ export function ActivityRail({
                   <Terminal size={15} />
                 ) : display.type === "diff" ? (
                   <GitPullRequest size={15} />
+                ) : display.type === "question" ? (
+                  <CircleHelp size={15} />
                 ) : display.type === "participant" ? (
                   <UserRound size={15} />
                 ) : display.type === "reasoning" || display.type === "text" ? (
@@ -75,7 +78,9 @@ export function ActivityRail({
                         : ""}
                 </span>
               </span>
-              {display.type === "tool" && display.status === "completed" ? (
+              {(display.type === "tool" && display.status === "completed") ||
+              (display.type === "question" &&
+                display.status === "answered") ? (
                 <Check className="activity-check" size={14} />
               ) : null}
             </button>

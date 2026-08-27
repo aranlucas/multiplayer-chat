@@ -173,4 +173,41 @@ describe("coalesceTimelineEvents", () => {
       },
     });
   });
+
+  it("keeps one interactive card across a question form lifecycle", () => {
+    const form = {
+      id: "frm_1",
+      sessionID: "session",
+      title: "Questions",
+      metadata: { kind: "question" },
+      fields: [
+        {
+          key: "q0",
+          title: "README updates",
+          description: "What should change?",
+          type: "multiselect",
+          options: [],
+          custom: true,
+        },
+      ],
+    };
+    const events = coalesceTimelineEvents([
+      raw(1, "form.created", { form }),
+      raw(2, "form.replied", {
+        id: "frm_1",
+        sessionID: "session",
+        answer: { q0: ["Document API/protocol"] },
+      }),
+    ]);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ id: "form:frm_1", createdAt: 1 });
+    expect(events[0].payload.event).toMatchObject({
+      type: "form.replied",
+      data: {
+        form,
+        answer: { q0: ["Document API/protocol"] },
+      },
+    });
+  });
 });

@@ -14,6 +14,7 @@ export function coalesceTimelineEvents(
   const result: TimelineEvent[] = [];
   const streams = new Map<string, number>();
   const tools = new Map<string, number>();
+  const forms = new Map<string, number>();
 
   for (const event of [...events].sort((left, right) => left.seq - right.seq)) {
     const raw = rawEvent(event);
@@ -23,6 +24,10 @@ export function coalesceTimelineEvents(
     }
     const type = String(raw.type ?? "");
     const data = asRecord(raw.data);
+    if (type.startsWith("form.")) {
+      mergeFormLifecycle(result, forms, event, type, data);
+      continue;
+    }
     if (type.startsWith("session.tool.")) {
       mergeToolLifecycle(result, tools, event, type, data);
       continue;
@@ -57,6 +62,43 @@ export function coalesceTimelineEvents(
     result.push(event);
   }
   return result;
+}
+
+function mergeFormLifecycle(
+  result: TimelineEvent[],
+  forms: Map<string, number>,
+  event: TimelineEvent,
+  type: string,
+  data: Record<string, unknown>,
+) {
+  const incomingForm = asRecord(data.form);
+  const id = String(incomingForm.id ?? data.id ?? event.id);
+  const existingIndex = forms.get(id);
+  const existing =
+    existingIndex === undefined ? undefined : result[existingIndex];
+  const existingRaw = existing ? rawEvent(existing) : undefined;
+  const existingData = asRecord(existingRaw?.data);
+  const form =
+    Object.keys(incomingForm).length > 0 ? incomingForm : existingData.form;
+  const merged: TimelineEvent = {
+    ...(existing ?? event),
+    id: `form:${id}`,
+    payload: {
+      type: "raw",
+      event: {
+        ...(rawEvent(existing ?? event) ?? {}),
+        type,
+        data: { ...existingData, ...data, form },
+      },
+    },
+  };
+
+  if (existingIndex === undefined) {
+    forms.set(id, result.length);
+    result.push(merged);
+    return;
+  }
+  result[existingIndex] = merged;
 }
 
 function mergeToolLifecycle(

@@ -138,6 +138,20 @@ export class EmbeddedOpenCodeRunner {
     ]);
   }
 
+  async replyToForm(
+    sessionID: string,
+    formID: string,
+    answer: Record<string, string | string[]>,
+  ): Promise<void> {
+    const opencode = await this.host;
+    await opencode.form.reply({ sessionID, formID, answer });
+  }
+
+  async cancelForm(sessionID: string, formID: string): Promise<void> {
+    const opencode = await this.host;
+    await opencode.form.cancel({ sessionID, formID });
+  }
+
   async models(): Promise<OpenCodeModelOption[]> {
     const opencode = await this.host;
     const response = await opencode.model.list({
@@ -226,9 +240,13 @@ function deferredProviderFailure(
   return new Error(`OpenCode provider retry deferred too long: ${message}`);
 }
 
-function eventSessionID(event: Record<string, unknown>): string | undefined {
+export function eventSessionID(
+  event: Record<string, unknown>,
+): string | undefined {
   const data = asRecord(event.data);
-  return typeof data.sessionID === "string" ? data.sessionID : undefined;
+  if (typeof data.sessionID === "string") return data.sessionID;
+  const form = asRecord(data.form);
+  return typeof form.sessionID === "string" ? form.sessionID : undefined;
 }
 
 function eventCursor(event: Record<string, unknown>): string | undefined {

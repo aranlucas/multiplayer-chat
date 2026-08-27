@@ -152,4 +152,83 @@ describe("tool event display", () => {
         : undefined,
     ).toBe(false);
   });
+
+  it("summarizes a question tool call with the actual prompt", () => {
+    expect(
+      displayEvent(
+        rawToolEvent("question", {
+          questions: [
+            {
+              question: "What specific changes would you like made to the README?",
+              header: "README updates",
+              options: [],
+              multiple: true,
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      type: "tool",
+      title: "question",
+      detail: "What specific changes would you like made to the README?",
+    });
+  });
+});
+
+describe("question form display", () => {
+  it("turns the OpenCode question form into an interactive display model", () => {
+    const event = {
+      seq: 2,
+      id: "form-event",
+      kind: "opencode",
+      createdAt: 2,
+      payload: {
+        type: "raw",
+        event: {
+          type: "form.created",
+          data: {
+            form: {
+              id: "frm_1",
+              sessionID: "ses_1",
+              title: "Questions",
+              metadata: { kind: "question" },
+              fields: [
+                {
+                  key: "q0",
+                  title: "README updates",
+                  description:
+                    "What specific changes would you like made to the README?",
+                  type: "multiselect",
+                  options: [
+                    {
+                      value: "Add contributing guidelines",
+                      label: "Add contributing guidelines",
+                      description: "Add a CONTRIBUTING section",
+                    },
+                  ],
+                  custom: true,
+                },
+              ],
+            },
+          },
+        },
+      },
+    } satisfies TimelineEvent;
+
+    expect(displayEvent(event)).toMatchObject({
+      type: "question",
+      title: "OpenCode has a question",
+      formID: "frm_1",
+      sessionID: "ses_1",
+      status: "pending",
+      fields: [
+        {
+          title: "README updates",
+          type: "multiselect",
+          custom: true,
+          options: [{ label: "Add contributing guidelines" }],
+        },
+      ],
+    });
+  });
 });
