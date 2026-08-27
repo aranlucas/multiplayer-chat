@@ -2,7 +2,8 @@
 # Railway plus model-provider credentials to use embedded OpenCode Workerd.
 OPENCODE_MODE=simulation
 OPENCODE_PROVIDER=opencode-zen
-OPENCODE_MODEL=opencode/hy3-free
+OPENCODE_MODEL=opencode/muse-spark-1.2-contributor-free
+OPENCODE_MODEL_ALLOWLIST=opencode/big-pickle,opencode/mimo-v2.5-free,opencode/hy3-free,opencode/nemotron-3-ultra-free,opencode/nemotron-3.5-lightning-free,opencode/muse-spark-1.2-contributor-free
 OPENCODE_ZEN_API_KEY=
 
 # Railway project token and environment used for per-room sandboxes.

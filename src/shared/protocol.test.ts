@@ -100,6 +100,20 @@ describe("room protocol", () => {
     });
   });
 
+  it("accepts models selected from OpenCode", () => {
+    expect(
+      parseClientMessage({
+        type: "room.model.configure",
+        model: " opencode/mimo-v2.5-free ",
+        requestID: "model-1",
+      }),
+    ).toEqual({
+      type: "room.model.configure",
+      model: "opencode/mimo-v2.5-free",
+      requestID: "model-1",
+    });
+  });
+
   it("rejects malformed or overlong messages", () => {
     expect(() =>
       parseClientMessage({ type: "prompt", text: "", delivery: "steer" }),
@@ -123,6 +137,9 @@ describe("room protocol", () => {
     ).toThrow();
     expect(() =>
       parseClientMessage({ type: "room.rename", title: "x".repeat(101) }),
+    ).toThrow();
+    expect(() =>
+      parseClientMessage({ type: "room.model.configure", model: "hy3-free" }),
     ).toThrow();
   });
 });

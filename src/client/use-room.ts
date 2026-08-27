@@ -4,6 +4,7 @@ import type {
   ClientMessage,
   DeliveryMode,
   Participant,
+  OpenCodeModelOption,
   PermissionRequest,
   QueuedPrompt,
   RoomInfo,
@@ -14,6 +15,7 @@ import { coalesceTimelineEvents } from "./coalesce-events";
 
 export interface RoomState {
   room?: RoomInfo;
+  models: OpenCodeModelOption[];
   participants: Participant[];
   events: TimelineEvent[];
   permissions: PermissionRequest[];
@@ -29,6 +31,7 @@ export interface RoomIdentity {
 }
 
 const initialState: RoomState = {
+  models: [],
   participants: [],
   events: [],
   permissions: [],
@@ -106,6 +109,7 @@ export function useRoom(
         return {
           ...current,
           room: message.room,
+          models: message.models,
           participants: message.participants,
           events: coalesceTimelineEvents(message.events),
           permissions: message.permissions,
@@ -235,6 +239,13 @@ export function useRoom(
           type: "room.configure",
           repository,
           branch,
+          requestID: crypto.randomUUID(),
+        });
+      },
+      configureModel(model: string) {
+        return send({
+          type: "room.model.configure",
+          model,
           requestID: crypto.randomUUID(),
         });
       },

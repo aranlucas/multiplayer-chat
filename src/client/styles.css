@@ -197,7 +197,8 @@ pre {
 }
 
 .repository-popover,
-.title-popover {
+.title-popover,
+.model-popover {
   position: absolute;
   z-index: 30;
   top: 46px;
@@ -217,13 +218,20 @@ pre {
   width: min(320px, calc(100vw - 24px));
 }
 
+.model-popover {
+  left: 420px;
+  width: min(350px, calc(100vw - 24px));
+}
+
 .repository-popover strong,
-.title-popover strong {
+.title-popover strong,
+.model-popover strong {
   font-size: 12px;
 }
 
 .repository-popover label,
-.title-popover label {
+.title-popover label,
+.model-popover label {
   display: grid;
   gap: 5px;
   color: var(--muted);
@@ -231,7 +239,8 @@ pre {
 }
 
 .repository-popover input,
-.title-popover input {
+.title-popover input,
+.model-popover select {
   height: 34px;
   padding: 0 9px;
   border: 1px solid var(--border);
@@ -245,20 +254,23 @@ pre {
 }
 
 .repository-popover input:focus,
-.title-popover input:focus {
+.title-popover input:focus,
+.model-popover select:focus {
   border-color: #66834f;
   box-shadow: 0 0 0 2px rgba(149, 232, 83, 0.09);
 }
 
 .repository-popover > div,
-.title-popover > div {
+.title-popover > div,
+.model-popover > div {
   display: flex;
   justify-content: flex-end;
   gap: 7px;
 }
 
 .repository-popover button,
-.title-popover button {
+.title-popover button,
+.model-popover button {
   height: 30px;
   padding: 0 10px;
   border: 1px solid var(--border);
@@ -270,16 +282,33 @@ pre {
 }
 
 .repository-popover button[type="submit"],
-.title-popover button[type="submit"] {
+.title-popover button[type="submit"],
+.model-popover button[type="submit"] {
   border-color: #66834f;
   background: #23351d;
   color: #d7ffc0;
+}
+
+.model-popover small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .branch-context {
   max-width: 190px;
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
+}
+
+.model-context {
+  max-width: 180px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.model-context:disabled {
+  cursor: default;
 }
 
 .session-context {
@@ -1279,6 +1308,10 @@ pre {
   .activity-rail,
   .collaboration-rail {
     display: none;
+  }
+
+  .model-popover {
+    left: 12px;
   }
 
   .brand {
