@@ -45,6 +45,7 @@ export interface RoomInfo {
   workspaceStatus: "cloning" | "ready" | "error";
   workspaceError?: string;
   agentStatus: "idle" | "running" | "paused" | "error";
+  model: string;
   opencodeSessionID?: string;
   workspaceRevision: number;
   publishedWorkspaceRevision: number;
@@ -56,6 +57,13 @@ export interface RoomInfo {
   autoPublishConfigured: boolean;
   latestRevision?: RoomRevision;
   activeRevision?: RoomRevision;
+}
+
+export interface OpenCodeModelOption {
+  id: string;
+  name: string;
+  providerID: string;
+  free: boolean;
 }
 
 export interface TimelineEvent {
@@ -104,6 +112,7 @@ export interface QueuedPrompt {
 export interface RoomSnapshot {
   type: "snapshot";
   room: RoomInfo;
+  models: OpenCodeModelOption[];
   participants: Participant[];
   events: TimelineEvent[];
   permissions: PermissionRequest[];
@@ -122,6 +131,7 @@ export type ServerMessage =
 export type ClientMessage =
   | { type: "prompt"; text: string; delivery: DeliveryMode; requestID?: string }
   | { type: "room.rename"; title: string; requestID?: string }
+  | { type: "room.model.configure"; model: string; requestID?: string }
   | {
       type: "permission.reply";
       requestID: string;
@@ -199,6 +209,23 @@ export function parseClientMessage(value: unknown): ClientMessage {
     return {
       type: "room.rename",
       title,
+      requestID:
+        typeof message.requestID === "string" ? message.requestID : undefined,
+    };
+  }
+  if (message.type === "room.model.configure") {
+    const model = typeof message.model === "string" ? message.model.trim() : "";
+    if (
+      !model ||
+      model.length > 200 ||
+      model.includes("\0") ||
+      !model.includes("/")
+    ) {
+      throw new Error("Choose a valid OpenCode model");
+    }
+    return {
+      type: "room.model.configure",
+      model,
       requestID:
         typeof message.requestID === "string" ? message.requestID : undefined,
     };

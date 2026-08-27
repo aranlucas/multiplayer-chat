@@ -1,4 +1,5 @@
 import type { OpenCodeWorkerd } from "@opencode-ai/sdk/workerd";
+import type { OpenCodeModelOption } from "../shared/protocol";
 import type { WorkspaceChange } from "../shared/workspace-change";
 import { RailwayRoomSandbox } from "./railway-sandbox";
 import { RepositoryWorkspace } from "./workspace";
@@ -137,6 +138,41 @@ export class EmbeddedOpenCodeRunner {
     ]);
   }
 
+  async models(): Promise<OpenCodeModelOption[]> {
+    const opencode = await this.host;
+    const response = await opencode.model.list({
+      location: { directory: "/workspace/repository" },
+    });
+    return response.data
+      .filter(
+        (model) =>
+          model.enabled &&
+          model.capabilities.tools &&
+          model.status !== "deprecated",
+      )
+      .map((model) => ({
+        id: `${model.providerID}/${model.modelID}`,
+        name: model.name,
+        providerID: model.providerID,
+        free:
+          model.cost.length > 0 &&
+          model.cost.every(
+            (cost) =>
+              cost.input === 0 &&
+              cost.output === 0 &&
+              cost.cache.read === 0 &&
+              cost.cache.write === 0,
+          ),
+      }))
+      .sort((left, right) =>
+        left.free === right.free
+          ? left.name.localeCompare(right.name)
+          : left.free
+            ? -1
+            : 1,
+      );
+  }
+
   private async resolveSession(
     opencode: OpenCodeWorkerd.Interface,
     sessionID: string | undefined,
@@ -146,17 +182,33 @@ export class EmbeddedOpenCodeRunner {
       const existing = await opencode.sessions
         .get({ sessionID })
         .catch(() => undefined);
-      if (existing) return existing;
+      if (existing) {
+        const modelRef = openCodeModelRef(model);
+        if (
+          existing.model?.providerID !== modelRef.providerID ||
+          existing.model.id !== modelRef.id
+        ) {
+          await opencode.sessions.switchModel({
+            sessionID: existing.id,
+            model: modelRef,
+          });
+        }
+        return existing;
+      }
     }
-    const [providerID, ...modelParts] = model.split("/");
-    if (!providerID || !modelParts.length)
-      throw new Error(`Invalid OpenCode model: ${model}`);
     return opencode.sessions.create({
       agent: "build",
-      model: { providerID, id: modelParts.join("/") },
+      model: openCodeModelRef(model),
       location: { directory: "/workspace/repository" },
     });
   }
+}
+
+export function openCodeModelRef(model: string) {
+  const [providerID, ...modelParts] = model.split("/");
+  if (!providerID || !modelParts.length || modelParts.some((part) => !part))
+    throw new Error(`Invalid OpenCode model: ${model}`);
+  return { providerID, id: modelParts.join("/") };
 }
 
 function deferredProviderFailure(

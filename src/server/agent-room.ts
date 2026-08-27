@@ -21,6 +21,7 @@ import { sessionTitleFromEvent } from "./session-title";
 import {
   hasLiveOpenCode,
   liveOpenCodeConfigurationError,
+  openCodeModelAllowlist,
   openCodeConfiguration,
   type WorkerEnv,
 } from "./opencode";
@@ -588,6 +589,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         repository TEXT NOT NULL,
         branch TEXT NOT NULL,
         agent_status TEXT NOT NULL,
+        opencode_model TEXT,
         opencode_session_id TEXT,
         opencode_event_cursor TEXT,
         commit_sha TEXT,
@@ -653,6 +655,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     this.ensureColumn("relay_room", "workspace_error", "TEXT");
     this.ensureColumn("relay_room", "railway_sandbox_id", "TEXT");
     this.ensureColumn("relay_room", "opencode_event_cursor", "TEXT");
+    this.ensureColumn("relay_room", "opencode_model", "TEXT");
     this.ensureColumn(
       "relay_room",
       "agent_turn_generation",
@@ -817,6 +820,37 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         message.title,
       );
       this.broadcast({ type: "room", room: this.getRoom() });
+      this.send(socket, { type: "ack", requestID: message.requestID });
+      return;
+    }
+
+    if (message.type === "room.model.configure") {
+      if (participant.role !== "maintainer")
+        throw new Error("Only maintainers can change the model");
+      const room = this.getRoom();
+      if (room.agentStatus === "running")
+        throw new Error("Pause the agent before changing the model");
+      const models = await this.availableOpenCodeModels();
+      const selected = models.find((model) => model.id === message.model);
+      if (!selected)
+        throw new Error("That model is not available from OpenCode");
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_room SET opencode_model = ? WHERE singleton = 1",
+        selected.id,
+      );
+      const event = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: Date.now(),
+        actor: participant,
+        payload: {
+          type: "model",
+          text: `OpenCode model changed to ${selected.name}`,
+          model: selected.id,
+        },
+      });
+      this.broadcast({ type: "room", room: this.getRoom() });
+      this.broadcast({ type: "event", event });
       this.send(socket, { type: "ack", requestID: message.requestID });
       return;
     }
@@ -1010,7 +1044,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         roomID: room.id,
         prompt,
         delivery,
-        model: this.env.OPENCODE_MODEL,
+        model: room.model,
         sessionID: room.opencodeSessionID,
         after: this.openCodeCursor(),
       },
@@ -1406,6 +1440,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         repository: string;
         branch: string;
         agent_status: RoomInfo["agentStatus"];
+        opencode_model: string | null;
         opencode_session_id: string | null;
         commit_sha: string | null;
         workspace_status: RoomInfo["workspaceStatus"];
@@ -1432,6 +1467,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       workspaceStatus: row.workspace_status,
       workspaceError: row.workspace_error ?? undefined,
       agentStatus: row.agent_status,
+      model: row.opencode_model ?? this.env.OPENCODE_MODEL,
       opencodeSessionID: row.opencode_session_id ?? undefined,
       workspaceRevision: row.workspace_revision,
       publishedWorkspaceRevision: row.published_workspace_revision,
@@ -1520,15 +1556,34 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   }
 
   private async snapshot(): Promise<RoomSnapshot> {
+    const [models] = await Promise.all([this.availableOpenCodeModels()]);
     const events = this.getEvents();
     return {
       type: "snapshot",
       room: this.getRoom(),
+      models,
       participants: this.getParticipants(),
       events,
       permissions: this.getPermissions(),
       queue: this.getQueue(),
     };
+  }
+
+  private async availableOpenCodeModels() {
+    const fallback = this.getRoom().model;
+    const allowlist = openCodeModelAllowlist(this.env);
+    const fallbackModels = allowlist.length
+      ? allowlist.map(fallbackModelOption)
+      : [fallbackModelOption(fallback)];
+    if (!this.runner) return fallbackModels;
+    const models = await this.runner.models().catch((error) => {
+      console.warn("OpenCode model catalog unavailable", error);
+      return [];
+    });
+    const allowed = allowlist.length
+      ? models.filter((model) => allowlist.includes(model.id))
+      : models;
+    return allowed.length ? allowed : fallbackModels;
   }
 
   private broadcastPresence() {
@@ -1549,6 +1604,28 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   private send(socket: WebSocket, message: ServerMessage) {
     socket.send(JSON.stringify(message));
   }
+}
+
+function fallbackModelOption(model: string) {
+  const [providerID, ...modelParts] = model.split("/");
+  const modelID = modelParts.join("/") || model;
+  return {
+    id: model,
+    name: modelDisplayName(modelID),
+    providerID: providerID || "unknown",
+    free: model.endsWith("-free") || model === "opencode/big-pickle",
+  };
+}
+
+function modelDisplayName(modelID: string) {
+  return modelID
+    .split("-")
+    .map((part) => {
+      if (part === "mimo") return "MiMo";
+      if (/^v\d/i.test(part)) return part.toUpperCase();
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join(" ");
 }
 
 function hashCode(value: string): number {

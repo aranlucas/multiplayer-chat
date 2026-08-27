@@ -26,7 +26,8 @@
   "vars": {
     "OPENCODE_MODE": "simulation",
     "OPENCODE_PROVIDER": "opencode-zen",
-    "OPENCODE_MODEL": "opencode/hy3-free",
+    "OPENCODE_MODEL": "opencode/muse-spark-1.2-contributor-free",
+    "OPENCODE_MODEL_ALLOWLIST": "opencode/big-pickle,opencode/mimo-v2.5-free,opencode/hy3-free,opencode/nemotron-3-ultra-free,opencode/nemotron-3.5-lightning-free,opencode/muse-spark-1.2-contributor-free",
     "CLOUDFLARE_ACCOUNT_ID": "local",
     "GITHUB_OAUTH_CLIENT_ID": ""
   }

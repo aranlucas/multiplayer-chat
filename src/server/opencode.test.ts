@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   hasLiveOpenCode,
   liveOpenCodeConfigurationError,
+  openCodeConfiguration,
+  openCodeModelAllowlist,
   type WorkerEnv,
 } from "./opencode";
 
@@ -46,5 +48,35 @@ describe("hasLiveOpenCode", () => {
     expect(
       liveOpenCodeConfigurationError(env({ OPENCODE_MODE: "simulation" })),
     ).toBeUndefined();
+  });
+
+  it("normalizes the configured model allowlist", () => {
+    expect(
+      openCodeModelAllowlist(
+        env({
+          OPENCODE_MODEL_ALLOWLIST:
+            " opencode/big-pickle,opencode/mimo-v2.5-free,opencode/big-pickle ",
+        }),
+      ),
+    ).toEqual(["opencode/big-pickle", "opencode/mimo-v2.5-free"]);
+  });
+
+  it("adds Muse to pinned OpenCode catalogs when it is configured", () => {
+    const config = openCodeConfiguration(
+      env({
+        OPENCODE_MODEL: "opencode/muse-spark-1.2-contributor-free",
+        OPENCODE_MODEL_ALLOWLIST:
+          "opencode/big-pickle,opencode/muse-spark-1.2-contributor-free",
+      }),
+    );
+
+    expect(
+      config.providers?.opencode?.models?.[
+        "muse-spark-1.2-contributor-free"
+      ],
+    ).toEqual({ name: "Muse Spark 1.2 Contributor Free" });
+    expect(config.providers?.opencode?.settings).toEqual({
+      apiKey: "zen-test-key",
+    });
   });
 });

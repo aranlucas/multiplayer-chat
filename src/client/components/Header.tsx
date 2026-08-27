@@ -1,6 +1,7 @@
 import {
   Check,
   ChevronDown,
+  Cpu,
   GitBranch,
   GitPullRequest,
   LoaderCircle,
@@ -14,11 +15,13 @@ import {
   DEFAULT_BRANCH,
   DEFAULT_REPOSITORY,
   type Participant,
+  type OpenCodeModelOption,
   type RoomInfo,
 } from "../../shared/protocol";
 
 interface HeaderProps {
   room?: RoomInfo;
+  models: OpenCodeModelOption[];
   participants: Participant[];
   connection: "connecting" | "connected" | "reconnecting" | "offline";
   githubConfigured: boolean;
@@ -30,11 +33,13 @@ interface HeaderProps {
   onPause: () => void;
   canConfigure: boolean;
   onConfigure: (repository: string, branch: string) => boolean;
+  onConfigureModel: (model: string) => boolean;
   onRenameRoom: (title: string) => boolean;
 }
 
 export function Header({
   room,
+  models,
   participants,
   connection,
   githubConfigured,
@@ -46,16 +51,19 @@ export function Header({
   onPause,
   canConfigure,
   onConfigure,
+  onConfigureModel,
   onRenameRoom,
 }: HeaderProps) {
   const [copied, setCopied] = useState(false);
   const [editingRepository, setEditingRepository] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
+  const [editingModel, setEditingModel] = useState(false);
   const [repository, setRepository] = useState(
     room?.repository ?? DEFAULT_REPOSITORY,
   );
   const [branch, setBranch] = useState(room?.branch ?? DEFAULT_BRANCH);
   const [title, setTitle] = useState(room?.title ?? "");
+  const [model, setModel] = useState(room?.model ?? "");
   const online = participants.filter((participant) => participant.online);
   const running = room?.agentStatus === "running";
 
@@ -76,6 +84,13 @@ export function Header({
     if (onRenameRoom(title.trim())) setEditingTitle(false);
   }
 
+  function configureModel(event: React.FormEvent) {
+    event.preventDefault();
+    if (onConfigureModel(model)) setEditingModel(false);
+  }
+
+  const selectedModel = models.find((candidate) => candidate.id === room?.model);
+
   return (
     <header className="app-header">
       <div className="brand">
@@ -88,6 +103,7 @@ export function Header({
         disabled={!canConfigure}
         onClick={() => {
           setEditingTitle(false);
+          setEditingModel(false);
           setRepository(room?.repository ?? repository);
           setBranch(room?.branch ?? branch);
           setEditingRepository((current) => !current);
@@ -102,6 +118,64 @@ export function Header({
         <span>{room?.branch ?? DEFAULT_BRANCH}</span>
         <ChevronDown size={14} aria-hidden />
       </div>
+      <button
+        className="header-context model-context"
+        type="button"
+        disabled={!canConfigure || !room || running || !models.length}
+        aria-expanded={editingModel}
+        aria-controls="model-editor"
+        onClick={() => {
+          setEditingRepository(false);
+          setEditingTitle(false);
+          setModel(room?.model ?? models[0]?.id ?? "");
+          setEditingModel((current) => !current);
+        }}
+      >
+        <Cpu size={15} aria-hidden />
+        <span>{selectedModel?.name ?? room?.model ?? "Choose model"}</span>
+        <ChevronDown size={14} aria-hidden />
+      </button>
+      {editingModel ? (
+        <form
+          id="model-editor"
+          className="model-popover"
+          onSubmit={configureModel}
+        >
+          <strong>OpenCode model</strong>
+          <label>
+            Available from the configured provider
+            <select
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              autoFocus
+            >
+              {!models.some((candidate) => candidate.id === model) && model ? (
+                <option value={model}>
+                  {model} (currently unavailable)
+                </option>
+              ) : null}
+              {models.map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {candidate.name}
+                  {candidate.free ? " · Free" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <small>
+            Changing this keeps the room and switches the existing OpenCode
+            session on its next turn.
+          </small>
+          <div>
+            <button type="button" onClick={() => setEditingModel(false)}>
+              Cancel
+            </button>
+            <button type="submit" disabled={!model || model === room?.model}>
+              Use model
+            </button>
+          </div>
+        </form>
+      ) : null}
       {editingRepository ? (
         <form className="repository-popover" onSubmit={configureRepository}>
           <strong>GitHub workspace</strong>
@@ -144,6 +218,7 @@ export function Header({
         aria-controls="room-title-editor"
         onClick={() => {
           setEditingRepository(false);
+          setEditingModel(false);
           setTitle(room?.title ?? "");
           setEditingTitle((current) => !current);
         }}

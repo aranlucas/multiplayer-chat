@@ -140,6 +140,7 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
     <div className="app-shell">
       <Header
         room={state.room}
+        models={state.models}
         participants={state.participants}
         connection={state.connection}
         githubConfigured={github.state.configured}
@@ -151,6 +152,7 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
         onPause={actions.pause}
         canConfigure={identity.role === "maintainer"}
         onConfigure={actions.configureRepository}
+        onConfigureModel={actions.configureModel}
         onRenameRoom={actions.renameRoom}
       />
       <MobileTabs
