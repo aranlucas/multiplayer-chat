@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openCodeModelRef } from "./embedded-opencode";
+import { eventSessionID, openCodeModelRef } from "./embedded-opencode";
 
 describe("openCodeModelRef", () => {
   it("preserves model IDs with nested path segments", () => {
@@ -16,5 +16,16 @@ describe("openCodeModelRef", () => {
     expect(() => openCodeModelRef("opencode/")).toThrow(
       "Invalid OpenCode model",
     );
+  });
+});
+
+describe("eventSessionID", () => {
+  it("finds the session on an OpenCode form.created event", () => {
+    expect(
+      eventSessionID({
+        type: "form.created",
+        data: { form: { id: "frm_1", sessionID: "ses_1" } },
+      }),
+    ).toBe("ses_1");
   });
 });

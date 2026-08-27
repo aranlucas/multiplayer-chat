@@ -788,6 +788,26 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       return;
     }
 
+    if (
+      message.type === "question.reply" ||
+      message.type === "question.cancel"
+    ) {
+      const sessionID = this.getRoom().opencodeSessionID;
+      if (!this.runner || !sessionID || message.sessionID !== sessionID)
+        throw new Error("This question is no longer active");
+      if (message.type === "question.reply") {
+        await this.runner.replyToForm(
+          message.sessionID,
+          message.formID,
+          message.answer,
+        );
+      } else {
+        await this.runner.cancelForm(message.sessionID, message.formID);
+      }
+      this.send(socket, { type: "ack", requestID: message.requestID });
+      return;
+    }
+
     if (message.type === "room.configure") {
       if (participant.role !== "maintainer")
         throw new Error("Only maintainers can change the repository");

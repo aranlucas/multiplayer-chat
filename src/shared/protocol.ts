@@ -130,6 +130,19 @@ export type ServerMessage =
 
 export type ClientMessage =
   | { type: "prompt"; text: string; delivery: DeliveryMode; requestID?: string }
+  | {
+      type: "question.reply";
+      sessionID: string;
+      formID: string;
+      answer: Record<string, string | string[]>;
+      requestID?: string;
+    }
+  | {
+      type: "question.cancel";
+      sessionID: string;
+      formID: string;
+      requestID?: string;
+    }
   | { type: "room.rename"; title: string; requestID?: string }
   | { type: "room.model.configure"; model: string; requestID?: string }
   | {
@@ -201,6 +214,44 @@ export function parseClientMessage(value: unknown): ClientMessage {
       reply: message.reply,
     };
   }
+  if (message.type === "question.reply") {
+    const sessionID = parseQuestionIdentifier(message.sessionID, "session");
+    const formID = parseQuestionIdentifier(message.formID, "form");
+    if (!message.answer || typeof message.answer !== "object")
+      throw new Error("Question answer is required");
+    const entries = Object.entries(message.answer);
+    if (entries.length > 20) throw new Error("Question answer is too large");
+    const answer: Record<string, string | string[]> = {};
+    for (const [key, raw] of entries) {
+      if (!/^q\d+$/.test(key)) throw new Error("Invalid question field");
+      const values = Array.isArray(raw) ? raw : [raw];
+      if (
+        values.length > 20 ||
+        values.some(
+          (item) => typeof item !== "string" || item.length > 2_000,
+        )
+      )
+        throw new Error("Invalid question answer");
+      answer[key] = Array.isArray(raw) ? (values as string[]) : values[0];
+    }
+    return {
+      type: "question.reply",
+      sessionID,
+      formID,
+      answer,
+      requestID:
+        typeof message.requestID === "string" ? message.requestID : undefined,
+    };
+  }
+  if (message.type === "question.cancel") {
+    return {
+      type: "question.cancel",
+      sessionID: parseQuestionIdentifier(message.sessionID, "session"),
+      formID: parseQuestionIdentifier(message.formID, "form"),
+      requestID:
+        typeof message.requestID === "string" ? message.requestID : undefined,
+    };
+  }
   if (message.type === "room.rename") {
     const title = typeof message.title === "string" ? message.title.trim() : "";
     if (!title || title.length > 100 || title.includes("\0")) {
@@ -249,4 +300,15 @@ export function parseClientMessage(value: unknown): ClientMessage {
   }
   if (message.type === "ping") return { type: "ping" };
   throw new Error("Unknown message type");
+}
+
+function parseQuestionIdentifier(value: unknown, label: string) {
+  if (
+    typeof value !== "string" ||
+    !value ||
+    value.length > 200 ||
+    value.includes("\0")
+  )
+    throw new Error(`Invalid question ${label} ID`);
+  return value;
 }

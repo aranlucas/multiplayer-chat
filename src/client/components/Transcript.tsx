@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDotDashed,
+  CircleHelp,
   Copy,
   GitPullRequest,
   LoaderCircle,
@@ -14,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PermissionRequest, TimelineEvent } from "../../shared/protocol";
 import { displayEvent, formatTime } from "../event-display";
 import { PermissionCard } from "./PermissionCard";
+import { QuestionCard } from "./QuestionCard";
 
 interface TranscriptProps {
   events: TimelineEvent[];
@@ -21,6 +23,12 @@ interface TranscriptProps {
   pendingPermission?: PermissionRequest;
   canApprove: boolean;
   onReply: (id: string, reply: "once" | "reject") => void;
+  onQuestionReply: (
+    sessionID: string,
+    formID: string,
+    answer: Record<string, string | string[]>,
+  ) => boolean;
+  onQuestionCancel: (sessionID: string, formID: string) => boolean;
 }
 
 export function Transcript({
@@ -29,6 +37,8 @@ export function Transcript({
   pendingPermission,
   canApprove,
   onReply,
+  onQuestionReply,
+  onQuestionCancel,
 }: TranscriptProps) {
   const selectedRef = useRef<HTMLDivElement>(null);
 
@@ -50,6 +60,8 @@ export function Transcript({
               key={event.id}
               selected={event.id === selectedID}
               elementRef={event.id === selectedID ? selectedRef : undefined}
+              onQuestionReply={onQuestionReply}
+              onQuestionCancel={onQuestionCancel}
             />
           ))}
           {pendingPermission ? (
@@ -72,16 +84,43 @@ function TranscriptEvent({
   event,
   selected,
   elementRef,
+  onQuestionReply,
+  onQuestionCancel,
 }: {
   event: TimelineEvent;
   selected: boolean;
   elementRef?: React.RefObject<HTMLDivElement | null>;
+  onQuestionReply: TranscriptProps["onQuestionReply"];
+  onQuestionCancel: TranscriptProps["onQuestionCancel"];
 }) {
   const display = displayEvent(event);
 
   if (display.type === "tool") {
     return (
       <ToolEvent event={event} selected={selected} elementRef={elementRef} />
+    );
+  }
+
+  if (display.type === "question") {
+    return (
+      <div
+        className={`transcript-event event-question ${selected ? "is-selected" : ""}`}
+        ref={elementRef}
+      >
+        <div className="event-gutter">
+          <span className="event-time">{formatTime(event.createdAt)}</span>
+          <span className="event-marker">
+            <CircleHelp size={17} />
+          </span>
+        </div>
+        <div className="event-body question-event-body">
+          <QuestionCard
+            question={display}
+            onReply={onQuestionReply}
+            onCancel={onQuestionCancel}
+          />
+        </div>
+      </div>
     );
   }
 

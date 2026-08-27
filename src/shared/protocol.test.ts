@@ -114,6 +114,28 @@ describe("room protocol", () => {
     });
   });
 
+  it("accepts answers to an active OpenCode question", () => {
+    expect(
+      parseClientMessage({
+        type: "question.reply",
+        sessionID: "ses_1",
+        formID: "frm_1",
+        answer: {
+          q0: ["Add contributing guidelines", "Document API/protocol"],
+        },
+        requestID: "answer-1",
+      }),
+    ).toEqual({
+      type: "question.reply",
+      sessionID: "ses_1",
+      formID: "frm_1",
+      answer: {
+        q0: ["Add contributing guidelines", "Document API/protocol"],
+      },
+      requestID: "answer-1",
+    });
+  });
+
   it("rejects malformed or overlong messages", () => {
     expect(() =>
       parseClientMessage({ type: "prompt", text: "", delivery: "steer" }),
@@ -141,5 +163,13 @@ describe("room protocol", () => {
     expect(() =>
       parseClientMessage({ type: "room.model.configure", model: "hy3-free" }),
     ).toThrow();
+    expect(() =>
+      parseClientMessage({
+        type: "question.reply",
+        sessionID: "ses_1",
+        formID: "frm_1",
+        answer: { arbitrary: "nope" },
+      }),
+    ).toThrow("Invalid question field");
   });
 });

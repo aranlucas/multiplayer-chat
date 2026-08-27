@@ -178,6 +178,8 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
             pendingPermission={pendingPermission}
             canApprove={canApprove}
             onReply={reply}
+            onQuestionReply={actions.answerQuestion}
+            onQuestionCancel={actions.dismissQuestion}
           />
         )}
         <Composer
