@@ -9,14 +9,9 @@ allowBuilds:
 
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
-  - "@opencode-ai/ai@0.0.0-dev-18259"
-  - "@opencode-ai/client@0.0.0-dev-18259"
-  - "@opencode-ai/codemode@0.0.0-dev-18259"
-  - "@opencode-ai/core@0.0.0-dev-18259"
-  - "@opencode-ai/plugin@0.0.0-dev-18259"
-  - "@opencode-ai/protocol@0.0.0-dev-18259"
-  - "@opencode-ai/schema@0.0.0-dev-18259"
-  - "@opencode-ai/sdk@0.0.0-dev-18259"
-  - "@opencode-ai/server@0.0.0-dev-18259"
-  - "@opencode-ai/simulation@0.0.0-dev-18259"
-  - "@opencode-ai/util@0.0.0-dev-18259"
+  # The official Workerd SDK is currently published only on OpenCode's dev
+  # channel and intentionally tracks matching, newly published provider builds.
+  - "@opencode-ai/*"
+  - "@ai-sdk/*"
+  - "ai"
+  - "js-yaml@3.15.2"

@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { OpenCodeWorkerd } from "@opencode-ai/sdk/workerd";
 import {
   DEFAULT_BRANCH,
   DEFAULT_REPOSITORY,
@@ -20,13 +21,16 @@ import { sessionTitleFromEvent } from "./session-title";
 import {
   hasLiveOpenCode,
   liveOpenCodeConfigurationError,
+  openCodeConfiguration,
   type WorkerEnv,
 } from "./opencode";
 import {
-  MicrosandboxRunnerClient,
+  EmbeddedOpenCodeRunner,
   type NativeRunnerEvent,
-} from "./microsandbox-runner";
+} from "./embedded-opencode";
 import { RepositoryWorkspace } from "./workspace";
+import { RailwayRoomSandbox } from "./railway-sandbox";
+import { railwayTools } from "./railway-tools";
 import {
   GitHubPullRequestClient,
   type ExistingPullRequest,
@@ -114,14 +118,45 @@ const wait = (milliseconds: number) =>
 
 export class AgentRoom extends DurableObject<WorkerEnv> {
   private readonly workspace: RepositoryWorkspace;
-  private readonly runner: MicrosandboxRunnerClient;
+  private readonly sandbox: RailwayRoomSandbox;
+  private readonly runner?: EmbeddedOpenCodeRunner;
   private roomID = "reconnect-loop";
 
   constructor(ctx: DurableObjectState, env: WorkerEnv) {
     super(ctx, env);
-    this.migrate();
-    this.workspace = new RepositoryWorkspace(ctx.storage, env);
-    this.runner = new MicrosandboxRunnerClient(env);
+    this.sandbox = new RailwayRoomSandbox(ctx.storage, env);
+    this.workspace = new RepositoryWorkspace(ctx.storage, env, this.sandbox);
+    if (env.OPENCODE_MODE === "live") {
+      const hiddenRelayTables = this.hideRelayTablesForOpenCodeBootstrap();
+      const host = ctx.blockConcurrencyWhile(async () => {
+        try {
+          const opencode = await OpenCodeWorkerd.create({
+            storage: ctx.storage,
+            config: openCodeConfiguration(env),
+            plugins: [
+              railwayTools({
+                sandbox: this.sandbox,
+                ensureWorkspace: () => this.workspace.ensureReady(),
+              }),
+            ],
+          });
+          this.restoreRelayTables(hiddenRelayTables);
+          this.migrate();
+          return opencode;
+        } catch (error) {
+          this.restoreRelayTables(hiddenRelayTables);
+          this.migrate();
+          throw error;
+        }
+      });
+      this.runner = new EmbeddedOpenCodeRunner(
+        host,
+        this.workspace,
+        this.sandbox,
+      );
+    } else {
+      this.migrate();
+    }
   }
 
   async initialize(roomID: string): Promise<void> {
@@ -616,6 +651,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       "TEXT NOT NULL DEFAULT 'cloning'",
     );
     this.ensureColumn("relay_room", "workspace_error", "TEXT");
+    this.ensureColumn("relay_room", "railway_sandbox_id", "TEXT");
     this.ensureColumn("relay_room", "opencode_event_cursor", "TEXT");
     this.ensureColumn(
       "relay_room",
@@ -652,6 +688,51 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     this.ctx.storage.sql.exec(
       "UPDATE relay_room SET branch = 'master', commit_sha = NULL, workspace_status = 'cloning', workspace_error = NULL WHERE repository = 'cloudflare/workers-chat-demo' AND branch IN ('fix/session-reconnect', 'main')",
     );
+  }
+
+  private hideRelayTablesForOpenCodeBootstrap(): string[] {
+    const tables = this.ctx.storage.sql
+      .exec<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND (name LIKE 'relay_%' OR name LIKE '_opencode_bootstrap_relay_%')",
+      )
+      .toArray()
+      .map((row) => row.name);
+    const hasOpenCodeSchema = this.ctx.storage.sql
+      .exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('session', 'session_v2')",
+      )
+      .one().count;
+    const hidden = tables.filter((name) =>
+      name.startsWith("_opencode_bootstrap_"),
+    );
+    if (hasOpenCodeSchema) {
+      this.restoreRelayTables(hidden);
+      return [];
+    }
+    for (const name of tables) {
+      if (name.startsWith("_opencode_bootstrap_")) continue;
+      this.ctx.storage.sql.exec(
+        `ALTER TABLE ${name} RENAME TO _opencode_bootstrap_${name}`,
+      );
+      hidden.push(`_opencode_bootstrap_${name}`);
+    }
+    return hidden;
+  }
+
+  private restoreRelayTables(tables: string[]) {
+    for (const hidden of tables) {
+      const visible = hidden.replace(/^_opencode_bootstrap_/, "");
+      const exists = this.ctx.storage.sql
+        .exec<{ count: number }>(
+          "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = ?",
+          hidden,
+        )
+        .one().count;
+      if (exists)
+        this.ctx.storage.sql.exec(
+          `ALTER TABLE ${hidden} RENAME TO ${visible}`,
+        );
+    }
   }
 
   private ensureColumn(table: string, column: string, definition: string) {
@@ -744,7 +825,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       const room = this.getRoom();
       if (room.opencodeSessionID) {
         await this.runner
-          .interrupt(room.id, room.opencodeSessionID)
+          ?.interrupt(room.opencodeSessionID)
           .catch(() => undefined);
       }
       this.setRoomStatus("paused");
@@ -842,7 +923,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     const diffOutput = await this.workspace.diff();
     const workspaceKind = workspace.directory.startsWith("github://")
       ? "Workers-native GitHub snapshot"
-      : "Cloudflare Sandbox";
+      : "Railway Sandbox";
     const sequence: Array<{ delay: number; payload: Record<string, unknown> }> =
       [
         {
@@ -922,13 +1003,11 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   ): Promise<"succeeded" | "failed" | "interrupted"> {
     const room = this.getRoom();
     const workspace = await this.workspace.nativeAgentWorkspace();
+    if (!this.runner) throw new Error("Embedded OpenCode is not running");
     let queueConsumed = false;
     const result = await this.runner.turn(
       {
         roomID: room.id,
-        repository: workspace.repository,
-        commitSHA: workspace.commitSHA,
-        changes: workspace.changes,
         prompt,
         delivery,
         model: this.env.OPENCODE_MODEL,

@@ -1,4 +1,3 @@
-import { getSandbox, type Sandbox } from "@cloudflare/sandbox";
 import {
   MAX_WORKSPACE_CHANGE_BYTES,
   MAX_WORKSPACE_FILE_BYTES,
@@ -7,10 +6,12 @@ import {
   type WorkspaceChange,
 } from "../shared/workspace-change";
 import { replaceExact } from "../shared/exact-edit";
+import {
+  RailwayRoomSandbox,
+  type RailwaySandboxEnv,
+} from "./railway-sandbox";
 
-export interface WorkspaceEnv {
-  Sandbox?: DurableObjectNamespace<Sandbox>;
-}
+export type WorkspaceEnv = RailwaySandboxEnv;
 
 interface WorkspaceRow {
   [key: string]: string | null;
@@ -37,11 +38,15 @@ const MAX_TOOL_OUTPUT = 60_000;
 
 export class RepositoryWorkspace {
   private preparing?: Promise<WorkspaceInfo>;
+  private readonly sandbox: RailwayRoomSandbox;
 
   constructor(
     private readonly storage: DurableObjectStorage,
-    private readonly env: WorkspaceEnv,
-  ) {}
+    env: WorkspaceEnv,
+    sandbox?: RailwayRoomSandbox,
+  ) {
+    this.sandbox = sandbox ?? new RailwayRoomSandbox(storage, env);
+  }
 
   async ensureReady(): Promise<WorkspaceInfo> {
     if (!this.preparing) {
@@ -60,9 +65,10 @@ export class RepositoryWorkspace {
       normalizedRepository,
       normalizedBranch,
     );
-    if (this.env.Sandbox) {
-      const sandbox = this.sandbox(this.room().room_id);
-      await sandbox.exec(`rm -rf ${WORKSPACE_DIRECTORY}`, { timeout: 30_000 });
+    if (this.sandbox.configured) {
+      await this.sandbox.exec(`rm -rf ${WORKSPACE_DIRECTORY}`, {
+        timeout: 30_000,
+      });
     }
     this.ensureRemoteSchema();
     this.storage.sql.exec("DELETE FROM relay_workspace_files");
@@ -77,8 +83,8 @@ export class RepositoryWorkspace {
     if (!value || value.length > 300 || value.includes("\0"))
       throw new Error("Search query must be 1-300 characters");
     await this.ensureReady();
-    if (!this.env.Sandbox) return this.searchRemote(value);
-    const result = await this.sandbox(this.room().room_id).exec(
+    if (!this.sandbox.configured) return this.searchRemote(value);
+    const result = await this.sandbox.exec(
       `rg --line-number --column --color never --hidden --glob '!.git' --glob '!node_modules' --glob '!dist' --max-count 50 -- ${shellQuote(value)} .`,
       { cwd: WORKSPACE_DIRECTORY, timeout: 30_000 },
     );
@@ -90,7 +96,7 @@ export class RepositoryWorkspace {
   async readFile(path: string): Promise<string> {
     const relativePath = validateRelativePath(path);
     await this.ensureReady();
-    if (!this.env.Sandbox) {
+    if (!this.sandbox.configured) {
       this.ensureRemoteSchema();
       const content = this.remoteFiles().get(relativePath);
       if (content === undefined)
@@ -99,8 +105,7 @@ export class RepositoryWorkspace {
         );
       return numberLines(content);
     }
-    const sandbox = this.sandbox(this.room().room_id);
-    const tracked = await sandbox.exec(
+    const tracked = await this.sandbox.exec(
       `git ls-files --error-unmatch -- ${shellQuote(relativePath)}`,
       {
         cwd: WORKSPACE_DIRECTORY,
@@ -111,10 +116,10 @@ export class RepositoryWorkspace {
       throw new Error(
         `File is not tracked by the selected repository: ${relativePath}`,
       );
-    const file = await sandbox.readFile(
+    const file = await this.sandbox.readFile(
       `${WORKSPACE_DIRECTORY}/${relativePath}`,
     );
-    const numbered = file.content
+    const numbered = file
       .split("\n")
       .slice(0, 1_500)
       .map((line, index) => `${String(index + 1).padStart(6)} │ ${line}`)
@@ -124,7 +129,7 @@ export class RepositoryWorkspace {
 
   async diff(): Promise<string> {
     await this.ensureReady();
-    if (!this.env.Sandbox) {
+    if (!this.sandbox.configured) {
       this.ensureRemoteSchema();
       const changes = this.storage.sql
         .exec<{
@@ -148,7 +153,7 @@ export class RepositoryWorkspace {
           .join("\n"),
       );
     }
-    const result = await this.sandbox(this.room().room_id).exec(
+    const result = await this.sandbox.exec(
       "git diff --stat && git diff --no-ext-diff --",
       {
         cwd: WORKSPACE_DIRECTORY,
@@ -176,21 +181,20 @@ export class RepositoryWorkspace {
     if (oldString === newString)
       throw new Error("oldString and newString must be different");
     await this.ensureReady();
-    if (this.env.Sandbox) {
-      const sandbox = this.sandbox(this.room().room_id);
-      const file = await sandbox
+    if (this.sandbox.configured) {
+      const file = await this.sandbox
         .readFile(`${WORKSPACE_DIRECTORY}/${path}`)
         .catch(() => undefined);
       if (!file) throw new Error(`File does not exist: ${path}`);
       const content = replaceExact(
-        file.content,
+        file,
         oldString,
         newString,
         replaceAll,
       );
       ensureFileSize(path, content);
-      await sandbox.writeFile(`${WORKSPACE_DIRECTORY}/${path}`, content);
-      this.replaceWorkspaceChanges(await this.sandboxChanges(sandbox));
+      await this.sandbox.writeFile(`${WORKSPACE_DIRECTORY}/${path}`, content);
+      this.replaceWorkspaceChanges(await this.sandboxChanges());
     } else {
       const current = this.remoteFiles().get(path);
       if (current === undefined) throw new Error(`File does not exist: ${path}`);
@@ -225,6 +229,13 @@ export class RepositoryWorkspace {
     this.replaceWorkspaceChanges(changes);
   }
 
+  async syncSandboxChanges(): Promise<WorkspaceChange[]> {
+    if (!this.sandbox.configured) return this.workspaceChanges();
+    const changes = await this.sandboxChanges();
+    this.replaceWorkspaceChanges(changes);
+    return changes;
+  }
+
   private async prepare(): Promise<WorkspaceInfo> {
     const row = this.room();
     const repository = validateRepository(row.repository);
@@ -234,16 +245,15 @@ export class RepositoryWorkspace {
     );
 
     try {
-      if (!this.env.Sandbox)
+      if (!this.sandbox.configured)
         return await this.prepareRemote(repository, branch, row.commit_sha);
-      const sandbox = this.sandbox(row.room_id);
-      const current = await sandbox
+      const current = await this.sandbox
         .exec("git rev-parse HEAD", {
           cwd: WORKSPACE_DIRECTORY,
           timeout: 10_000,
         })
         .catch(() => undefined);
-      const remote = await sandbox
+      const remote = await this.sandbox
         .exec("git remote get-url origin", {
           cwd: WORKSPACE_DIRECTORY,
           timeout: 10_000,
@@ -255,16 +265,19 @@ export class RepositoryWorkspace {
         remote?.stdout.trim().replace(/\.git$/, "") !==
           expectedRemote.replace(/\.git$/, "")
       ) {
-        await sandbox.exec(`rm -rf ${WORKSPACE_DIRECTORY}`, {
+        await this.sandbox.exec(`rm -rf ${WORKSPACE_DIRECTORY}`, {
           timeout: 30_000,
         });
-        await sandbox.gitCheckout(expectedRemote, {
-          branch,
-          depth: 1,
-          targetDir: WORKSPACE_DIRECTORY,
-        });
+        const clone = await this.sandbox.exec(
+          `git clone --depth 1 --branch ${shellQuote(branch)} -- ${shellQuote(expectedRemote)} ${shellQuote(WORKSPACE_DIRECTORY)}`,
+          { timeout: 120_000 },
+        );
+        if (!clone.success)
+          throw new Error(
+            compactFailure("Unable to clone the repository", clone),
+          );
       } else if (row.commit_sha && current.stdout.trim() !== row.commit_sha) {
-        const checkout = await sandbox.exec(
+        const checkout = await this.sandbox.exec(
           `git checkout --detach ${shellQuote(row.commit_sha)}`,
           {
             cwd: WORKSPACE_DIRECTORY,
@@ -277,7 +290,7 @@ export class RepositoryWorkspace {
           );
       }
 
-      const resolved = await sandbox.exec("git rev-parse HEAD", {
+      const resolved = await this.sandbox.exec("git rev-parse HEAD", {
         cwd: WORKSPACE_DIRECTORY,
         timeout: 10_000,
       });
@@ -286,6 +299,7 @@ export class RepositoryWorkspace {
           compactFailure("Unable to resolve the repository commit", resolved),
         );
       const commitSHA = resolved.stdout.trim();
+      await this.applyStoredChanges();
       this.storage.sql.exec(
         "UPDATE relay_room SET commit_sha = ?, workspace_status = 'ready', workspace_error = NULL WHERE singleton = 1",
         commitSHA,
@@ -302,15 +316,6 @@ export class RepositoryWorkspace {
       );
       throw error;
     }
-  }
-
-  private sandbox(roomID: string) {
-    if (!this.env.Sandbox)
-      throw new Error("Cloudflare Sandbox binding is unavailable");
-    return getSandbox(this.env.Sandbox, `relay-${roomID}`.slice(0, 63), {
-      normalizeId: true,
-      sleepAfter: "10m",
-    });
   }
 
   private room(): WorkspaceRow {
@@ -491,12 +496,10 @@ export class RepositoryWorkspace {
     for (const change of changes) this.storeWorkspaceChange(change);
   }
 
-  private async sandboxChanges(
-    sandbox: ReturnType<typeof getSandbox>,
-  ): Promise<WorkspaceChange[]> {
+  private async sandboxChanges(): Promise<WorkspaceChange[]> {
     const baseCommitSHA = this.room().commit_sha;
     if (!baseCommitSHA) throw new Error("Repository commit is not pinned");
-    const nameStatus = await sandbox.exec(
+    const nameStatus = await this.sandbox.exec(
       `git diff --name-status -z ${shellQuote(baseCommitSHA)} --`,
       { cwd: WORKSPACE_DIRECTORY, timeout: 30_000 },
     );
@@ -504,7 +507,7 @@ export class RepositoryWorkspace {
       throw new Error(
         compactFailure("Unable to inspect changed files", nameStatus),
       );
-    const untracked = await sandbox.exec(
+    const untracked = await this.sandbox.exec(
       "git ls-files --others --exclude-standard -z",
       { cwd: WORKSPACE_DIRECTORY, timeout: 30_000 },
     );
@@ -520,22 +523,41 @@ export class RepositoryWorkspace {
         changes.push({ path: change.path, content: null });
         continue;
       }
-      const regular = await sandbox.exec(
+      const regular = await this.sandbox.exec(
         `test -f ${shellQuote(change.path)} && test ! -L ${shellQuote(change.path)}`,
         { cwd: WORKSPACE_DIRECTORY, timeout: 5_000 },
       );
       if (!regular.success)
         throw new Error(`Changed path is not a regular file: ${change.path}`);
-      const file = await sandbox.readFile(
+      const file = await this.sandbox.readFile(
         `${WORKSPACE_DIRECTORY}/${change.path}`,
       );
-      ensureFileSize(change.path, file.content);
-      totalBytes += new TextEncoder().encode(file.content).byteLength;
+      ensureFileSize(change.path, file);
+      totalBytes += new TextEncoder().encode(file).byteLength;
       if (totalBytes > MAX_WORKSPACE_CHANGE_BYTES)
         throw new Error("Workspace changes are too large");
-      changes.push({ path: change.path, content: file.content });
+      changes.push({ path: change.path, content: file });
     }
     return parseWorkspaceChanges(changes);
+  }
+
+  private async applyStoredChanges(): Promise<void> {
+    for (const change of this.workspaceChanges()) {
+      const fullPath = `${WORKSPACE_DIRECTORY}/${change.path}`;
+      if (change.content === null) {
+        const removed = await this.sandbox.exec(
+          `rm -f -- ${shellQuote(change.path)}`,
+          { cwd: WORKSPACE_DIRECTORY, timeout: 10_000 },
+        );
+        if (!removed.success)
+          throw new Error(
+            compactFailure(`Unable to remove ${change.path}`, removed),
+          );
+        continue;
+      }
+      ensureFileSize(change.path, change.content);
+      await this.sandbox.writeFile(fullPath, change.content);
+    }
   }
 }
 
@@ -694,7 +716,7 @@ function shellQuote(value: string): string {
 
 function compactFailure(
   label: string,
-  result: { stdout: string; stderr: string; exitCode: number },
+  result: { stdout: string; stderr: string; exitCode: number | null },
 ): string {
   const detail = [result.stderr, result.stdout]
     .filter(Boolean)

@@ -1,6 +1,6 @@
 # Relay
 
-Relay is a multiplayer coding-agent room built on Cloudflare Durable Objects and native OpenCode runtimes in Microsandbox. One Durable Object owns one shared room, giving participants a stable identity, a single event order, hibernating WebSockets, and persistent SQLite history.
+Relay is a multiplayer coding-agent room built on Cloudflare Durable Objects, OpenCode Workerd, and Railway Sandboxes. One Durable Object owns one shared room and OpenCode session; a persistent per-room Railway sandbox supplies the Linux filesystem and shell.
 
 ![Relay desktop session](artifacts/relay-desktop-local.png)
 
@@ -14,7 +14,7 @@ Relay is a multiplayer coding-agent room built on Cloudflare Durable Objects and
 - Public GitHub repository selection, exact commit pinning, and durable native OpenCode workspaces
 - Per-user GitHub OAuth and one-click pull request creation from the shared overlay
 - Automatic updates to one room PR, exact-commit preview tracking, and seamless room handoff to the deployed build
-- Hardware-isolated OpenCode, shell, and file tools through a self-hosted Microsandbox runner
+- Persistent, isolated shell and file tools through Railway Sandboxes
 - Responsive transcript, people, and queue views
 - Local simulation mode for development without provider credentials
 - Live OpenCode Zen using a configurable model (`hy3-free` by default)
@@ -30,16 +30,15 @@ React client
        └─ AgentRoom Durable Object (one per room name)
             ├─ Relay SQLite tables: room, events, participants, permissions
             ├─ Commit-pinned GitHub snapshot + mutable PR overlay
-            ├─ Authenticated native OpenCode event stream
+            ├─ Embedded OpenCode Workerd runtime + persistent session state
             ├─ Hibernating WebSocket fan-out
-            └─ Per-room Microsandbox microVM
-                 ├─ OpenCode server + persistent session database
+            └─ Per-room Railway Sandbox
                  ├─ Repository at `/workspace/repository`
-                 ├─ OpenCode's native read/edit/write/bash tools
-                 └─ Dangerous always-allow policy inside the microVM
+                 ├─ Remote read/edit/write/search/shell tools
+                 └─ Persistent disk and detachable shell sessions
 ```
 
-Relay keeps collaboration state in Durable Object SQLite. OpenCode keeps its own session database on the per-room microVM disk. The runner streams OpenCode's durable events to Relay, which records a compact, UI-focused projection while retaining the raw payload. After each turn, the runner returns the Git change set to Relay's durable overlay for pull-request creation.
+Relay and OpenCode keep their durable state in the room Durable Object. OpenCode tool calls cross one explicit boundary into the room's Railway sandbox, whose ID is stored with the room. Relay records a compact, UI-focused event projection while retaining raw OpenCode payloads. After each turn, it mirrors the Git change set into the Durable Object overlay for recovery and pull-request creation.
 
 The Durable Object is the stable room authority even when the browser moves to a preview deployment. Preview builds are stateless Workers: after Relay verifies that a preview serves the exact published commit and room protocol, every participant receives a short-lived, one-time handoff ticket. The deployed client reconnects to the original room, preserving the transcript, presence, queue, workspace, and OpenCode session.
 
@@ -62,37 +61,28 @@ http://127.0.0.1:5173/r/reconnect-loop?name=Sam&role=contributor
 
 ## Repository workspaces
 
-Production uses a Workers-native repository backend: it resolves public Git refs over Git smart HTTP, downloads the exact commit archive, and stores text files plus the room's mutable overlay in its Durable Object. This works on the Workers Free plan.
+Production clones the exact selected commit into a per-room Railway sandbox. The Durable Object also stores the mutable text-file overlay, so a replacement sandbox can be rehydrated without losing shared changes. Simulation mode retains the Workers-native GitHub snapshot backend and needs no Railway credentials.
 
 New rooms start from [`aranlucas/multiplayer-chat@main`](https://github.com/aranlucas/multiplayer-chat/tree/main). Maintainers can select a different public GitHub repository and branch from the header.
 
-The self-hosted service in [`runner/`](runner/) gives each room its own hardware-isolated Linux microVM disk. OpenCode itself runs in that microVM beside the repository and invokes its built-in read, edit, write, search, and bash tools directly. Relay does not implement or proxy a model-facing Bash tool. Its runner only handles runtime lifecycle, authenticated prompt/event transport, exact-commit checkout, and Git-change synchronization.
+OpenCode runs inside the room Durable Object using the official Workerd SDK. Relay replaces OpenCode's local filesystem tools with Railway-backed `read`, `glob`, `grep`, `edit`, `write`, and `shell` tools. Their paths are restricted to `/workspace/repository`; shell commands run in that same isolated Linux environment.
 
-Every turn resumes the disk, resets the repository to the exact Durable Object commit plus shared overlay, and starts the room's persistent OpenCode session. Ignored dependency directories and package caches survive between turns. Before shutdown the runner returns every tracked, untracked, modified, renamed, and deleted UTF-8 text file to the Worker. The bearer token stays in the Worker secret store and on the runner host; it is never sent to the browser.
+Every turn reconnects to the room's sandbox, restores the exact pinned commit plus the durable overlay when necessary, and resumes the OpenCode session stored in the Durable Object. Ignored dependency directories and package caches survive between turns while the sandbox remains active. Railway credentials stay in the Worker secret store and are never sent to the browser or model.
 
-## Microsandbox runner
+## Railway Sandbox
 
-Requirements: Node.js 22+ on Apple Silicon macOS, Linux with KVM, or Windows with WHP.
-
-```bash
-pnpm install
-export MICROSANDBOX_RUNNER_TOKEN="$(openssl rand -hex 32)"
-pnpm runner
-```
-
-The runner listens on `127.0.0.1:7777` by default. Expose it through a stable, authenticated HTTPS endpoint such as a named Cloudflare Tunnel; temporary `trycloudflare.com` hostnames are suitable only for local smoke tests. Then configure the Worker URL and secret:
+Create a Railway project token scoped to the production environment, then configure it as a Worker secret:
 
 ```bash
-npx wrangler secret put MICROSANDBOX_RUNNER_URL
-npx wrangler secret put MICROSANDBOX_RUNNER_TOKEN
+npx wrangler secret put RAILWAY_TOKEN
 pnpm deploy
 ```
 
-The default image is the pinned official `ghcr.io/anomalyco/opencode:1.18.17` image. On first room boot, the runner adds Bash, Git, Node, Corepack, and ripgrep. For production, publish a derived image with those packages preinstalled and set `MICROSANDBOX_IMAGE` to eliminate that first-boot provisioning delay.
+`RAILWAY_ENVIRONMENT_ID`, region, and idle timeout are ordinary variables in `wrangler.jsonc`. The idle timeout can be 1–120 minutes. The room reconnects to the same sandbox across Worker requests; if Railway has already retired it, Relay creates a replacement and reapplies the Durable Object overlay. For local live mode, put the same variables in `.dev.vars`. No long-running runner, tunnel, Docker image, or separate Railway service is required.
 
 ## GitHub pull requests
 
-The **Connect GitHub** button uses GitHub's web OAuth flow with the `public_repo` scope. Relay encrypts the resulting access and refresh tokens into an HTTP-only, secure, same-site cookie; tokens are never exposed to client JavaScript, OpenCode, or Microsandbox. Pull request creation uses the authenticated user's GitHub permissions.
+The **Connect GitHub** button uses GitHub's web OAuth flow with the `public_repo` scope. Relay encrypts the resulting access and refresh tokens into an HTTP-only, secure, same-site cookie; tokens are never exposed to client JavaScript, OpenCode, or Railway. Pull request creation uses the authenticated user's GitHub permissions.
 
 Register a GitHub OAuth app with this production callback:
 
@@ -150,12 +140,11 @@ The checked-in default is OpenCode Zen's `opencode/hy3-free` model. A free model
 
 ```bash
 cp .dev.vars.example .dev.vars
-# Set OPENCODE_MODE=live and MICROSANDBOX_RUNNER_TOKEN in .dev.vars.
-# Start `pnpm runner` with the same token, then run `pnpm dev`.
+# Set OPENCODE_MODE=live plus Railway and provider credentials in .dev.vars.
 pnpm dev
 ```
 
-Relay configures OpenCode's native permission wildcard to `allow`. This is dangerous mode inside a hardware-isolated microVM: repository edits do not pause for maintainer approval, while tool inputs, outputs, and resulting diffs remain visible and persistent to every participant. The Pause action calls OpenCode's native interrupt API, which also terminates an active bash tool.
+Relay configures OpenCode's native permission wildcard to `allow`. This is dangerous mode with side effects contained in the Railway sandbox: repository edits do not pause for maintainer approval, while tool inputs, outputs, and resulting diffs remain visible and persistent to every participant. The Pause action interrupts OpenCode and terminates active Railway shell commands.
 
 ## Verify and deploy
 

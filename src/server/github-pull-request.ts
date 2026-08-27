@@ -1,4 +1,4 @@
-import type { WorkspaceChange } from "./microsandbox-runner";
+import type { WorkspaceChange } from "../shared/workspace-change";
 
 export interface PullRequestInput {
   accessToken: string;

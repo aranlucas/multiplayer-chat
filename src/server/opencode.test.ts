@@ -10,8 +10,9 @@ function env(overrides: Partial<WorkerEnv>): WorkerEnv {
     OPENCODE_MODE: "live",
     OPENCODE_PROVIDER: "opencode-zen",
     OPENCODE_MODEL: "opencode/mimo-v2.5-free",
-    MICROSANDBOX_RUNNER_URL: "http://127.0.0.1:7777",
-    MICROSANDBOX_RUNNER_TOKEN: "x".repeat(32),
+    OPENCODE_ZEN_API_KEY: "zen-test-key",
+    RAILWAY_ENVIRONMENT_ID: "railway-environment",
+    RAILWAY_TOKEN: "railway-project-token",
     ...overrides,
   } as WorkerEnv;
 }
@@ -21,23 +22,23 @@ describe("hasLiveOpenCode", () => {
     expect(hasLiveOpenCode(env({}))).toBe(true);
   });
 
-  it("requires the native runner transport", () => {
+  it("requires Railway sandbox access", () => {
     expect(
-      hasLiveOpenCode(env({ MICROSANDBOX_RUNNER_URL: undefined })),
+      hasLiveOpenCode(env({ RAILWAY_ENVIRONMENT_ID: undefined })),
     ).toBe(false);
     expect(
-      hasLiveOpenCode(env({ MICROSANDBOX_RUNNER_TOKEN: undefined })),
+      hasLiveOpenCode(env({ RAILWAY_TOKEN: undefined })),
     ).toBe(false);
     expect(
       liveOpenCodeConfigurationError(
-        env({ MICROSANDBOX_RUNNER_URL: undefined }),
+        env({ RAILWAY_ENVIRONMENT_ID: undefined }),
       ),
-    ).toBe("The native OpenCode runner URL is not configured.");
+    ).toBe("The Railway environment ID is not configured.");
     expect(
       liveOpenCodeConfigurationError(
-        env({ MICROSANDBOX_RUNNER_TOKEN: undefined }),
+        env({ RAILWAY_TOKEN: undefined }),
       ),
-    ).toBe("The native OpenCode runner token is not configured.");
+    ).toBe("A Railway project or API token is not configured.");
   });
 
   it("keeps simulation mode offline", () => {

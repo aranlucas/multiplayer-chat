@@ -41,7 +41,7 @@ const features = [
   {
     icon: Boxes,
     title: "Hardware-isolated",
-    body: "OpenCode, shell, and file tools run in a per-room Microsandbox microVM. Dangerous mode stays contained.",
+    body: "OpenCode lives with the room in a Durable Object while shell and file tools run in a persistent per-room Railway sandbox.",
   },
 ];
 
@@ -179,7 +179,7 @@ export function LandingPage() {
         </div>
         <p>
           Multiplayer coding-agent rooms on Cloudflare Durable Objects and
-          Microsandbox.
+          Railway Sandbox.
         </p>
         <a className="landing-footer-link" href="/r/reconnect-loop">
           Try a live room <ArrowRight size={14} />

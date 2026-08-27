@@ -1,17 +1,15 @@
-# Local development defaults to simulation. Set OPENCODE_MODE=live and start the
-# native Microsandbox runner below to run OpenCode beside the repository.
+# Local development defaults to simulation. Set OPENCODE_MODE=live and provide
+# Railway plus model-provider credentials to use embedded OpenCode Workerd.
 OPENCODE_MODE=simulation
 OPENCODE_PROVIDER=opencode-zen
 OPENCODE_MODEL=opencode/hy3-free
 OPENCODE_ZEN_API_KEY=
 
-# Native OpenCode runtime. Use the same 32+ character token for `pnpm runner`.
-MICROSANDBOX_RUNNER_URL=http://127.0.0.1:7777
-MICROSANDBOX_RUNNER_TOKEN=
-
-# Optional prebuilt image. The default is ghcr.io/anomalyco/opencode:1.18.17;
-# the runner provisions Bash, Git, Node, Corepack, and ripgrep on first boot.
-# MICROSANDBOX_IMAGE=ghcr.io/anomalyco/opencode:1.18.17
+# Railway project token and environment used for per-room sandboxes.
+RAILWAY_TOKEN=
+RAILWAY_ENVIRONMENT_ID=
+RAILWAY_SANDBOX_REGION=us-west2
+RAILWAY_SANDBOX_IDLE_TIMEOUT_MINUTES=120
 
 # Alternative provider:
 # OPENCODE_PROVIDER=cloudflare-workers-ai

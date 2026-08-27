@@ -21,6 +21,10 @@
       "tag": "v2",
       "new_sqlite_classes": ["Sandbox"],
     },
+    {
+      "tag": "v3",
+      "deleted_classes": ["Sandbox"],
+    },
   ],
   "assets": {
     "binding": "ASSETS",
@@ -35,6 +39,9 @@
     "OPENCODE_PROVIDER": "opencode-zen",
     "CLOUDFLARE_ACCOUNT_ID": "d93c650f72e597f96785abba389b0ce4",
     "OPENCODE_MODEL": "opencode/hy3-free",
+    "RAILWAY_ENVIRONMENT_ID": "795c1abd-ce4f-41f8-aa26-e7da9c55cc4f",
+    "RAILWAY_SANDBOX_REGION": "us-west2",
+    "RAILWAY_SANDBOX_IDLE_TIMEOUT_MINUTES": "120",
     "GITHUB_OAUTH_CLIENT_ID": "Ov23li43DfrritRncWry",
   },
 }

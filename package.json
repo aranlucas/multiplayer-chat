@@ -13,14 +13,14 @@
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run --config vitest.config.ts",
     "deploy": "pnpm build && wrangler deploy --config dist/relay_multiplayer_agent/wrangler.json",
-    "cf-typegen": "wrangler types",
-    "runner": "tsx runner/server.ts"
+    "cf-typegen": "wrangler types"
   },
   "dependencies": {
-    "@cloudflare/sandbox": "0.12.8",
+    "@opencode-ai/plugin": "0.0.0-dev-18366",
+    "@opencode-ai/sdk": "0.0.0-dev-18366",
     "hono": "^4.9.4",
     "lucide-react": "^0.541.0",
-    "microsandbox": "^0.6.15",
+    "railway": "3.11.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

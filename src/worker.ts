@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { Sandbox } from "railway";
 import { safeParticipantName, safeRoomID } from "./shared/protocol";
 import { AgentRoom } from "./server/agent-room";
 import {
@@ -13,31 +14,11 @@ import {
   readGitHubSession,
 } from "./server/github-auth";
 
-export { Sandbox } from "@cloudflare/sandbox";
-
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
 app.get("/api/health", async (context) => {
-  const sandboxExecutor =
-    context.env.MICROSANDBOX_RUNNER_URL && context.env.MICROSANDBOX_RUNNER_TOKEN
-      ? "microsandbox"
-      : context.env.Sandbox
-        ? "cloudflare-sandbox"
-        : "workers-preflight";
-  let sandboxReachable = false;
-  if (sandboxExecutor === "microsandbox") {
-    sandboxReachable = await fetch(
-      new URL("/health", context.env.MICROSANDBOX_RUNNER_URL),
-      {
-        headers: {
-          Authorization: `Bearer ${context.env.MICROSANDBOX_RUNNER_TOKEN}`,
-        },
-        signal: AbortSignal.timeout(5_000),
-      },
-    )
-      .then((response) => response.ok)
-      .catch(() => false);
-  }
+  const sandboxExecutor = "railway-sandbox";
+  const sandboxReachable = await railwaySandboxReachable(context.env);
   return context.json({
     ok: true,
     service: "relay-multiplayer-agent",
@@ -49,6 +30,31 @@ app.get("/api/health", async (context) => {
     githubOAuthConfigured: githubOAuthConfigured(context.env),
   });
 });
+
+async function railwaySandboxReachable(env: WorkerEnv): Promise<boolean> {
+  const token = env.RAILWAY_TOKEN ?? env.RAILWAY_API_TOKEN;
+  if (!token || !env.RAILWAY_ENVIRONMENT_ID) return false;
+  try {
+    return await Promise.race([
+      Sandbox.list({
+        token,
+        authType: env.RAILWAY_TOKEN ? "project-token" : "bearer",
+        environmentId: env.RAILWAY_ENVIRONMENT_ID,
+        first: 1,
+        fetch: (input, init) => fetch(input, init),
+      }).then(() => true),
+      new Promise<boolean>((resolve) =>
+        setTimeout(() => resolve(false), 5_000),
+      ),
+    ]);
+  } catch (error) {
+    console.error(
+      "Railway sandbox health check failed",
+      error instanceof Error ? error.message : "Unknown Railway error",
+    );
+    return false;
+  }
+}
 
 app.get("/api/auth/github/start", async (context) => {
   try {
