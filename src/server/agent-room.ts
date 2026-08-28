@@ -912,7 +912,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     this.broadcast({ type: "event", event });
     this.send(socket, { type: "ack", requestID: message.requestID });
 
-    if (isFirstPrompt) this.setRoomTitle(deriveThreadTitle(message.text));
+    if (isFirstPrompt) {
+      // Title will be set by OpenCode's title agent via captureSessionTitle
+    }
 
     const configurationError = liveOpenCodeConfigurationError(this.env);
     if (configurationError) {
@@ -1528,10 +1530,11 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     this.broadcast({ type: "room", room: this.getRoom() });
   }
 
-  private setRoomTitle(title: string) {
+  private setRoomTitle(title: string, { auto = false } = {}) {
     this.ctx.storage.sql.exec(
-      "UPDATE relay_room SET title = ? WHERE singleton = 1",
+      "UPDATE relay_room SET title = ?, title_auto = ? WHERE singleton = 1",
       title,
+      auto ? 1 : 0,
     );
     this.broadcast({ type: "room", room: this.getRoom() });
   }

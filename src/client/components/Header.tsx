@@ -223,7 +223,9 @@ export function Header({
           setEditingTitle((current) => !current);
         }}
       >
-        <span>{room?.title ?? "Investigate reconnect loop"}</span>
+        <span>
+          {room?.titleAuto ? "Untitled thread" : room?.title ?? "Untitled thread"}
+        </span>
         <ChevronDown size={14} aria-hidden />
       </button>
       {editingTitle ? (
