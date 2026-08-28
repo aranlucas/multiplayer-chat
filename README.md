@@ -4,6 +4,18 @@ Relay is a multiplayer coding-agent room built on Cloudflare Durable Objects, Op
 
 ![Relay desktop session](artifacts/relay-desktop-local.png)
 
+## Vision
+
+Relay exists to make collaborative software development with AI agents as natural as pair programming. We envision a world where:
+
+- **Teams code together with agents in real time** — no more copying prompts between chat windows or losing context when switching tools. Everyone sees the same agent, the same transcript, and the same repository state.
+- **Agents are first-class collaborators** — not black boxes that run in isolation. Participants can steer, pause, or queue follow-ups at any moment, and every tool call is visible and auditable.
+- **The environment is the workspace** — a persistent, shared Linux sandbox means the agent has the same capabilities as a human: read, write, search, run tests, start servers. No toy environments, no limited toolsets.
+- **Git is the source of truth** — every session pins to a commit, every change is tracked, and pull requests emerge naturally from the collaboration. No manual syncing, no drift.
+- **Handoff is seamless** — move from local development to preview deployment to production without losing the room, the agent session, or the transcript. The room is the stable identity; the client is ephemeral.
+
+Relay is infrastructure for this workflow: a durable room primitive that composes OpenCode, a sandbox, and Git into a single collaborative loop.
+
 ## What works
 
 - Shared, ordered OpenCode session events and tool transcripts
