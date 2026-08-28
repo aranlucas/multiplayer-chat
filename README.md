@@ -17,7 +17,7 @@ Relay is a multiplayer coding-agent room built on Cloudflare Durable Objects, Op
 - Persistent, isolated shell and file tools through Railway Sandboxes
 - Responsive transcript, people, and queue views
 - Local simulation mode for development without provider credentials
-- Live OpenCode Zen model picker with six free models and per-room persistence
+- Live OpenRouter model selection with NVIDIA Nemotron 3 Ultra Free and per-room persistence
 
 ## Architecture
 
@@ -136,20 +136,15 @@ Open `http://127.0.0.1:5176/r/local-loop` before calling the local-preview endpo
 
 ## Live OpenCode mode
 
-Relay ships with an in-room model picker backed by six free OpenCode Zen models:
+Relay ships with an in-room model picker configured for NVIDIA Nemotron 3 Ultra through OpenRouter:
 
 | Display name | Model ID |
 | --- | --- |
-| Big Pickle | `opencode/big-pickle` |
-| MiMo-V2.5 Free | `opencode/mimo-v2.5-free` |
-| Hy3 Free | `opencode/hy3-free` |
-| Nemotron 3 Ultra Free | `opencode/nemotron-3-ultra-free` |
-| Nemotron 3.5 Lightning Free | `opencode/nemotron-3.5-lightning-free` |
-| Muse Spark 1.2 Contributor Free | `opencode/muse-spark-1.2-contributor-free` |
+| NVIDIA Nemotron 3 Ultra (free) | `openrouter/nvidia/nemotron-3-ultra-550b-a55b:free` |
 
-`OPENCODE_MODEL` supplies the bootstrap default for new rooms and is checked in as Muse Spark 1.2 Contributor Free. `OPENCODE_MODEL_ALLOWLIST` controls which live catalog entries Relay offers. Maintainers can change the selection from the room header; Relay persists it per room and switches the existing OpenCode session on its next turn.
+`OPENCODE_MODEL` supplies the bootstrap default for new rooms and is checked in as NVIDIA Nemotron 3 Ultra Free. `OPENCODE_MODEL_ALLOWLIST` controls which live catalog entries Relay offers. Maintainers can change the selection from the room header; Relay persists it per room and switches the existing OpenCode session on its next turn. The `:free` OpenRouter route does not charge credits, but it remains subject to OpenRouter and upstream availability and rate limits.
 
-To run a free model live locally, copy the example configuration and add the Railway and OpenCode Zen credentials:
+To run the free model live locally, copy the example configuration and add the Railway and OpenRouter credentials:
 
 ```bash
 cp .dev.vars.example .dev.vars

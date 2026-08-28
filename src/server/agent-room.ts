@@ -19,6 +19,7 @@ import {
 import { completedTurnStatus } from "./agent-turn";
 import { sessionTitleFromEvent } from "./session-title";
 import {
+  configuredOpenCodeModels,
   hasLiveOpenCode,
   liveOpenCodeConfigurationError,
   openCodeModelAllowlist,
@@ -163,9 +164,19 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   async initialize(roomID: string): Promise<void> {
     this.roomID = roomID;
     this.ensureRoom(roomID);
-    await this.workspace.ensureReady().catch((error) => {
-      console.warn("Repository workspace initialization deferred", error);
-    });
+    if (this.getRoom().workspaceStatus !== "ready") {
+      this.ctx.waitUntil(
+        this.workspace
+          .ensureReady()
+          .then(() => {
+            this.broadcast({ type: "room", room: this.getRoom() });
+          })
+          .catch((error) => {
+            console.warn("Repository workspace initialization deferred", error);
+            this.broadcast({ type: "room", room: this.getRoom() });
+          }),
+      );
+    }
   }
 
   async createPullRequest(input: {
@@ -515,7 +526,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
-      return Response.json(await this.snapshot());
+      return Response.json(this.snapshot());
     }
 
     const url = new URL(request.url);
@@ -536,7 +547,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ participant } satisfies SocketAttachment);
     this.upsertParticipant(participant);
-    server.send(JSON.stringify(await this.snapshot()));
+    server.send(JSON.stringify(this.snapshot()));
     this.broadcastPresence();
 
     return new Response(null, { status: 101, webSocket: client });
@@ -1575,13 +1586,12 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     if (currentGeneration === generation) this.setRoomStatus(status);
   }
 
-  private async snapshot(): Promise<RoomSnapshot> {
-    const [models] = await Promise.all([this.availableOpenCodeModels()]);
+  private snapshot(): RoomSnapshot {
     const events = this.getEvents();
     return {
       type: "snapshot",
       room: this.getRoom(),
-      models,
+      models: this.configuredOpenCodeModels(),
       participants: this.getParticipants(),
       events,
       permissions: this.getPermissions(),
@@ -1590,11 +1600,8 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   }
 
   private async availableOpenCodeModels() {
-    const fallback = this.getRoom().model;
     const allowlist = openCodeModelAllowlist(this.env);
-    const fallbackModels = allowlist.length
-      ? allowlist.map(fallbackModelOption)
-      : [fallbackModelOption(fallback)];
+    const fallbackModels = this.configuredOpenCodeModels();
     if (!this.runner) return fallbackModels;
     const models = await this.runner.models().catch((error) => {
       console.warn("OpenCode model catalog unavailable", error);
@@ -1604,6 +1611,10 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       ? models.filter((model) => allowlist.includes(model.id))
       : models;
     return allowed.length ? allowed : fallbackModels;
+  }
+
+  private configuredOpenCodeModels() {
+    return configuredOpenCodeModels(this.env, this.getRoom().model);
   }
 
   private broadcastPresence() {
@@ -1624,28 +1635,6 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   private send(socket: WebSocket, message: ServerMessage) {
     socket.send(JSON.stringify(message));
   }
-}
-
-function fallbackModelOption(model: string) {
-  const [providerID, ...modelParts] = model.split("/");
-  const modelID = modelParts.join("/") || model;
-  return {
-    id: model,
-    name: modelDisplayName(modelID),
-    providerID: providerID || "unknown",
-    free: model.endsWith("-free") || model === "opencode/big-pickle",
-  };
-}
-
-function modelDisplayName(modelID: string) {
-  return modelID
-    .split("-")
-    .map((part) => {
-      if (part === "mimo") return "MiMo";
-      if (/^v\d/i.test(part)) return part.toUpperCase();
-      return part.charAt(0).toUpperCase() + part.slice(1);
-    })
-    .join(" ");
 }
 
 function hashCode(value: string): number {

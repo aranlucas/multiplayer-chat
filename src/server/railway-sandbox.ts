@@ -1,4 +1,5 @@
 import {
+  ExecInterruptedError,
   Sandbox,
   SandboxNotFoundError,
   type ExecHandle,
@@ -24,6 +25,7 @@ export interface SandboxCommandOptions {
   timeout?: number;
   onStdout?: (chunk: string) => void;
   onStderr?: (chunk: string) => void;
+  retryOnInterrupted?: boolean;
 }
 
 interface SandboxRow {
@@ -70,6 +72,24 @@ export class RailwayRoomSandbox {
     options: SandboxCommandOptions = {},
   ): Promise<SandboxCommandResult> {
     const sandbox = await this.get();
+    try {
+      return await this.runExec(sandbox, command, options);
+    } catch (error) {
+      if (
+        !options.retryOnInterrupted ||
+        !(error instanceof ExecInterruptedError) ||
+        !(await this.isStillRunning(sandbox))
+      )
+        throw error;
+      return this.runExec(sandbox, command, options);
+    }
+  }
+
+  private async runExec(
+    sandbox: Sandbox,
+    command: string,
+    options: SandboxCommandOptions,
+  ): Promise<SandboxCommandResult> {
     const handle = sandbox.exec(command, execOptions(options));
     this.active.add(handle);
     try {
@@ -78,6 +98,17 @@ export class RailwayRoomSandbox {
     } finally {
       this.active.delete(handle);
     }
+  }
+
+  private async isStillRunning(sandbox: Sandbox): Promise<boolean> {
+    try {
+      await sandbox.refresh();
+      if (sandbox.status === "RUNNING") return true;
+    } catch {
+      // The original interruption remains the most useful error to surface.
+    }
+    if (this.current === sandbox) this.current = undefined;
+    return false;
   }
 
   async detach(

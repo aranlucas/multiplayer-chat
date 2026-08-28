@@ -60,6 +60,36 @@ describe("coalesceTimelineEvents", () => {
     );
   });
 
+  it("keeps a completed stream closed when later events are coalesced", () => {
+    const identity = {
+      sessionID: "session",
+      assistantMessageID: "message",
+      ordinal: 0,
+    };
+    const completed = coalesceTimelineEvents([
+      raw(1, "session.reasoning.delta", {
+        ...identity,
+        delta: "Finished thought.",
+      }),
+      raw(2, "session.reasoning.ended", {
+        ...identity,
+        text: "Finished thought.",
+      }),
+    ]);
+    const repeated = coalesceTimelineEvents([
+      ...completed,
+      raw(3, "session.usage.updated", { sessionID: "session" }),
+    ]);
+
+    expect(
+      (
+        repeated[0].payload.event as {
+          data: { streaming: boolean };
+        }
+      ).data.streaming,
+    ).toBe(false);
+  });
+
   it("keeps separate assistant messages separate", () => {
     const events = coalesceTimelineEvents([
       raw(1, "session.text.delta", {
