@@ -209,7 +209,9 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
       <div className="sr-only" aria-live="polite">
         {state.connection === "connected"
           ? "Connected to shared session"
-          : "Reconnecting to shared session"}
+          : state.connection === "connecting"
+            ? "Connecting to shared session"
+            : "Reconnecting to shared session"}
       </div>
     </div>
   );

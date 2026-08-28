@@ -203,7 +203,11 @@ export function railwayTools({
             const limit = optionalInteger(input.limit) ?? 200;
             const result = await sandbox.exec(
               `rg --files --hidden --glob '!.git' --glob ${shellQuote(pattern)} -- ${shellQuote(path)} | head -n ${limit}`,
-              { cwd: WORKSPACE_DIRECTORY, timeout: 30_000 },
+              {
+                cwd: WORKSPACE_DIRECTORY,
+                timeout: 30_000,
+                retryOnInterrupted: true,
+              },
             );
             if (!result.success)
               throw new Error(result.stderr || "File search failed");
@@ -237,7 +241,11 @@ export function railwayTools({
             const limit = optionalInteger(input.limit) ?? 200;
             const result = await sandbox.exec(
               `rg --line-number --column --color never --hidden --glob '!.git'${include ? ` --glob ${shellQuote(include)}` : ""} -- ${shellQuote(requiredString(input.pattern, "pattern"))} ${shellQuote(path)} | head -n ${limit}`,
-              { cwd: WORKSPACE_DIRECTORY, timeout: 30_000 },
+              {
+                cwd: WORKSPACE_DIRECTORY,
+                timeout: 30_000,
+                retryOnInterrupted: true,
+              },
             );
             if (result.exitCode !== 0 && result.exitCode !== 1)
               throw new Error(result.stderr || "Repository search failed");

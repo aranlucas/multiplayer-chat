@@ -257,8 +257,10 @@ export function Header({
       <div className={`agent-state ${running ? "is-running" : ""}`}>
         <span className="status-dot" />
         <span>
-          {connection === "reconnecting"
-            ? "Reconnecting"
+          {connection === "connecting"
+            ? "Connecting"
+            : connection === "reconnecting"
+              ? "Reconnecting"
             : room?.workspaceStatus === "cloning"
               ? "Cloning repository"
               : room?.workspaceStatus === "error"

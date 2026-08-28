@@ -40,7 +40,7 @@ export function coalesceTimelineEvents(
         type,
         data,
         String(data.delta ?? ""),
-        true,
+        data.streaming !== false,
       );
       continue;
     }

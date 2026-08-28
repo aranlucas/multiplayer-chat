@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  configuredOpenCodeModels,
   hasLiveOpenCode,
   liveOpenCodeConfigurationError,
   openCodeConfiguration,
@@ -43,6 +44,20 @@ describe("hasLiveOpenCode", () => {
     ).toBe("A Railway project or API token is not configured.");
   });
 
+  it("requires the configured OpenRouter API key", () => {
+    const openRouterEnv = env({
+      OPENCODE_PROVIDER: "openrouter",
+      OPENCODE_MODEL:
+        "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+      OPENCODE_ZEN_API_KEY: undefined,
+    });
+
+    expect(hasLiveOpenCode(openRouterEnv)).toBe(false);
+    expect(liveOpenCodeConfigurationError(openRouterEnv)).toBe(
+      "The OpenRouter API key is not configured.",
+    );
+  });
+
   it("keeps simulation mode offline", () => {
     expect(hasLiveOpenCode(env({ OPENCODE_MODE: "simulation" }))).toBe(false);
     expect(
@@ -78,5 +93,49 @@ describe("hasLiveOpenCode", () => {
     expect(config.providers?.opencode?.settings).toEqual({
       apiKey: "zen-test-key",
     });
+  });
+
+  it("configures OpenRouter and adds Nemotron to pinned catalogs", () => {
+    const config = openCodeConfiguration(
+      env({
+        OPENCODE_PROVIDER: "openrouter",
+        OPENCODE_MODEL:
+          "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+        OPENCODE_MODEL_ALLOWLIST:
+          "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+        OPENCODE_ZEN_API_KEY: undefined,
+        OPENROUTER_API_KEY: "openrouter-test-key",
+      }),
+    );
+
+    expect(config.providers?.openrouter?.settings).toEqual({
+      apiKey: "openrouter-test-key",
+    });
+    expect(
+      config.providers?.openrouter?.models?.[
+        "nvidia/nemotron-3-ultra-550b-a55b:free"
+      ],
+    ).toEqual({ name: "NVIDIA Nemotron 3 Ultra (free)" });
+  });
+
+  it("uses a stable display name for the fast OpenRouter snapshot", () => {
+    expect(
+      configuredOpenCodeModels(
+        env({
+          OPENCODE_PROVIDER: "openrouter",
+          OPENCODE_MODEL:
+            "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+          OPENCODE_MODEL_ALLOWLIST:
+            "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+        }),
+      ),
+    ).toEqual([
+      {
+        id: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+        name: "NVIDIA Nemotron 3 Ultra (free)",
+        providerID: "openrouter",
+        free: true,
+      },
+    ]);
   });
 });
