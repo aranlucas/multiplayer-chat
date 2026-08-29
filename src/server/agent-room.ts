@@ -38,10 +38,7 @@ import {
   type ExistingPullRequest,
   type PullRequestResult,
 } from "./github-pull-request";
-import {
-  sealGitHubCredential,
-  unsealGitHubCredential,
-} from "./github-auth";
+import { sealGitHubCredential, unsealGitHubCredential } from "./github-auth";
 
 interface SocketAttachment {
   participant: Pick<Participant, "id" | "name" | "role" | "color">;
@@ -217,9 +214,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
             headSHA: room.pullRequestHeadSHA,
           }
         : undefined;
-    const result = await new GitHubPullRequestClient(
-      input.accessToken,
-    ).publish(
+    const result = await new GitHubPullRequestClient(input.accessToken).publish(
       {
         accessToken: input.accessToken,
         login: input.login,
@@ -412,10 +407,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     return { url: target.toString(), expiresAt };
   }
 
-  async redeemHandoff(input: {
-    token: string;
-    targetOrigin: string;
-  }): Promise<{
+  async redeemHandoff(input: { token: string; targetOrigin: string }): Promise<{
     participant: HandoffParticipant;
     clientState?: HandoffClientState;
     roomID: string;
@@ -743,9 +735,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         )
         .one().count;
       if (exists)
-        this.ctx.storage.sql.exec(
-          `ALTER TABLE ${hidden} RENAME TO ${visible}`,
-        );
+        this.ctx.storage.sql.exec(`ALTER TABLE ${hidden} RENAME TO ${visible}`);
     }
   }
 
@@ -1146,7 +1136,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
             : crypto.randomUUID(),
       kind: "opencode",
       createdAt:
-        typeof eventRecord.created === "number" ? eventRecord.created : Date.now(),
+        typeof eventRecord.created === "number"
+          ? eventRecord.created
+          : Date.now(),
       payload: { type: "raw", event: eventRecord },
     });
     this.broadcast({ type: "event", event: timelineEvent });
@@ -1673,9 +1665,7 @@ function validateHandoffClientState(
 ): HandoffClientState | undefined {
   if (!value) return undefined;
   const draft =
-    typeof value.draft === "string"
-      ? value.draft.slice(0, 8_000)
-      : undefined;
+    typeof value.draft === "string" ? value.draft.slice(0, 8_000) : undefined;
   const selectedID =
     typeof value.selectedID === "string"
       ? value.selectedID.slice(0, 200)
@@ -1695,8 +1685,8 @@ async function verifyReadyPreview(previewURL: string, commitSHA: string) {
   });
   const result: { ready?: boolean; commitSHA?: string; roomProtocol?: number } =
     await response
-    .json<{ ready?: boolean; commitSHA?: string; roomProtocol?: number }>()
-    .catch(() => ({}));
+      .json<{ ready?: boolean; commitSHA?: string; roomProtocol?: number }>()
+      .catch(() => ({}));
   if (
     !response.ok ||
     !result.ready ||
@@ -1729,12 +1719,6 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
-}
-
-function deriveThreadTitle(text: string): string {
-  const collapsed = text.replace(/\s+/g, " ").trim();
-  if (collapsed.length <= 100) return collapsed;
-  return `${collapsed.slice(0, 99).trimEnd()}…`;
 }
 
 function cleanPullRequestText(

@@ -12,9 +12,7 @@ describe("replaceExact", () => {
     expect(() => replaceExact("same same", "same", "next", false)).toThrow(
       "multiple matches",
     );
-    expect(replaceExact("same same", "same", "next", true)).toBe(
-      "next next",
-    );
+    expect(replaceExact("same same", "same", "next", true)).toBe("next next");
   });
 
   it("directs the agent to re-read after stale content", () => {

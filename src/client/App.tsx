@@ -89,10 +89,7 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
         };
         if (!response.ok || (!sameOrigin && !result.url))
           throw new Error(result.error || "Unable to move to the preview");
-        window.sessionStorage.setItem(
-          `relay:${roomID}:mobile-tab`,
-          mobileTab,
-        );
+        window.sessionStorage.setItem(`relay:${roomID}:mobile-tab`, mobileTab);
         if (selectedID)
           window.sessionStorage.setItem(`relay:${roomID}:selected`, selectedID);
         window.sessionStorage.setItem(`relay:${roomID}:draft`, draft);
@@ -203,7 +200,8 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
       {transitioning ? (
         <div className="room-transition" role="status">
           <span className="transition-pulse" />
-          Preview ready. Moving this room to revision {state.room?.latestRevision?.sequence}…
+          Preview ready. Moving this room to revision{" "}
+          {state.room?.latestRevision?.sequence}…
         </div>
       ) : null}
       <div className="sr-only" aria-live="polite">

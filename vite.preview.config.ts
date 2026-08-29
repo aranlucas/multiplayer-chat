@@ -12,10 +12,7 @@ export default defineConfig({
         "local-preview",
     ),
   },
-  plugins: [
-    react(),
-    cloudflare({ configPath: "./preview/wrangler.jsonc" }),
-  ],
+  plugins: [react(), cloudflare({ configPath: "./preview/wrangler.jsonc" })],
   build: {
     outDir: "dist-preview",
     minify: "terser",

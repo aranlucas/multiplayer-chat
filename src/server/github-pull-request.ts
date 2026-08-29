@@ -200,7 +200,9 @@ export class GitHubPullRequestClient {
           environment_url?: string;
           description?: string;
         }>
-      >(`/repos/${repository}/deployments/${deployment.id}/statuses?per_page=20`);
+      >(
+        `/repos/${repository}/deployments/${deployment.id}/statuses?per_page=20`,
+      );
       const latest = statuses[0];
       if (!latest) continue;
       if (latest.state === "success" && latest.environment_url) {

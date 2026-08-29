@@ -51,14 +51,12 @@ function appendEvent(events: TimelineEvent[], incoming: TimelineEvent) {
 export function getIdentity(roomID: string): RoomIdentity {
   const params = new URLSearchParams(window.location.search);
   const remembered = rememberedIdentity(roomID);
-  const requestedName =
-    params.get("name")?.trim() || remembered?.name || "You";
-  const requestedRole =
-    params.has("role")
-      ? params.get("role") === "contributor"
-        ? "contributor"
-        : "maintainer"
-      : remembered?.role ?? "maintainer";
+  const requestedName = params.get("name")?.trim() || remembered?.name || "You";
+  const requestedRole = params.has("role")
+    ? params.get("role") === "contributor"
+      ? "contributor"
+      : "maintainer"
+    : (remembered?.role ?? "maintainer");
   const storageKey = `relay:${roomID}:${requestedName}:participant`;
   let id = window.localStorage.getItem(storageKey);
   if (!id) {

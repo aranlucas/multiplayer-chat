@@ -86,7 +86,7 @@ function mergeFormLifecycle(
     payload: {
       type: "raw",
       event: {
-        ...(rawEvent(existing ?? event) ?? {}),
+        ...rawEvent(existing ?? event),
         type,
         data: { ...existingData, ...data, form },
       },
@@ -161,10 +161,7 @@ function toolEvent(
   };
 }
 
-function toolKey(
-  event: TimelineEvent,
-  data: Record<string, unknown>,
-): string {
+function toolKey(event: TimelineEvent, data: Record<string, unknown>): string {
   return [
     data.sessionID ?? "session",
     data.assistantMessageID ?? "message",

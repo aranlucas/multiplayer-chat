@@ -7,10 +7,7 @@ export interface WorkerEnv extends GitHubOAuthEnv, RailwaySandboxEnv {
   AGENT_ROOMS: DurableObjectNamespace;
   ASSETS: Fetcher;
   OPENCODE_MODE: "simulation" | "live";
-  OPENCODE_PROVIDER:
-    | "opencode-zen"
-    | "openrouter"
-    | "cloudflare-workers-ai";
+  OPENCODE_PROVIDER: "opencode-zen" | "openrouter" | "cloudflare-workers-ai";
   OPENCODE_ZEN_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
   CLOUDFLARE_ACCOUNT_ID: string;
@@ -30,8 +27,9 @@ export function openCodeModelAllowlist(env: WorkerEnv): string[] {
   return (env.OPENCODE_MODEL_ALLOWLIST ?? "")
     .split(",")
     .map((model) => model.trim())
-    .filter((model, index, models) =>
-      Boolean(model) && models.indexOf(model) === index,
+    .filter(
+      (model, index, models) =>
+        Boolean(model) && models.indexOf(model) === index,
     );
 }
 
@@ -68,10 +66,7 @@ export function liveOpenCodeConfigurationError(
     return "The Railway environment ID is not configured.";
   if (!env.RAILWAY_TOKEN && !env.RAILWAY_API_TOKEN)
     return "A Railway project or API token is not configured.";
-  if (
-    env.OPENCODE_PROVIDER === "opencode-zen" &&
-    !env.OPENCODE_ZEN_API_KEY
-  )
+  if (env.OPENCODE_PROVIDER === "opencode-zen" && !env.OPENCODE_ZEN_API_KEY)
     return "The OpenCode Zen API key is not configured.";
   if (env.OPENCODE_PROVIDER === "openrouter" && !env.OPENROUTER_API_KEY)
     return "The OpenRouter API key is not configured.";

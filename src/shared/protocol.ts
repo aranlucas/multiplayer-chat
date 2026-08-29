@@ -14,11 +14,7 @@ export interface Participant {
 
 export type DeliveryMode = "steer" | "queue";
 
-export type DeploymentStatus =
-  | "waiting"
-  | "building"
-  | "ready"
-  | "failed";
+export type DeploymentStatus = "waiting" | "building" | "ready" | "failed";
 
 export interface RoomRevision {
   id: string;
@@ -227,9 +223,7 @@ export function parseClientMessage(value: unknown): ClientMessage {
       const values = Array.isArray(raw) ? raw : [raw];
       if (
         values.length > 20 ||
-        values.some(
-          (item) => typeof item !== "string" || item.length > 2_000,
-        )
+        values.some((item) => typeof item !== "string" || item.length > 2_000)
       )
         throw new Error("Invalid question answer");
       answer[key] = Array.isArray(raw) ? (values as string[]) : values[0];
