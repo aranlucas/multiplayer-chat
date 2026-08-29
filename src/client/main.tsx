@@ -25,7 +25,9 @@ if (window.location.pathname.match(/^\/r\//)) {
       root.render(
         <main className="handoff-error">
           <strong>Unable to enter this Relay preview</strong>
-          <p>{error instanceof Error ? error.message : "Room handoff failed"}</p>
+          <p>
+            {error instanceof Error ? error.message : "Room handoff failed"}
+          </p>
           <a href="/">Return to Relay</a>
         </main>,
       );

@@ -6,10 +6,7 @@ import {
   type WorkspaceChange,
 } from "../shared/workspace-change";
 import { replaceExact } from "../shared/exact-edit";
-import {
-  RailwayRoomSandbox,
-  type RailwaySandboxEnv,
-} from "./railway-sandbox";
+import { RailwayRoomSandbox, type RailwaySandboxEnv } from "./railway-sandbox";
 
 export type WorkspaceEnv = RailwaySandboxEnv;
 
@@ -186,24 +183,15 @@ export class RepositoryWorkspace {
         .readFile(`${WORKSPACE_DIRECTORY}/${path}`)
         .catch(() => undefined);
       if (!file) throw new Error(`File does not exist: ${path}`);
-      const content = replaceExact(
-        file,
-        oldString,
-        newString,
-        replaceAll,
-      );
+      const content = replaceExact(file, oldString, newString, replaceAll);
       ensureFileSize(path, content);
       await this.sandbox.writeFile(`${WORKSPACE_DIRECTORY}/${path}`, content);
       this.replaceWorkspaceChanges(await this.sandboxChanges());
     } else {
       const current = this.remoteFiles().get(path);
-      if (current === undefined) throw new Error(`File does not exist: ${path}`);
-      const content = replaceExact(
-        current,
-        oldString,
-        newString,
-        replaceAll,
-      );
+      if (current === undefined)
+        throw new Error(`File does not exist: ${path}`);
+      const content = replaceExact(current, oldString, newString, replaceAll);
       ensureFileSize(path, content);
       this.storeWorkspaceChange({ path, content });
     }

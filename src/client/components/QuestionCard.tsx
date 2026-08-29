@@ -97,12 +97,17 @@ export function QuestionCard({
                           }));
                       }}
                     />
-                    <span className="question-option-control" aria-hidden="true">
+                    <span
+                      className="question-option-control"
+                      aria-hidden="true"
+                    >
                       {checked ? <Check size={13} /> : null}
                     </span>
                     <span>
                       <strong>{option.label}</strong>
-                      {option.description ? <em>{option.description}</em> : null}
+                      {option.description ? (
+                        <em>{option.description}</em>
+                      ) : null}
                     </span>
                   </label>
                 );
@@ -117,9 +122,15 @@ export function QuestionCard({
                   placeholder="Add another answer…"
                   onChange={(event) => {
                     const value = event.target.value;
-                    setCustom((current) => ({ ...current, [field.key]: value }));
+                    setCustom((current) => ({
+                      ...current,
+                      [field.key]: value,
+                    }));
                     if (field.type === "string" && value)
-                      setSelected((current) => ({ ...current, [field.key]: [] }));
+                      setSelected((current) => ({
+                        ...current,
+                        [field.key]: [],
+                      }));
                   }}
                 />
               </label>

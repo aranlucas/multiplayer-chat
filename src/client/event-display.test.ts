@@ -159,7 +159,8 @@ describe("tool event display", () => {
         rawToolEvent("question", {
           questions: [
             {
-              question: "What specific changes would you like made to the README?",
+              question:
+                "What specific changes would you like made to the README?",
               header: "README updates",
               options: [],
               multiple: true,

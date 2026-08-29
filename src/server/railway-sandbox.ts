@@ -34,7 +34,10 @@ interface SandboxRow {
 }
 
 interface RailwaySandboxFactory {
-  connect(id: string, options: ReturnType<typeof clientOptions>): Promise<Sandbox>;
+  connect(
+    id: string,
+    options: ReturnType<typeof clientOptions>,
+  ): Promise<Sandbox>;
   create(options: ReturnType<typeof createOptions>): Promise<Sandbox>;
   create(
     checkpoint: string,

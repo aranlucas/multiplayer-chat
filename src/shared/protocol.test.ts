@@ -65,9 +65,7 @@ describe("room protocol", () => {
         prompt("2", "pending"),
         prompt("3"),
       ]),
-    ).toEqual([
-      expect.objectContaining({ eventID: "2", text: "Prompt 2" }),
-    ]);
+    ).toEqual([expect.objectContaining({ eventID: "2", text: "Prompt 2" })]);
   });
 
   it("accepts repository configuration messages", () => {

@@ -150,8 +150,8 @@ Open `http://127.0.0.1:5176/r/local-loop` before calling the local-preview endpo
 
 Relay ships with an in-room model picker configured for NVIDIA Nemotron 3 Ultra through OpenRouter:
 
-| Display name | Model ID |
-| --- | --- |
+| Display name                   | Model ID                                            |
+| ------------------------------ | --------------------------------------------------- |
 | NVIDIA Nemotron 3 Ultra (free) | `openrouter/nvidia/nemotron-3-ultra-550b-a55b:free` |
 
 `OPENCODE_MODEL` supplies the bootstrap default for new rooms and is checked in as NVIDIA Nemotron 3 Ultra Free. `OPENCODE_MODEL_ALLOWLIST` controls which live catalog entries Relay offers. Maintainers can change the selection from the room header; Relay persists it per room and switches the existing OpenCode session on its next turn. The `:free` OpenRouter route does not charge credits, but it remains subject to OpenRouter and upstream availability and rate limits.

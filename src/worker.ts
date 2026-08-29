@@ -351,8 +351,8 @@ async function verifyPreview(previewURL: string, commitSHA?: string) {
   });
   const result: { ready?: boolean; commitSHA?: string; roomProtocol?: number } =
     await response
-    .json<{ ready?: boolean; commitSHA?: string; roomProtocol?: number }>()
-    .catch(() => ({}));
+      .json<{ ready?: boolean; commitSHA?: string; roomProtocol?: number }>()
+      .catch(() => ({}));
   if (!response.ok || !result.ready)
     throw new Error("Preview did not pass its Relay readiness check");
   if (result.roomProtocol !== 1)

@@ -26,29 +26,24 @@ describe("hasLiveOpenCode", () => {
   });
 
   it("requires Railway sandbox access", () => {
-    expect(
-      hasLiveOpenCode(env({ RAILWAY_ENVIRONMENT_ID: undefined })),
-    ).toBe(false);
-    expect(
-      hasLiveOpenCode(env({ RAILWAY_TOKEN: undefined })),
-    ).toBe(false);
+    expect(hasLiveOpenCode(env({ RAILWAY_ENVIRONMENT_ID: undefined }))).toBe(
+      false,
+    );
+    expect(hasLiveOpenCode(env({ RAILWAY_TOKEN: undefined }))).toBe(false);
     expect(
       liveOpenCodeConfigurationError(
         env({ RAILWAY_ENVIRONMENT_ID: undefined }),
       ),
     ).toBe("The Railway environment ID is not configured.");
     expect(
-      liveOpenCodeConfigurationError(
-        env({ RAILWAY_TOKEN: undefined }),
-      ),
+      liveOpenCodeConfigurationError(env({ RAILWAY_TOKEN: undefined })),
     ).toBe("A Railway project or API token is not configured.");
   });
 
   it("requires the configured OpenRouter API key", () => {
     const openRouterEnv = env({
       OPENCODE_PROVIDER: "openrouter",
-      OPENCODE_MODEL:
-        "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+      OPENCODE_MODEL: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
       OPENCODE_ZEN_API_KEY: undefined,
     });
 
@@ -86,9 +81,7 @@ describe("hasLiveOpenCode", () => {
     );
 
     expect(
-      config.providers?.opencode?.models?.[
-        "muse-spark-1.2-contributor-free"
-      ],
+      config.providers?.opencode?.models?.["muse-spark-1.2-contributor-free"],
     ).toEqual({ name: "Muse Spark 1.2 Contributor Free" });
     expect(config.providers?.opencode?.settings).toEqual({
       apiKey: "zen-test-key",
@@ -99,8 +92,7 @@ describe("hasLiveOpenCode", () => {
     const config = openCodeConfiguration(
       env({
         OPENCODE_PROVIDER: "openrouter",
-        OPENCODE_MODEL:
-          "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+        OPENCODE_MODEL: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
         OPENCODE_MODEL_ALLOWLIST:
           "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
         OPENCODE_ZEN_API_KEY: undefined,
@@ -123,8 +115,7 @@ describe("hasLiveOpenCode", () => {
       configuredOpenCodeModels(
         env({
           OPENCODE_PROVIDER: "openrouter",
-          OPENCODE_MODEL:
-            "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+          OPENCODE_MODEL: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
           OPENCODE_MODEL_ALLOWLIST:
             "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
         }),

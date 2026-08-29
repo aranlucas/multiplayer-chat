@@ -89,7 +89,8 @@ describe("GitHubPullRequestClient", () => {
   });
 
   it("publishes later revisions to the same pull request branch", async () => {
-    const requests: Array<{ url: string; method?: string; body?: unknown }> = [];
+    const requests: Array<{ url: string; method?: string; body?: unknown }> =
+      [];
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
       requests.push({
@@ -98,7 +99,11 @@ describe("GitHubPullRequestClient", () => {
         body: init?.body ? JSON.parse(String(init.body)) : undefined,
       });
       if (url.endsWith("/repos/owner/repo"))
-        return json({ full_name: "owner/repo", name: "repo", permissions: { push: true } });
+        return json({
+          full_name: "owner/repo",
+          name: "repo",
+          permissions: { push: true },
+        });
       if (url.endsWith("/git/commits/" + "a".repeat(40)))
         return json({ sha: "a".repeat(40), tree: { sha: "base-tree" } });
       if (url.includes("/git/ref/heads/relay/existing"))
@@ -135,7 +140,9 @@ describe("GitHubPullRequestClient", () => {
       branch: "relay/existing",
       commitSHA: "new-head",
     });
-    expect(requests.some((request) => request.url.endsWith("/pulls"))).toBe(false);
+    expect(requests.some((request) => request.url.endsWith("/pulls"))).toBe(
+      false,
+    );
     expect(
       requests.find((request) => request.method === "PATCH")?.body,
     ).toEqual({ sha: "new-head", force: false });

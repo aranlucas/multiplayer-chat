@@ -89,7 +89,9 @@ export function Header({
     if (onConfigureModel(model)) setEditingModel(false);
   }
 
-  const selectedModel = models.find((candidate) => candidate.id === room?.model);
+  const selectedModel = models.find(
+    (candidate) => candidate.id === room?.model,
+  );
 
   return (
     <header className="app-header">
@@ -150,9 +152,7 @@ export function Header({
               autoFocus
             >
               {!models.some((candidate) => candidate.id === model) && model ? (
-                <option value={model}>
-                  {model} (currently unavailable)
-                </option>
+                <option value={model}>{model} (currently unavailable)</option>
               ) : null}
               {models.map((candidate) => (
                 <option key={candidate.id} value={candidate.id}>
@@ -224,7 +224,9 @@ export function Header({
         }}
       >
         <span>
-          {room?.titleAuto ? "Untitled thread" : room?.title ?? "Untitled thread"}
+          {room?.titleAuto
+            ? "Untitled thread"
+            : (room?.title ?? "Untitled thread")}
         </span>
         <ChevronDown size={14} aria-hidden />
       </button>
@@ -263,21 +265,21 @@ export function Header({
             ? "Connecting"
             : connection === "reconnecting"
               ? "Reconnecting"
-            : room?.workspaceStatus === "cloning"
-              ? "Cloning repository"
-              : room?.workspaceStatus === "error"
-                ? "Workspace error"
-                : running
-                  ? "Agent running"
-                  : room?.latestRevision?.status === "waiting"
-                    ? "Preview queued"
-                    : room?.latestRevision?.status === "building"
-                      ? "Preview building"
-                      : room?.latestRevision?.status === "ready"
-                        ? `Revision ${room.latestRevision.sequence} live`
-                  : room?.agentStatus === "paused"
-                    ? "Agent paused"
-                    : "Agent ready"}
+              : room?.workspaceStatus === "cloning"
+                ? "Cloning repository"
+                : room?.workspaceStatus === "error"
+                  ? "Workspace error"
+                  : running
+                    ? "Agent running"
+                    : room?.latestRevision?.status === "waiting"
+                      ? "Preview queued"
+                      : room?.latestRevision?.status === "building"
+                        ? "Preview building"
+                        : room?.latestRevision?.status === "ready"
+                          ? `Revision ${room.latestRevision.sequence} live`
+                          : room?.agentStatus === "paused"
+                            ? "Agent paused"
+                            : "Agent ready"}
         </span>
       </div>
       <div

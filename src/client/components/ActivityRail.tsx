@@ -79,8 +79,7 @@ export function ActivityRail({
                 </span>
               </span>
               {(display.type === "tool" && display.status === "completed") ||
-              (display.type === "question" &&
-                display.status === "answered") ? (
+              (display.type === "question" && display.status === "answered") ? (
                 <Check className="activity-check" size={14} />
               ) : null}
             </button>

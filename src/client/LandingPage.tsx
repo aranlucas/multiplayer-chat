@@ -76,7 +76,10 @@ export function LandingPage() {
           <a href="#how">How it works</a>
           <a href="/r/reconnect-loop">Live room</a>
         </nav>
-        <button className="button-primary landing-nav-cta" onClick={createThread}>
+        <button
+          className="button-primary landing-nav-cta"
+          onClick={createThread}
+        >
           Start a thread
         </button>
       </header>
@@ -145,7 +148,9 @@ export function LandingPage() {
         <section id="how" className="landing-section landing-section-alt">
           <div className="section-head">
             <h2>From empty room to shipped PR in three steps</h2>
-            <p>No setup, no client to install. Open a link and start building.</p>
+            <p>
+              No setup, no client to install. Open a link and start building.
+            </p>
           </div>
           <div className="steps">
             {steps.map((step, index) => (
@@ -264,7 +269,8 @@ function RelayMock() {
                 <span className="mock-tag mock-tag-done">done</span>
               </div>
               <p>
-                Added validation and a failing test now passes. Ready for review.
+                Added validation and a failing test now passes. Ready for
+                review.
               </p>
             </div>
           </div>

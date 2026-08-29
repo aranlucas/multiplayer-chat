@@ -7,7 +7,7 @@ allowBuilds:
   tree-sitter-powershell: true
   workerd: true
 
-minimumReleaseAge: 1440
+minimumReleaseAge: 0
 minimumReleaseAgeExclude:
   # The official Workerd SDK is currently published only on OpenCode's dev
   # channel and intentionally tracks matching, newly published provider builds.

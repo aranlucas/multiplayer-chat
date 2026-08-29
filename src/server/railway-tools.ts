@@ -41,10 +41,7 @@ export function railwayTools({
               sessionName: { type: "string" },
             },
             additionalProperties: false,
-            oneOf: [
-              { required: ["command"] },
-              { required: ["sessionName"] },
-            ],
+            oneOf: [{ required: ["command"] }, { required: ["sessionName"] }],
           },
           options: { codemode: false },
           execute: async (raw, tool) => {
@@ -98,7 +95,9 @@ export function railwayTools({
           execute: async (raw) => {
             const input = asRecord(raw);
             await ensureWorkspace();
-            const path = resolveWorkspacePath(requiredString(input.path, "path"));
+            const path = resolveWorkspacePath(
+              requiredString(input.path, "path"),
+            );
             const stat = await sandbox.stat(path);
             const offset = optionalInteger(input.offset) ?? 1;
             const limit = optionalInteger(input.limit) ?? 2_000;
@@ -137,7 +136,9 @@ export function railwayTools({
           execute: async (raw) => {
             const input = asRecord(raw);
             await ensureWorkspace();
-            const path = resolveWorkspacePath(requiredString(input.path, "path"));
+            const path = resolveWorkspacePath(
+              requiredString(input.path, "path"),
+            );
             const content = requiredString(input.content, "content", true);
             ensureSize(path, content);
             await sandbox.writeFile(path, content);
@@ -164,7 +165,9 @@ export function railwayTools({
           execute: async (raw) => {
             const input = asRecord(raw);
             await ensureWorkspace();
-            const path = resolveWorkspacePath(requiredString(input.path, "path"));
+            const path = resolveWorkspacePath(
+              requiredString(input.path, "path"),
+            );
             const current = await sandbox.readFile(path);
             const content = replaceExact(
               current,
@@ -265,9 +268,7 @@ export function railwayTools({
 }
 
 function resolveWorkspacePath(value: string): string {
-  const raw = value.startsWith("/")
-    ? value
-    : `${WORKSPACE_DIRECTORY}/${value}`;
+  const raw = value.startsWith("/") ? value : `${WORKSPACE_DIRECTORY}/${value}`;
   const parts: string[] = [];
   for (const part of raw.split("/")) {
     if (!part || part === ".") continue;
@@ -320,7 +321,9 @@ function requiredString(
   allowEmpty = false,
 ): string {
   if (typeof value !== "string" || (!allowEmpty && !value))
-    throw new Error(`${field} must be a${allowEmpty ? "" : " non-empty"} string`);
+    throw new Error(
+      `${field} must be a${allowEmpty ? "" : " non-empty"} string`,
+    );
   return value;
 }
 

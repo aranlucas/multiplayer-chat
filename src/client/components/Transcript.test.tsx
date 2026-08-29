@@ -70,9 +70,7 @@ describe("Bash tool card copy button", () => {
   });
 
   it("keeps the copy button outside the expand toggle", () => {
-    const html = render(
-      toolEvent("bash", "success", { command: "pnpm test" }),
-    );
+    const html = render(toolEvent("bash", "success", { command: "pnpm test" }));
     expect(html).toContain('class="tool-header-wrap"');
     expect(html).toContain('class="tool-copy"');
   });

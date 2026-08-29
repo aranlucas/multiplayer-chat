@@ -21,7 +21,10 @@ const initialState: GitHubState = {
   creating: false,
 };
 
-export function useGitHub(roomID: string, controlOrigin = window.location.origin) {
+export function useGitHub(
+  roomID: string,
+  controlOrigin = window.location.origin,
+) {
   const [state, setState] = useState(initialState);
   const creatingRef = useRef(false);
 

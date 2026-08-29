@@ -1,8 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 const branch = process.env.WORKERS_CI_BRANCH ?? process.env.GITHUB_HEAD_REF;
-const commitSHA =
-  process.env.WORKERS_CI_COMMIT_SHA ?? process.env.GITHUB_SHA;
+const commitSHA = process.env.WORKERS_CI_COMMIT_SHA ?? process.env.GITHUB_SHA;
 const controlOrigin = process.env.RELAY_CONTROL_ORIGIN;
 const webhookSecret = process.env.RELAY_DEPLOYMENT_WEBHOOK_SECRET;
 const roomID = roomFromBranch(branch);
