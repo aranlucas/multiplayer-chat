@@ -1,0 +1,10 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["jsx-a11y", "react", "typescript", "unicorn"],
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2026": true
+  },
+  "ignorePatterns": ["dist/**", "node_modules/**", "worker-configuration.d.ts"]
+}
