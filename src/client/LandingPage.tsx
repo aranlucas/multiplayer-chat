@@ -256,7 +256,7 @@ function RelayMock() {
                 <strong>agent</strong>
                 <span className="mock-tag">bash</span>
               </div>
-              <p className="mock-code">$ npm test -- auth</p>
+              <p className="mock-code">$ pnpm test -- auth</p>
             </div>
           </div>
           <div className="mock-event mock-event-message">
