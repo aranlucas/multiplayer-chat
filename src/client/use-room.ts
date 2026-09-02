@@ -4,10 +4,12 @@ import type {
   ClientMessage,
   DeliveryMode,
   Participant,
+  ImplementationBrief,
   OpenCodeModelOption,
   PermissionRequest,
   QueuedPrompt,
   RoomInfo,
+  RoomDecision,
   ServerMessage,
   TimelineEvent,
 } from "../shared/protocol";
@@ -20,6 +22,8 @@ export interface RoomState {
   events: TimelineEvent[];
   permissions: PermissionRequest[];
   queue: QueuedPrompt[];
+  brief: ImplementationBrief;
+  decisions: RoomDecision[];
   connection: "connecting" | "connected" | "reconnecting" | "offline";
   error?: string;
 }
@@ -36,6 +40,8 @@ const initialState: RoomState = {
   events: [],
   permissions: [],
   queue: [],
+  brief: { objective: "", constraints: [], validation: [] },
+  decisions: [],
   connection: "connecting",
 };
 
@@ -67,10 +73,7 @@ export function getIdentity(roomID: string): RoomIdentity {
     window.localStorage.setItem(storageKey, id);
   }
   const identity = { id, name: requestedName, role: requestedRole };
-  window.localStorage.setItem(
-    `relay:${roomID}:identity`,
-    JSON.stringify(identity),
-  );
+  window.localStorage.setItem(`relay:${roomID}:identity`, JSON.stringify(identity));
   return identity;
 }
 
@@ -112,6 +115,8 @@ export function useRoom(
           events: coalesceTimelineEvents(message.events),
           permissions: message.permissions,
           queue: message.queue,
+          brief: message.brief,
+          decisions: message.decisions,
           connection: "connected",
           error: undefined,
         };
@@ -120,13 +125,16 @@ export function useRoom(
         const events = appendEvent(current.events, message.event);
         return { ...current, events, queue: queuedPrompts(events) };
       }
-      if (message.type === "presence")
-        return { ...current, participants: message.participants };
+      if (message.type === "presence") return { ...current, participants: message.participants };
       if (message.type === "room") return { ...current, room: message.room };
-      if (message.type === "permissions")
-        return { ...current, permissions: message.permissions };
-      if (message.type === "error")
-        return { ...current, error: message.message };
+      if (message.type === "permissions") return { ...current, permissions: message.permissions };
+      if (message.type === "planning")
+        return {
+          ...current,
+          brief: message.brief,
+          decisions: message.decisions,
+        };
+      if (message.type === "error") return { ...current, error: message.message };
       return current;
     });
   }, []);
@@ -187,14 +195,7 @@ export function useRoom(
       if (retryRef.current) window.clearTimeout(retryRef.current);
       socketRef.current?.close(1000, "component unmounted");
     };
-  }, [
-    controlOrigin,
-    handleMessage,
-    identity.id,
-    identity.name,
-    identity.role,
-    roomID,
-  ]);
+  }, [controlOrigin, handleMessage, identity.id, identity.name, identity.role, roomID]);
 
   const send = useCallback((message: ClientMessage) => {
     const socket = socketRef.current;
@@ -222,11 +223,7 @@ export function useRoom(
       reply(requestID: string, reply: "once" | "always" | "reject") {
         return send({ type: "permission.reply", requestID, reply });
       },
-      answerQuestion(
-        sessionID: string,
-        formID: string,
-        answer: Record<string, string | string[]>,
-      ) {
+      answerQuestion(sessionID: string, formID: string, answer: Record<string, string | string[]>) {
         return send({
           type: "question.reply",
           sessionID,
@@ -265,6 +262,22 @@ export function useRoom(
         return send({
           type: "room.model.configure",
           model,
+          requestID: crypto.randomUUID(),
+        });
+      },
+      updateBrief(brief: Pick<ImplementationBrief, "objective" | "constraints" | "validation">) {
+        return send({
+          type: "brief.update",
+          ...brief,
+          requestID: crypto.randomUUID(),
+        });
+      },
+      createDecision(text: string, rationale?: string, sourceEventID?: string) {
+        return send({
+          type: "decision.create",
+          text,
+          rationale,
+          sourceEventID,
           requestID: crypto.randomUUID(),
         });
       },

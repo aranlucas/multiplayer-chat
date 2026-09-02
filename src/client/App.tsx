@@ -8,6 +8,7 @@ import { Composer } from "./components/Composer";
 import { Header } from "./components/Header";
 import { MobileTabs, type MobileTab } from "./components/MobileTabs";
 import { Transcript } from "./components/Transcript";
+import { ImplementationBrief } from "./components/ImplementationBrief";
 
 export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
   const { roomID, identity, controlOrigin } = bootstrap;
@@ -20,22 +21,17 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
       undefined,
   );
   const [mobileTab, setMobileTab] = useState<MobileTab>(() => {
-    if (bootstrap.resumeState?.mobileTab)
-      return bootstrap.resumeState.mobileTab;
+    if (bootstrap.resumeState?.mobileTab) return bootstrap.resumeState.mobileTab;
     const stored = window.sessionStorage.getItem(`relay:${roomID}:mobile-tab`);
-    return stored === "people" || stored === "queue" ? stored : "transcript";
+    return stored === "brief" || stored === "people" || stored === "queue" ? stored : "transcript";
   });
   const [draft, setDraft] = useState(
     () =>
-      bootstrap.resumeState?.draft ??
-      window.sessionStorage.getItem(`relay:${roomID}:draft`) ??
-      "",
+      bootstrap.resumeState?.draft ?? window.sessionStorage.getItem(`relay:${roomID}:draft`) ?? "",
   );
   const [transitioning, setTransitioning] = useState(false);
   const handoffRevision = useRef<string | undefined>(undefined);
-  const pendingPermission = state.permissions.find(
-    (permission) => permission.status === "pending",
-  );
+  const pendingPermission = state.permissions.find((permission) => permission.status === "pending");
   const canApprove = identity.role === "maintainer";
 
   useEffect(() => {
@@ -63,8 +59,7 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
     handoffRevision.current = revision.id;
     const controller = new AbortController();
     setTransitioning(true);
-    const sameOrigin =
-      new URL(revision.previewURL).origin === window.location.origin;
+    const sameOrigin = new URL(revision.previewURL).origin === window.location.origin;
     const endpoint = sameOrigin
       ? `${controlOrigin}/api/rooms/${encodeURIComponent(roomID)}/revisions/activate`
       : `${controlOrigin}/api/rooms/${encodeURIComponent(roomID)}/handoffs`;
@@ -90,14 +85,10 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
         if (!response.ok || (!sameOrigin && !result.url))
           throw new Error(result.error || "Unable to move to the preview");
         window.sessionStorage.setItem(`relay:${roomID}:mobile-tab`, mobileTab);
-        if (selectedID)
-          window.sessionStorage.setItem(`relay:${roomID}:selected`, selectedID);
+        if (selectedID) window.sessionStorage.setItem(`relay:${roomID}:selected`, selectedID);
         window.sessionStorage.setItem(`relay:${roomID}:draft`, draft);
         window.setTimeout(
-          () =>
-            sameOrigin
-              ? window.location.reload()
-              : window.location.assign(result.url!),
+          () => (sameOrigin ? window.location.reload() : window.location.assign(result.url!)),
           450,
         );
       })
@@ -107,15 +98,7 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
         console.error(error);
       });
     return () => controller.abort();
-  }, [
-    controlOrigin,
-    draft,
-    identity,
-    mobileTab,
-    roomID,
-    selectedID,
-    state.room,
-  ]);
+  }, [controlOrigin, draft, identity, mobileTab, roomID, selectedID, state.room]);
 
   function reply(id: string, response: "once" | "reject") {
     actions.reply(id, response);
@@ -156,15 +139,26 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
         active={mobileTab}
         participants={state.participants.length}
         queued={state.queue.length}
+        decisions={state.decisions.length}
         onChange={setMobileTab}
       />
-      <ActivityRail
-        events={state.events}
-        selectedID={selectedID}
-        onSelect={setSelectedID}
-      />
+      <ActivityRail events={state.events} selectedID={selectedID} onSelect={setSelectedID} />
       <main className={`main-column mobile-tab-${mobileTab}`}>
-        {mobileTab === "people" ? (
+        {mobileTab === "brief" ? (
+          <ImplementationBrief
+            brief={state.brief}
+            decisions={state.decisions}
+            canEdit={canApprove}
+            selectedEventID={selectedID}
+            onSelectEvent={(id) => {
+              setSelectedID(id);
+              setMobileTab("transcript");
+            }}
+            onUpdate={actions.updateBrief}
+            onDecision={actions.createDecision}
+            mobile
+          />
+        ) : mobileTab === "people" ? (
           <MobilePeople />
         ) : mobileTab === "queue" ? (
           <MobileQueue />
@@ -193,6 +187,12 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
         events={state.events}
         canApprove={canApprove}
         onReply={reply}
+        brief={state.brief}
+        decisions={state.decisions}
+        selectedEventID={selectedID}
+        onSelectEvent={setSelectedID}
+        onUpdateBrief={actions.updateBrief}
+        onDecision={actions.createDecision}
       />
       {state.error || github.state.error ? (
         <div className="error-toast">{state.error ?? github.state.error}</div>
@@ -200,8 +200,7 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
       {transitioning ? (
         <div className="room-transition" role="status">
           <span className="transition-pulse" />
-          Preview ready. Moving this room to revision{" "}
-          {state.room?.latestRevision?.sequence}…
+          Preview ready. Moving this room to revision {state.room?.latestRevision?.sequence}…
         </div>
       ) : null}
       <div className="sr-only" aria-live="polite">
@@ -247,9 +246,7 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
             <p>{item.text}</p>
           </div>
         ))}
-        {!state.queue.length ? (
-          <p className="empty-copy">Nothing queued yet.</p>
-        ) : null}
+        {!state.queue.length ? <p className="empty-copy">Nothing queued yet.</p> : null}
       </section>
     );
   }

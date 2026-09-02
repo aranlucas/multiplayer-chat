@@ -59,13 +59,9 @@ describe("room protocol", () => {
       payload: { text: `Prompt ${id}`, delivery: "queue", queueStatus },
     });
 
-    expect(
-      queuedPrompts([
-        prompt("1", "consumed"),
-        prompt("2", "pending"),
-        prompt("3"),
-      ]),
-    ).toEqual([expect.objectContaining({ eventID: "2", text: "Prompt 2" })]);
+    expect(queuedPrompts([prompt("1", "consumed"), prompt("2", "pending"), prompt("3")])).toEqual([
+      expect.objectContaining({ eventID: "2", text: "Prompt 2" }),
+    ]);
   });
 
   it("accepts repository configuration messages", () => {
@@ -112,6 +108,41 @@ describe("room protocol", () => {
     });
   });
 
+  it("accepts structured implementation brief updates", () => {
+    expect(
+      parseClientMessage({
+        type: "brief.update",
+        objective: " Ship reconnect handling ",
+        constraints: [" Keep the protocol compatible "],
+        validation: [" Reconnect test passes "],
+        requestID: "brief-1",
+      }),
+    ).toEqual({
+      type: "brief.update",
+      objective: "Ship reconnect handling",
+      constraints: ["Keep the protocol compatible"],
+      validation: ["Reconnect test passes"],
+      requestID: "brief-1",
+    });
+  });
+
+  it("accepts attributed decisions linked to timeline events", () => {
+    expect(
+      parseClientMessage({
+        type: "decision.create",
+        text: " Use one Durable Object per room ",
+        rationale: " Preserve ordered room state ",
+        sourceEventID: "event-12",
+      }),
+    ).toEqual({
+      type: "decision.create",
+      text: "Use one Durable Object per room",
+      rationale: "Preserve ordered room state",
+      sourceEventID: "event-12",
+      requestID: undefined,
+    });
+  });
+
   it("accepts answers to an active OpenCode question", () => {
     expect(
       parseClientMessage({
@@ -135,9 +166,7 @@ describe("room protocol", () => {
   });
 
   it("rejects malformed or overlong messages", () => {
-    expect(() =>
-      parseClientMessage({ type: "prompt", text: "", delivery: "steer" }),
-    ).toThrow();
+    expect(() => parseClientMessage({ type: "prompt", text: "", delivery: "steer" })).toThrow();
     expect(() =>
       parseClientMessage({
         type: "prompt",
@@ -152,15 +181,9 @@ describe("room protocol", () => {
         reply: "maybe",
       }),
     ).toThrow();
-    expect(() =>
-      parseClientMessage({ type: "room.rename", title: "   " }),
-    ).toThrow();
-    expect(() =>
-      parseClientMessage({ type: "room.rename", title: "x".repeat(101) }),
-    ).toThrow();
-    expect(() =>
-      parseClientMessage({ type: "room.model.configure", model: "hy3-free" }),
-    ).toThrow();
+    expect(() => parseClientMessage({ type: "room.rename", title: "   " })).toThrow();
+    expect(() => parseClientMessage({ type: "room.rename", title: "x".repeat(101) })).toThrow();
+    expect(() => parseClientMessage({ type: "room.model.configure", model: "hy3-free" })).toThrow();
     expect(() =>
       parseClientMessage({
         type: "question.reply",
@@ -169,5 +192,16 @@ describe("room protocol", () => {
         answer: { arbitrary: "nope" },
       }),
     ).toThrow("Invalid question field");
+    expect(() =>
+      parseClientMessage({
+        type: "brief.update",
+        objective: "valid",
+        constraints: "not a list",
+        validation: [],
+      }),
+    ).toThrow("Brief constraints are invalid");
+    expect(() => parseClientMessage({ type: "decision.create", text: "   " })).toThrow(
+      "decision must be between",
+    );
   });
 });

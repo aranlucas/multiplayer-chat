@@ -1,18 +1,15 @@
-import {
-  Activity,
-  ChevronDown,
-  Circle,
-  Clock3,
-  UsersRound,
-} from "lucide-react";
+import { Activity, ChevronDown, Circle, Clock3, UsersRound } from "lucide-react";
 import type {
   Participant,
   PermissionRequest,
   QueuedPrompt,
   TimelineEvent,
+  ImplementationBrief,
+  RoomDecision,
 } from "../../shared/protocol";
 import { formatTime } from "../event-display";
 import { PermissionCard } from "./PermissionCard";
+import { ImplementationBrief as ImplementationBriefPanel } from "./ImplementationBrief";
 
 interface CollaborationRailProps {
   participants: Participant[];
@@ -21,6 +18,14 @@ interface CollaborationRailProps {
   events: TimelineEvent[];
   canApprove: boolean;
   onReply: (id: string, reply: "once" | "reject") => void;
+  brief: ImplementationBrief;
+  decisions: RoomDecision[];
+  selectedEventID?: string;
+  onSelectEvent: (id: string) => void;
+  onUpdateBrief: (
+    brief: Pick<ImplementationBrief, "objective" | "constraints" | "validation">,
+  ) => boolean;
+  onDecision: (text: string, rationale?: string, sourceEventID?: string) => boolean;
 }
 
 export function CollaborationRail({
@@ -30,9 +35,24 @@ export function CollaborationRail({
   events,
   canApprove,
   onReply,
+  brief,
+  decisions,
+  selectedEventID,
+  onSelectEvent,
+  onUpdateBrief,
+  onDecision,
 }: CollaborationRailProps) {
   return (
     <aside className="collaboration-rail">
+      <ImplementationBriefPanel
+        brief={brief}
+        decisions={decisions}
+        canEdit={canApprove}
+        selectedEventID={selectedEventID}
+        onSelectEvent={onSelectEvent}
+        onUpdate={onUpdateBrief}
+        onDecision={onDecision}
+      />
       <section className="collaboration-section participants-section">
         <h2>
           Participants <span>{participants.length}</span>
@@ -55,9 +75,7 @@ export function CollaborationRail({
                 />
               </span>
               <span className="participant-role">
-                {participant.role === "maintainer"
-                  ? "Maintainer"
-                  : "Contributor"}
+                {participant.role === "maintainer" ? "Maintainer" : "Contributor"}
               </span>
             </div>
           ))}
@@ -73,9 +91,7 @@ export function CollaborationRail({
             <div className="queue-row" key={item.eventID}>
               <span
                 className="avatar avatar-small"
-                style={
-                  { "--avatar": item.participant.color } as React.CSSProperties
-                }
+                style={{ "--avatar": item.participant.color } as React.CSSProperties}
               >
                 {item.participant.name.charAt(0).toUpperCase()}
               </span>
@@ -94,13 +110,7 @@ export function CollaborationRail({
       <section className="collaboration-section permission-section">
         <h2>
           Permission requests{" "}
-          <span>
-            {
-              permissions.filter(
-                (permission) => permission.status === "pending",
-              ).length
-            }
-          </span>
+          <span>{permissions.filter((permission) => permission.status === "pending").length}</span>
           <ChevronDown size={15} />
         </h2>
         {permissions.slice(0, 2).map((permission) => (
@@ -129,11 +139,7 @@ export function CollaborationRail({
           .map((event) => (
             <div className="recent-row" key={event.id}>
               <span>{formatTime(event.createdAt)}</span>
-              {event.kind === "participant" ? (
-                <UsersRound size={14} />
-              ) : (
-                <Clock3 size={14} />
-              )}
+              {event.kind === "participant" ? <UsersRound size={14} /> : <Clock3 size={14} />}
               <p>
                 {event.kind === "participant"
                   ? `${event.actor?.name ?? "A participant"} joined the session`

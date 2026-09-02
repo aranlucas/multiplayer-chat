@@ -1,22 +1,19 @@
 import type { ReactNode } from "react";
 
-export type MobileTab = "transcript" | "people" | "queue";
+export type MobileTab = "transcript" | "brief" | "people" | "queue";
 
 interface MobileTabsProps {
   active: MobileTab;
   participants: number;
   queued: number;
+  decisions: number;
   onChange: (tab: MobileTab) => void;
 }
 
-export function MobileTabs({
-  active,
-  participants,
-  queued,
-  onChange,
-}: MobileTabsProps) {
+export function MobileTabs({ active, participants, queued, decisions, onChange }: MobileTabsProps) {
   const tabs: Array<{ id: MobileTab; label: string; count?: ReactNode }> = [
     { id: "transcript", label: "Transcript" },
+    { id: "brief", label: "Brief", count: decisions },
     { id: "people", label: "People", count: participants },
     { id: "queue", label: "Queue", count: queued },
   ];
@@ -29,8 +26,7 @@ export function MobileTabs({
           type="button"
           onClick={() => onChange(tab.id)}
         >
-          {tab.label}{" "}
-          {tab.count !== undefined ? <span>{tab.count}</span> : null}
+          {tab.label} {tab.count !== undefined ? <span>{tab.count}</span> : null}
         </button>
       ))}
     </nav>
