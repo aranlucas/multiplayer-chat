@@ -26,6 +26,9 @@ interface CollaborationRailProps {
     brief: Pick<ImplementationBrief, "objective" | "constraints" | "validation">,
   ) => boolean;
   onDecision: (text: string, rationale?: string, sourceEventID?: string) => boolean;
+  onStartReview: () => boolean;
+  onReviewComment: (text: string) => boolean;
+  onResolveReview: (outcome: "approved" | "changes_requested", comment?: string) => boolean;
 }
 
 export function CollaborationRail({
@@ -41,6 +44,9 @@ export function CollaborationRail({
   onSelectEvent,
   onUpdateBrief,
   onDecision,
+  onStartReview,
+  onReviewComment,
+  onResolveReview,
 }: CollaborationRailProps) {
   return (
     <aside className="collaboration-rail">
@@ -52,6 +58,9 @@ export function CollaborationRail({
         onSelectEvent={onSelectEvent}
         onUpdate={onUpdateBrief}
         onDecision={onDecision}
+        onStartReview={onStartReview}
+        onReviewComment={onReviewComment}
+        onResolveReview={onResolveReview}
       />
       <section className="collaboration-section participants-section">
         <h2>

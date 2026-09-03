@@ -143,6 +143,37 @@ describe("room protocol", () => {
     });
   });
 
+  it("accepts implementation brief review actions", () => {
+    expect(
+      parseClientMessage({
+        type: "brief.review.start",
+        requestID: "review-1",
+      }),
+    ).toEqual({ type: "brief.review.start", requestID: "review-1" });
+    expect(
+      parseClientMessage({
+        type: "brief.review.comment",
+        text: " Clarify the rollback check ",
+      }),
+    ).toEqual({
+      type: "brief.review.comment",
+      text: "Clarify the rollback check",
+      requestID: undefined,
+    });
+    expect(
+      parseClientMessage({
+        type: "brief.review.resolve",
+        outcome: "approved",
+        comment: " Ready to build ",
+      }),
+    ).toEqual({
+      type: "brief.review.resolve",
+      outcome: "approved",
+      comment: "Ready to build",
+      requestID: undefined,
+    });
+  });
+
   it("accepts answers to an active OpenCode question", () => {
     expect(
       parseClientMessage({
@@ -203,5 +234,23 @@ describe("room protocol", () => {
     expect(() => parseClientMessage({ type: "decision.create", text: "   " })).toThrow(
       "decision must be between",
     );
+    expect(() =>
+      parseClientMessage({
+        type: "brief.review.comment",
+        text: "   ",
+      }),
+    ).toThrow("review comment must be between");
+    expect(() =>
+      parseClientMessage({
+        type: "brief.review.resolve",
+        outcome: "changes_requested",
+      }),
+    ).toThrow("Describe the changes");
+    expect(() =>
+      parseClientMessage({
+        type: "brief.review.resolve",
+        outcome: "maybe",
+      }),
+    ).toThrow("valid review outcome");
   });
 });

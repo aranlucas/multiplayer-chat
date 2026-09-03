@@ -1,4 +1,15 @@
-import { CheckCircle2, Link2, ListChecks, Pencil, Plus, X } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Link2,
+  ListChecks,
+  MessageSquare,
+  Pencil,
+  Play,
+  Plus,
+  ThumbsUp,
+  X,
+} from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type { ImplementationBrief as Brief, RoomDecision } from "../../shared/protocol";
 import { formatTime } from "../event-display";
@@ -11,6 +22,9 @@ interface ImplementationBriefProps {
   onSelectEvent?: (id: string) => void;
   onUpdate: (brief: Pick<Brief, "objective" | "constraints" | "validation">) => boolean;
   onDecision: (text: string, rationale?: string, sourceEventID?: string) => boolean;
+  onStartReview: () => boolean;
+  onReviewComment: (text: string) => boolean;
+  onResolveReview: (outcome: "approved" | "changes_requested", comment?: string) => boolean;
   mobile?: boolean;
 }
 
@@ -22,6 +36,9 @@ export function ImplementationBrief({
   onSelectEvent,
   onUpdate,
   onDecision,
+  onStartReview,
+  onReviewComment,
+  onResolveReview,
   mobile = false,
 }: ImplementationBriefProps) {
   const [editing, setEditing] = useState(false);
@@ -136,6 +153,15 @@ export function ImplementationBrief({
         </div>
       )}
 
+      <ReviewPanel
+        key={`${brief.review.status}:${brief.review.round}`}
+        brief={brief}
+        canEdit={canEdit}
+        onStartReview={onStartReview}
+        onReviewComment={onReviewComment}
+        onResolveReview={onResolveReview}
+      />
+
       <div className="decision-heading">
         <strong>Decisions</strong>
         {canEdit && !addingDecision ? (
@@ -213,6 +239,154 @@ export function ImplementationBrief({
       </div>
     </section>
   );
+}
+
+function ReviewPanel({
+  brief,
+  canEdit,
+  onStartReview,
+  onReviewComment,
+  onResolveReview,
+}: Pick<
+  ImplementationBriefProps,
+  "brief" | "canEdit" | "onStartReview" | "onReviewComment" | "onResolveReview"
+>) {
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState<string | undefined>();
+
+  function saveComment(event: FormEvent) {
+    event.preventDefault();
+    const text = feedback.trim();
+    if (!text) {
+      setError("Write feedback before commenting.");
+      return;
+    }
+    if (onReviewComment(text)) {
+      setFeedback("");
+      setError(undefined);
+    }
+  }
+
+  function resolve(outcome: "approved" | "changes_requested") {
+    const comment = feedback.trim();
+    if (outcome === "changes_requested" && !comment) {
+      setError("Describe the changes you are requesting.");
+      return;
+    }
+    if (onResolveReview(outcome, comment || undefined)) {
+      setFeedback("");
+      setError(undefined);
+    }
+  }
+
+  return (
+    <div className="brief-review">
+      <div className="review-heading">
+        <strong>Plan review</strong>
+        <span className={`review-status review-status-${brief.review.status}`}>
+          {reviewStatusLabel(brief.review.status)}
+        </span>
+      </div>
+
+      {brief.review.status === "draft" ? (
+        <div className="review-callout">
+          <p>Share the plan for feedback before implementation begins.</p>
+          <button type="button" disabled={!brief.objective} onClick={onStartReview}>
+            <Play size={12} /> Start review
+          </button>
+        </div>
+      ) : brief.review.status === "in_review" ? (
+        <form className="review-form" onSubmit={saveComment}>
+          <ReviewMeta brief={brief} />
+          <label>
+            Overall review
+            <textarea
+              value={feedback}
+              onChange={(event) => {
+                setFeedback(event.target.value);
+                setError(undefined);
+              }}
+              maxLength={4_000}
+              placeholder="What should change, or why is this ready?"
+            />
+          </label>
+          {error ? <small className="review-error">{error}</small> : null}
+          <div className="review-actions">
+            <button type="button" className="review-approve" onClick={() => resolve("approved")}>
+              <ThumbsUp size={12} /> Approve
+            </button>
+            <button
+              type="button"
+              className="review-request-changes"
+              onClick={() => resolve("changes_requested")}
+            >
+              <AlertTriangle size={12} /> Request changes
+            </button>
+            <button type="submit">
+              <MessageSquare size={12} /> Comment
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="review-result">
+          {brief.review.status === "approved" ? (
+            <CheckCircle2 size={14} />
+          ) : (
+            <AlertTriangle size={14} />
+          )}
+          <div>
+            <strong>
+              {brief.review.status === "approved" ? "Plan approved" : "Changes requested"}
+            </strong>
+            <ReviewMeta brief={brief} />
+            {brief.review.status === "changes_requested" && canEdit ? (
+              <small>Edit the brief to address feedback and begin a new review.</small>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {brief.reviewComments.length ? (
+        <div className="review-comments">
+          <strong>Review feedback</strong>
+          {brief.reviewComments.map((comment) => (
+            <article key={comment.id}>
+              <div className="review-comment-meta">
+                <span
+                  className="avatar avatar-small"
+                  style={{ "--avatar": comment.actor.color } as React.CSSProperties}
+                >
+                  {comment.actor.name.charAt(0).toUpperCase()}
+                </span>
+                <span>{comment.actor.name}</span>
+                <em>Review {comment.round}</em>
+                <time>{formatTime(comment.createdAt)}</time>
+              </div>
+              <p>{comment.text}</p>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ReviewMeta({ brief }: { brief: Brief }) {
+  const actor = brief.review.resolvedBy ?? brief.review.startedBy;
+  const at = brief.review.resolvedAt ?? brief.review.startedAt;
+  if (!actor || !at) return null;
+  return (
+    <small className="review-meta">
+      Review {brief.review.round} · {actor.name} · {formatTime(at)}
+    </small>
+  );
+}
+
+function reviewStatusLabel(status: Brief["review"]["status"]) {
+  if (status === "in_review") return "In review";
+  if (status === "approved") return "Approved";
+  if (status === "changes_requested") return "Changes requested";
+  return "Draft";
 }
 
 function BriefList({

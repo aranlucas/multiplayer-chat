@@ -6,6 +6,7 @@ import {
   PARTICIPANT_COLORS,
   parseClientMessage,
   queuedPrompts,
+  type BriefReviewComment,
   type ClientMessage,
   type Participant,
   type ImplementationBrief,
@@ -81,6 +82,22 @@ interface BriefRow {
   validation_json: string;
   updated_at: number | null;
   updated_by_json: string | null;
+  revision: number;
+  review_status: ImplementationBrief["review"]["status"];
+  review_round: number;
+  review_started_at: number | null;
+  review_started_by_json: string | null;
+  review_resolved_at: number | null;
+  review_resolved_by_json: string | null;
+}
+
+interface BriefReviewCommentRow {
+  [key: string]: string | number | null;
+  id: string;
+  review_round: number;
+  text: string;
+  actor_json: string;
+  created_at: number;
 }
 
 interface DecisionRow {
@@ -647,9 +664,17 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         actor_json TEXT NOT NULL,
         created_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS relay_brief_review_comments (
+        id TEXT PRIMARY KEY,
+        review_round INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        actor_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
       CREATE INDEX IF NOT EXISTS relay_events_created_idx ON relay_events(created_at);
       CREATE INDEX IF NOT EXISTS relay_handoffs_expiry_idx ON relay_handoffs(expires_at);
       CREATE INDEX IF NOT EXISTS relay_decisions_created_idx ON relay_decisions(created_at);
+      CREATE INDEX IF NOT EXISTS relay_brief_review_comments_created_idx ON relay_brief_review_comments(created_at);
     `);
     this.ctx.storage.sql.exec("INSERT OR IGNORE INTO relay_brief (singleton) VALUES (1)");
     this.ensureColumn("relay_room", "commit_sha", "TEXT");
@@ -672,6 +697,13 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     this.ensureColumn("relay_room", "title_auto", "INTEGER NOT NULL DEFAULT 1");
     this.ensureColumn("relay_room", "workspace_revision", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("relay_room", "published_workspace_revision", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("relay_brief", "revision", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("relay_brief", "review_status", "TEXT NOT NULL DEFAULT 'draft'");
+    this.ensureColumn("relay_brief", "review_round", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("relay_brief", "review_started_at", "INTEGER");
+    this.ensureColumn("relay_brief", "review_started_by_json", "TEXT");
+    this.ensureColumn("relay_brief", "review_resolved_at", "INTEGER");
+    this.ensureColumn("relay_brief", "review_resolved_by_json", "TEXT");
     this.ctx.storage.sql.exec("DELETE FROM relay_events WHERE id LIKE 'seed-%'");
     this.ctx.storage.sql.exec("DELETE FROM relay_permissions WHERE id = 'demo-deploy'");
     this.ctx.storage.sql.exec(
@@ -849,15 +881,32 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     if (message.type === "brief.update") {
       if (participant.role !== "maintainer")
         throw new Error("Only maintainers can edit the implementation brief");
+      const previousStatus = this.getBrief().review.status;
+      const now = Date.now();
       this.ctx.storage.sql.exec(
-        "UPDATE relay_brief SET objective = ?, constraints_json = ?, validation_json = ?, updated_at = ?, updated_by_json = ? WHERE singleton = 1",
+        "UPDATE relay_brief SET objective = ?, constraints_json = ?, validation_json = ?, updated_at = ?, updated_by_json = ?, revision = revision + 1, review_status = 'draft', review_started_at = NULL, review_started_by_json = NULL, review_resolved_at = NULL, review_resolved_by_json = NULL WHERE singleton = 1",
         message.objective,
         JSON.stringify(message.constraints),
         JSON.stringify(message.validation),
-        Date.now(),
+        now,
         JSON.stringify(participant),
       );
+      const event = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: now,
+        actor: participant,
+        payload: {
+          type: "brief_review",
+          action: "updated",
+          text:
+            previousStatus === "draft"
+              ? `${participant.name} updated the implementation brief`
+              : `${participant.name} updated the implementation brief and returned it to draft`,
+        },
+      });
       this.broadcastPlanning();
+      this.broadcast({ type: "event", event });
       this.send(socket, { type: "ack", requestID: message.requestID });
       return;
     }
@@ -877,6 +926,92 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         Date.now(),
       );
       this.broadcastPlanning();
+      this.send(socket, { type: "ack", requestID: message.requestID });
+      return;
+    }
+
+    if (message.type === "brief.review.start") {
+      const brief = this.getBrief();
+      if (!brief.objective) throw new Error("Add an objective before starting review");
+      if (brief.review.status === "in_review")
+        throw new Error("The implementation brief is already in review");
+      if (brief.review.status !== "draft")
+        throw new Error("Edit the implementation brief before starting another review");
+      const now = Date.now();
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_brief SET review_status = 'in_review', review_round = review_round + 1, review_started_at = ?, review_started_by_json = ?, review_resolved_at = NULL, review_resolved_by_json = NULL WHERE singleton = 1",
+        now,
+        JSON.stringify(participant),
+      );
+      const event = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: now,
+        actor: participant,
+        payload: {
+          type: "brief_review",
+          action: "started",
+          text: `${participant.name} requested review of the implementation brief`,
+        },
+      });
+      this.broadcastPlanning();
+      this.broadcast({ type: "event", event });
+      this.send(socket, { type: "ack", requestID: message.requestID });
+      return;
+    }
+
+    if (message.type === "brief.review.comment") {
+      const brief = this.getBrief();
+      if (brief.review.status !== "in_review")
+        throw new Error("Start a review before leaving feedback");
+      const now = Date.now();
+      this.insertBriefReviewComment(brief.review.round, message.text, participant, now);
+      const event = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: now,
+        actor: participant,
+        payload: {
+          type: "brief_review",
+          action: "commented",
+          text: `${participant.name} left feedback on the implementation brief`,
+        },
+      });
+      this.broadcastPlanning();
+      this.broadcast({ type: "event", event });
+      this.send(socket, { type: "ack", requestID: message.requestID });
+      return;
+    }
+
+    if (message.type === "brief.review.resolve") {
+      const brief = this.getBrief();
+      if (brief.review.status !== "in_review")
+        throw new Error("The implementation brief is not in review");
+      const now = Date.now();
+      if (message.comment)
+        this.insertBriefReviewComment(brief.review.round, message.comment, participant, now);
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_brief SET review_status = ?, review_resolved_at = ?, review_resolved_by_json = ? WHERE singleton = 1",
+        message.outcome,
+        now,
+        JSON.stringify(participant),
+      );
+      const approved = message.outcome === "approved";
+      const event = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: now,
+        actor: participant,
+        payload: {
+          type: "brief_review",
+          action: message.outcome,
+          text: approved
+            ? `${participant.name} approved the implementation brief`
+            : `${participant.name} requested changes to the implementation brief`,
+        },
+      });
+      this.broadcastPlanning();
+      this.broadcast({ type: "event", event });
       this.send(socket, { type: "ack", requestID: message.requestID });
       return;
     }
@@ -1505,9 +1640,52 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       objective: row.objective,
       constraints: JSON.parse(row.constraints_json),
       validation: JSON.parse(row.validation_json),
+      revision: row.revision,
+      review: {
+        status: row.review_status,
+        round: row.review_round,
+        startedAt: row.review_started_at ?? undefined,
+        startedBy: row.review_started_by_json ? JSON.parse(row.review_started_by_json) : undefined,
+        resolvedAt: row.review_resolved_at ?? undefined,
+        resolvedBy: row.review_resolved_by_json
+          ? JSON.parse(row.review_resolved_by_json)
+          : undefined,
+      },
+      reviewComments: this.getBriefReviewComments(),
       updatedAt: row.updated_at ?? undefined,
       updatedBy: row.updated_by_json ? JSON.parse(row.updated_by_json) : undefined,
     };
+  }
+
+  private getBriefReviewComments(): BriefReviewComment[] {
+    return this.ctx.storage.sql
+      .exec<BriefReviewCommentRow>(
+        "SELECT * FROM relay_brief_review_comments ORDER BY created_at ASC LIMIT 100",
+      )
+      .toArray()
+      .map((row) => ({
+        id: row.id,
+        round: row.review_round,
+        text: row.text,
+        actor: JSON.parse(row.actor_json),
+        createdAt: row.created_at,
+      }));
+  }
+
+  private insertBriefReviewComment(
+    round: number,
+    text: string,
+    participant: SocketAttachment["participant"],
+    createdAt: number,
+  ) {
+    this.ctx.storage.sql.exec(
+      "INSERT INTO relay_brief_review_comments (id, review_round, text, actor_json, created_at) VALUES (?, ?, ?, ?, ?)",
+      crypto.randomUUID(),
+      round,
+      text,
+      JSON.stringify(participant),
+      createdAt,
+    );
   }
 
   private getDecisions(): RoomDecision[] {

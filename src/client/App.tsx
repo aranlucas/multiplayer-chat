@@ -156,6 +156,9 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
             }}
             onUpdate={actions.updateBrief}
             onDecision={actions.createDecision}
+            onStartReview={actions.startBriefReview}
+            onReviewComment={actions.commentOnBrief}
+            onResolveReview={actions.resolveBriefReview}
             mobile
           />
         ) : mobileTab === "people" ? (
@@ -193,6 +196,9 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
         onSelectEvent={setSelectedID}
         onUpdateBrief={actions.updateBrief}
         onDecision={actions.createDecision}
+        onStartReview={actions.startBriefReview}
+        onReviewComment={actions.commentOnBrief}
+        onResolveReview={actions.resolveBriefReview}
       />
       {state.error || github.state.error ? (
         <div className="error-toast">{state.error ?? github.state.error}</div>
