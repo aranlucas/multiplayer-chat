@@ -10,11 +10,13 @@ const DEFAULT_TIMEOUT = 120_000;
 interface RailwayToolDependencies {
   sandbox: RailwayRoomSandbox;
   ensureWorkspace: () => Promise<unknown>;
+  checkpointWorkspace: () => Promise<unknown>;
 }
 
 export function railwayTools({
   sandbox,
   ensureWorkspace,
+  checkpointWorkspace,
 }: RailwayToolDependencies) {
   return Plugin.define({
     id: "relay.railway-tools",
@@ -52,6 +54,7 @@ export function railwayTools({
             const sessionName = optionalString(input.sessionName);
             if (sessionName) {
               const result = await sandbox.reattach(sessionName, { timeout });
+              await checkpointWorkspace();
               return { content: formatCommandResult(result) };
             }
             const command = requiredString(input.command, "command");
@@ -66,6 +69,7 @@ export function railwayTools({
               };
             }
             const result = await sandbox.exec(command, { cwd, timeout });
+            await checkpointWorkspace();
             return {
               content: formatCommandResult(result),
               metadata: {
@@ -142,6 +146,7 @@ export function railwayTools({
             const content = requiredString(input.content, "content", true);
             ensureSize(path, content);
             await sandbox.writeFile(path, content);
+            await checkpointWorkspace();
             return { content: `Wrote ${relativeWorkspacePath(path)}.` };
           },
         });
@@ -177,6 +182,7 @@ export function railwayTools({
             );
             ensureSize(path, content);
             await sandbox.writeFile(path, content);
+            await checkpointWorkspace();
             return { content: `Edited ${relativeWorkspacePath(path)}.` };
           },
         });

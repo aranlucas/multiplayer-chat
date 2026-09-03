@@ -137,7 +137,10 @@ export function openCodeConfiguration(
   }
   return {
     default_agent: "build",
-    permissions: [{ action: "*", resource: "*", effect: "allow" }],
+    permissions: [
+      { action: "*", resource: "*", effect: "allow" },
+      { action: "execute", resource: "*", effect: "deny" },
+    ],
     providers,
     snapshots: false,
     watcher: {},

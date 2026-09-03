@@ -62,6 +62,7 @@ export class EmbeddedOpenCodeRunner {
     let cursor = request.after;
     let observedStatus: EmbeddedTurnResult["status"] | undefined;
     let deferredProviderError: Error | undefined;
+    let eventError: unknown;
     const eventTask = (async () => {
       try {
         for await (const event of opencode.events.subscribe({
@@ -113,15 +114,28 @@ export class EmbeddedOpenCodeRunner {
       executionError = error;
     } finally {
       controller.abort();
-      await eventTask;
+      try {
+        await eventTask;
+      } catch (error) {
+        eventError = error;
+      }
     }
-    if (deferredProviderError) throw deferredProviderError;
-    if (executionError) throw executionError;
+    const turnError = deferredProviderError ?? executionError ?? eventError;
+    let changes: WorkspaceChange[];
+    try {
+      changes = await this.workspace.syncSandboxChanges();
+    } catch (checkpointError) {
+      if (!turnError) throw checkpointError;
+      throw new AggregateError(
+        [turnError, checkpointError],
+        "The agent turn failed and its workspace checkpoint could not be saved",
+      );
+    }
+    await onEvent?.({ type: "changes", changes });
+    if (turnError) throw turnError;
 
     const latest = await opencode.sessions.get({ sessionID: session.id });
     const status = latest.outcome ?? observedStatus ?? "succeeded";
-    const changes = await this.workspace.syncSandboxChanges();
-    await onEvent?.({ type: "changes", changes });
     await onEvent?.({
       type: "result",
       status,
