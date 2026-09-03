@@ -40,7 +40,14 @@ const initialState: RoomState = {
   events: [],
   permissions: [],
   queue: [],
-  brief: { objective: "", constraints: [], validation: [] },
+  brief: {
+    objective: "",
+    constraints: [],
+    validation: [],
+    revision: 0,
+    review: { status: "draft", round: 0 },
+    reviewComments: [],
+  },
   decisions: [],
   connection: "connecting",
 };
@@ -278,6 +285,27 @@ export function useRoom(
           text,
           rationale,
           sourceEventID,
+          requestID: crypto.randomUUID(),
+        });
+      },
+      startBriefReview() {
+        return send({
+          type: "brief.review.start",
+          requestID: crypto.randomUUID(),
+        });
+      },
+      commentOnBrief(text: string) {
+        return send({
+          type: "brief.review.comment",
+          text,
+          requestID: crypto.randomUUID(),
+        });
+      },
+      resolveBriefReview(outcome: "approved" | "changes_requested", comment?: string) {
+        return send({
+          type: "brief.review.resolve",
+          outcome,
+          comment,
           requestID: crypto.randomUUID(),
         });
       },

@@ -105,10 +105,32 @@ export interface QueuedPrompt {
   createdAt: number;
 }
 
+export type BriefReviewStatus = "draft" | "in_review" | "approved" | "changes_requested";
+
+export interface BriefReview {
+  status: BriefReviewStatus;
+  round: number;
+  startedAt?: number;
+  startedBy?: Pick<Participant, "id" | "name" | "color">;
+  resolvedAt?: number;
+  resolvedBy?: Pick<Participant, "id" | "name" | "color">;
+}
+
+export interface BriefReviewComment {
+  id: string;
+  round: number;
+  text: string;
+  actor: Pick<Participant, "id" | "name" | "role" | "color">;
+  createdAt: number;
+}
+
 export interface ImplementationBrief {
   objective: string;
   constraints: string[];
   validation: string[];
+  revision: number;
+  review: BriefReview;
+  reviewComments: BriefReviewComment[];
   updatedAt?: number;
   updatedBy?: Pick<Participant, "id" | "name" | "color">;
 }
@@ -183,6 +205,14 @@ export type ClientMessage =
       text: string;
       rationale?: string;
       sourceEventID?: string;
+      requestID?: string;
+    }
+  | { type: "brief.review.start"; requestID?: string }
+  | { type: "brief.review.comment"; text: string; requestID?: string }
+  | {
+      type: "brief.review.resolve";
+      outcome: "approved" | "changes_requested";
+      comment?: string;
       requestID?: string;
     }
   | {
@@ -314,6 +344,32 @@ export function parseClientMessage(value: unknown): ClientMessage {
       text,
       rationale: rationale || undefined,
       sourceEventID,
+      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
+    };
+  }
+  if (message.type === "brief.review.start") {
+    return {
+      type: "brief.review.start",
+      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
+    };
+  }
+  if (message.type === "brief.review.comment") {
+    return {
+      type: "brief.review.comment",
+      text: parsePlanningText(message.text, "review comment", 4_000, true),
+      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
+    };
+  }
+  if (message.type === "brief.review.resolve") {
+    if (message.outcome !== "approved" && message.outcome !== "changes_requested")
+      throw new Error("Choose a valid review outcome");
+    const comment = parsePlanningText(message.comment, "review comment", 4_000);
+    if (message.outcome === "changes_requested" && !comment)
+      throw new Error("Describe the changes you are requesting");
+    return {
+      type: "brief.review.resolve",
+      outcome: message.outcome,
+      comment: comment || undefined,
       requestID: typeof message.requestID === "string" ? message.requestID : undefined,
     };
   }
