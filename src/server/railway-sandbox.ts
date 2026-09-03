@@ -75,16 +75,41 @@ export class RailwayRoomSandbox {
     options: SandboxCommandOptions = {},
   ): Promise<SandboxCommandResult> {
     const sandbox = await this.get();
+    const handle = sandbox.exec(command, execOptions(options));
+    this.active.add(handle);
     try {
-      return await this.runExec(sandbox, command, options);
+      const result = await handle;
+      return commandResult(result);
     } catch (error) {
-      if (
-        !options.retryOnInterrupted ||
-        !(error instanceof ExecInterruptedError) ||
-        !(await this.isStillRunning(sandbox))
-      )
-        throw error;
+      if (!(error instanceof ExecInterruptedError)) throw error;
+
+      const sessionName = await handle.sessionName.catch(() => undefined);
+      if (sessionName) {
+        if (!(await this.isStillRunning(sandbox))) throw error;
+        try {
+          const resumed = await this.runReattach(
+            sandbox,
+            sessionName,
+            options,
+            true,
+          );
+          return mergeInterruptedResult(error, resumed);
+        } catch (resumeError) {
+          if (
+            !options.retryOnInterrupted ||
+            !(resumeError instanceof ExecInterruptedError) ||
+            !(await this.isStillRunning(sandbox))
+          )
+            throw resumeError;
+        }
+      } else {
+        if (!options.retryOnInterrupted) throw error;
+        if (!(await this.isStillRunning(sandbox))) throw error;
+      }
+
       return this.runExec(sandbox, command, options);
+    } finally {
+      this.active.delete(handle);
     }
   }
 
@@ -97,7 +122,7 @@ export class RailwayRoomSandbox {
     this.active.add(handle);
     try {
       const result = await handle;
-      return { ...result, success: result.exitCode === 0 && !result.timedOut };
+      return commandResult(result);
     } finally {
       this.active.delete(handle);
     }
@@ -130,18 +155,28 @@ export class RailwayRoomSandbox {
     options: SandboxCommandOptions = {},
   ): Promise<SandboxCommandResult> {
     const sandbox = await this.get();
+    return this.runReattach(sandbox, sessionName, options, false);
+  }
+
+  private async runReattach(
+    sandbox: Sandbox,
+    sessionName: string,
+    options: SandboxCommandOptions,
+    resumeFromLastRead: boolean,
+  ): Promise<SandboxCommandResult> {
     const handle = sandbox.exec(
       { sessionName },
       {
         timeoutSec: timeoutSeconds(options.timeout),
         onStdout: options.onStdout,
         onStderr: options.onStderr,
+        resumeFromLastRead,
       },
     );
     this.active.add(handle);
     try {
       const result = await handle;
-      return { ...result, success: result.exitCode === 0 && !result.timedOut };
+      return commandResult(result);
     } finally {
       this.active.delete(handle);
     }
@@ -283,6 +318,21 @@ function execOptions(options: SandboxCommandOptions) {
     timeoutSec: timeoutSeconds(options.timeout),
     onStdout: options.onStdout,
     onStderr: options.onStderr,
+  };
+}
+
+function commandResult(result: ExecResult): SandboxCommandResult {
+  return { ...result, success: result.exitCode === 0 && !result.timedOut };
+}
+
+function mergeInterruptedResult(
+  interrupted: ExecInterruptedError,
+  resumed: SandboxCommandResult,
+): SandboxCommandResult {
+  return {
+    ...resumed,
+    stdout: interrupted.stdout + resumed.stdout,
+    stderr: interrupted.stderr + resumed.stderr,
   };
 }
 
