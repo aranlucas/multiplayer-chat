@@ -235,18 +235,16 @@ export class RepositoryWorkspace {
     try {
       if (!this.sandbox.configured)
         return await this.prepareRemote(repository, branch, row.commit_sha);
-      const current = await this.sandbox
-        .exec("git rev-parse HEAD", {
-          cwd: WORKSPACE_DIRECTORY,
-          timeout: 10_000,
-        })
-        .catch(() => undefined);
-      const remote = await this.sandbox
-        .exec("git remote get-url origin", {
-          cwd: WORKSPACE_DIRECTORY,
-          timeout: 10_000,
-        })
-        .catch(() => undefined);
+      const current = await this.sandbox.exec(
+        `git -C ${shellQuote(WORKSPACE_DIRECTORY)} rev-parse HEAD`,
+        { timeout: 10_000, retryOnInterrupted: true },
+      );
+      const remote = current.success
+        ? await this.sandbox.exec(
+            `git -C ${shellQuote(WORKSPACE_DIRECTORY)} remote get-url origin`,
+            { timeout: 10_000, retryOnInterrupted: true },
+          )
+        : undefined;
       const expectedRemote = `https://github.com/${repository}.git`;
       if (
         !current?.success ||
@@ -476,6 +474,10 @@ export class RepositoryWorkspace {
 
   private replaceWorkspaceChanges(value: WorkspaceChange[]) {
     const changes = parseWorkspaceChanges(value);
+    if (
+      JSON.stringify(this.workspaceChanges()) === JSON.stringify(changes)
+    )
+      return;
     this.ensureRemoteSchema();
     this.storage.sql.exec(
       "UPDATE relay_room SET pull_request_url = NULL, pull_request_branch = NULL WHERE singleton = 1",

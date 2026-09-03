@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { OpenCodeWorkerd } from "@opencode-ai/sdk/workerd";
+import type { WorkspaceChange } from "../shared/workspace-change";
 import {
   DEFAULT_BRANCH,
   DEFAULT_REPOSITORY,
@@ -29,7 +30,11 @@ import {
   openCodeConfiguration,
   type WorkerEnv,
 } from "./opencode";
-import { EmbeddedOpenCodeRunner, type NativeRunnerEvent } from "./embedded-opencode";
+import {
+  EmbeddedOpenCodeRunner,
+  type EmbeddedTurnResult,
+  type NativeRunnerEvent,
+} from "./embedded-opencode";
 import { RepositoryWorkspace } from "./workspace";
 import { RailwayRoomSandbox } from "./railway-sandbox";
 import { railwayTools } from "./railway-tools";
@@ -170,6 +175,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
               railwayTools({
                 sandbox: this.sandbox,
                 ensureWorkspace: () => this.workspace.ensureReady(),
+                checkpointWorkspace: () => this.workspace.syncSandboxChanges(),
               }),
             ],
           });
@@ -1180,24 +1186,40 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     const workspace = await this.workspace.nativeAgentWorkspace();
     if (!this.runner) throw new Error("Embedded OpenCode is not running");
     let queueConsumed = false;
-    const result = await this.runner.turn(
-      {
-        roomID: room.id,
-        prompt,
-        delivery,
-        model: room.model,
-        sessionID: room.opencodeSessionID,
-        after: this.openCodeCursor(),
-      },
-      (event) => {
-        if (!queueConsumed && queuedPromptID) {
-          queueConsumed = true;
-          this.consumeQueuedPrompt(queuedPromptID);
-          this.setAgentTurnStatus(generation, "running");
-        }
-        this.handleNativeRunnerEvent(event);
-      },
-    );
+    let checkpointedChanges: WorkspaceChange[] | undefined;
+    let result: EmbeddedTurnResult;
+    try {
+      result = await this.runner.turn(
+        {
+          roomID: room.id,
+          prompt,
+          delivery,
+          model: room.model,
+          sessionID: room.opencodeSessionID,
+          after: this.openCodeCursor(),
+        },
+        (event) => {
+          if (!queueConsumed && queuedPromptID) {
+            queueConsumed = true;
+            this.consumeQueuedPrompt(queuedPromptID);
+            this.setAgentTurnStatus(generation, "running");
+          }
+          if (event.type === "changes") checkpointedChanges = event.changes;
+          this.handleNativeRunnerEvent(event);
+        },
+      );
+    } catch (error) {
+      if (
+        checkpointedChanges &&
+        JSON.stringify(workspace.changes) !== JSON.stringify(checkpointedChanges)
+      ) {
+        this.workspace.syncNativeAgentChanges(checkpointedChanges);
+        this.ctx.storage.sql.exec(
+          "UPDATE relay_room SET workspace_revision = workspace_revision + 1 WHERE singleton = 1",
+        );
+      }
+      throw error;
+    }
     this.ctx.storage.sql.exec(
       "UPDATE relay_room SET opencode_session_id = ?, opencode_event_cursor = ? WHERE singleton = 1",
       result.sessionID,
@@ -1210,9 +1232,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         "UPDATE relay_room SET workspace_revision = workspace_revision + 1 WHERE singleton = 1",
       );
     }
-    if (result.status === "succeeded" && workspaceChanged) {
-      await this.publishSavedPullRequest();
-    }
+    if (result.status === "succeeded") await this.publishSavedPullRequest();
     return result.status;
   }
 

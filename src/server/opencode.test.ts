@@ -110,6 +110,13 @@ describe("hasLiveOpenCode", () => {
     ).toEqual({ name: "NVIDIA Nemotron 3 Ultra (free)" });
   });
 
+  it("disables code mode when workspace tools are direct-only", () => {
+    expect(openCodeConfiguration(env({})).permissions).toEqual([
+      { action: "*", resource: "*", effect: "allow" },
+      { action: "execute", resource: "*", effect: "deny" },
+    ]);
+  });
+
   it("uses a stable display name for the fast OpenRouter snapshot", () => {
     expect(
       configuredOpenCodeModels(
