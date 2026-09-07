@@ -11,12 +11,7 @@ interface ComposerProps {
   onSend: (text: string, delivery: DeliveryMode) => boolean;
 }
 
-export function Composer({
-  disabled,
-  text,
-  onTextChange,
-  onSend,
-}: ComposerProps) {
+export function Composer({ disabled, text, onTextChange, onSend }: ComposerProps) {
   const [delivery, setDelivery] = useState<DeliveryMode>("steer");
 
   function submit() {
@@ -32,11 +27,7 @@ export function Composer({
 
   return (
     <div className="composer-wrap">
-      <div
-        className="delivery-switch"
-        role="group"
-        aria-label="Message delivery"
-      >
+      <div className="delivery-switch" role="group" aria-label="Message delivery">
         <button
           className={delivery === "steer" ? "is-active" : ""}
           type="button"
@@ -78,8 +69,15 @@ export function Composer({
           >
             <Paperclip size={17} />
           </button>
-          <span id="composer-char-count" className={`char-count ${isNearLimit ? "near-limit" : ""} ${isOverLimit ? "over-limit" : ""}`} aria-live="off" aria-atomic="true">
-            {text.length > 0 ? `${text.length.toLocaleString()} / ${MAX_LENGTH.toLocaleString()}` : ""}
+          <span
+            id="composer-char-count"
+            className={`char-count ${isNearLimit ? "near-limit" : ""} ${isOverLimit ? "over-limit" : ""}`}
+            aria-live="off"
+            aria-atomic="true"
+          >
+            {text.length > 0
+              ? `${text.length.toLocaleString()} / ${MAX_LENGTH.toLocaleString()}`
+              : ""}
           </span>
           <span>
             <CornerDownLeft size={13} /> Enter to send

@@ -4,11 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Composer } from "./Composer";
 import { useState } from "react";
 
-function ComposerHarness(overrides: Partial<{
-  disabled: boolean;
-  initialText: string;
-  onSend: (text: string, delivery: "steer" | "queue") => boolean;
-}> = {}) {
+function ComposerHarness(
+  overrides: Partial<{
+    disabled: boolean;
+    initialText: string;
+    onSend: (text: string, delivery: "steer" | "queue") => boolean;
+  }> = {},
+) {
   const [text, setText] = useState(overrides.initialText ?? "");
   const onSend = overrides.onSend ?? (() => true);
 
@@ -22,11 +24,13 @@ function ComposerHarness(overrides: Partial<{
   );
 }
 
-function renderComposer(overrides: Partial<{
-  disabled: boolean;
-  initialText: string;
-  onSend: (text: string, delivery: "steer" | "queue") => boolean;
-}> = {}) {
+function renderComposer(
+  overrides: Partial<{
+    disabled: boolean;
+    initialText: string;
+    onSend: (text: string, delivery: "steer" | "queue") => boolean;
+  }> = {},
+) {
   return render(<ComposerHarness {...overrides} />);
 }
 
@@ -55,6 +59,7 @@ describe("Composer character counter", () => {
   it("successful Send -> empty draft and empty counter", () => {
     const onSend = vi.fn(() => true);
     const { container } = renderComposer({ initialText: "Hello world", onSend });
+    const textarea = screen.getByRole("textbox", { name: /ask or steer/i }) as HTMLTextAreaElement;
     const counter = getCounter(container);
     expect(counter.textContent).toBe("11 / 8,000");
 
@@ -64,11 +69,13 @@ describe("Composer character counter", () => {
 
     expect(onSend).toHaveBeenCalledWith("Hello world", "steer");
     expect(counter.textContent).toBe("");
+    expect(textarea.value).toBe("");
   });
 
   it("rejected Send -> retained draft and counter", () => {
     const onSend = vi.fn(() => false);
     const { container } = renderComposer({ initialText: "Hello world", onSend });
+    const textarea = screen.getByRole("textbox", { name: /ask or steer/i }) as HTMLTextAreaElement;
     const counter = getCounter(container);
     expect(counter.textContent).toBe("11 / 8,000");
 
@@ -78,6 +85,7 @@ describe("Composer character counter", () => {
 
     expect(onSend).toHaveBeenCalledWith("Hello world", "steer");
     expect(counter.textContent).toBe("11 / 8,000");
+    expect(textarea.value).toBe("Hello world");
   });
 
   it("multiline whitespace length counts consistently", () => {
@@ -118,13 +126,7 @@ describe("Composer delivery mode", () => {
     const onSend = vi.fn(() => true);
     function TestWrapper() {
       const [text, setText] = useState("queued message");
-      return (
-        <Composer
-          text={text}
-          onTextChange={setText}
-          onSend={onSend}
-        />
-      );
+      return <Composer text={text} onTextChange={setText} onSend={onSend} />;
     }
     render(<TestWrapper />);
     act(() => {
