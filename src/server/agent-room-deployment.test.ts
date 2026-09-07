@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
 vi.mock("@opencode-ai/sdk/workerd", () => ({ OpenCodeWorkerd: class {} }));
+vi.mock("./github-auth", () => ({
+  unsealGitHubCredential: async () => ({ accessToken: "test", login: "maintainer" }),
+  sealGitHubCredential: async () => "sealed",
+}));
 
 import { AgentRoom } from "./agent-room";
 
@@ -58,6 +62,27 @@ describe("deployment readiness", () => {
 });
 
 describe("concurrent publication", () => {
+  it("publishes changes that arrive while the previous snapshot is being published", async () => {
+    const state = { workspaceRevision: 1, publishedWorkspaceRevision: 0 };
+    const createPullRequest = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        state.workspaceRevision = 2;
+        state.publishedWorkspaceRevision = 1;
+        return { commitSHA: "first" };
+      })
+      .mockImplementationOnce(async () => {
+        state.publishedWorkspaceRevision = 2;
+        return { commitSHA: "second" };
+      });
+    const room = Object.assign(Object.create(AgentRoom.prototype), {
+      getRoom: () => state,
+      githubCredential: () => "sealed",
+      createPullRequest,
+    });
+    expect(await room.publishSavedPullRequest()).toEqual({ commitSHA: "second" });
+    expect(createPullRequest).toHaveBeenCalledTimes(2);
+  });
   it("shares one GitHub publication between finishing turns and permits the next revision", async () => {
     let finish!: (value: { commitSHA: string }) => void;
     const publishPullRequest = vi.fn(
