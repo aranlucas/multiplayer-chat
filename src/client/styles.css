@@ -1208,6 +1208,22 @@ pre {
   font-size: 9px;
 }
 
+.char-count {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9px;
+  color: var(--dim);
+  white-space: nowrap;
+  transition: color 120ms ease;
+}
+
+.char-count.near-limit {
+  color: var(--amber);
+}
+
+.char-count.over-limit {
+  color: var(--red);
+}
+
 .composer-tools .send-button {
   width: 30px;
   height: 30px;
