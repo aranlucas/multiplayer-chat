@@ -35,7 +35,7 @@ import {
   type EmbeddedTurnResult,
   type NativeRunnerEvent,
 } from "./embedded-opencode";
-import { RepositoryWorkspace } from "./workspace";
+import { RepositoryWorkspace, restorePullRequestAssociation } from "./workspace";
 import { RailwayRoomSandbox } from "./railway-sandbox";
 import { railwayTools } from "./railway-tools";
 import {
@@ -703,6 +703,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     this.ensureColumn("relay_room", "title_auto", "INTEGER NOT NULL DEFAULT 1");
     this.ensureColumn("relay_room", "workspace_revision", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("relay_room", "published_workspace_revision", "INTEGER NOT NULL DEFAULT 0");
+    restorePullRequestAssociation(this.ctx.storage.sql);
     this.ensureColumn("relay_brief", "revision", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("relay_brief", "review_status", "TEXT NOT NULL DEFAULT 'draft'");
     this.ensureColumn("relay_brief", "review_round", "INTEGER NOT NULL DEFAULT 0");
