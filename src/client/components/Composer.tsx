@@ -2,6 +2,8 @@ import { ArrowUp, Clock3, CornerDownLeft, Paperclip, Zap } from "lucide-react";
 import { useState } from "react";
 import type { DeliveryMode } from "../../shared/protocol";
 
+const MAX_LENGTH = 8000;
+
 interface ComposerProps {
   disabled?: boolean;
   text: string;
@@ -9,27 +11,23 @@ interface ComposerProps {
   onSend: (text: string, delivery: DeliveryMode) => boolean;
 }
 
-export function Composer({
-  disabled,
-  text,
-  onTextChange,
-  onSend,
-}: ComposerProps) {
+export function Composer({ disabled, text, onTextChange, onSend }: ComposerProps) {
   const [delivery, setDelivery] = useState<DeliveryMode>("steer");
 
   function submit() {
     const value = text.trim();
     if (!value || disabled) return;
+    if (text.length > MAX_LENGTH) return;
     if (onSend(value, delivery)) onTextChange("");
   }
 
+  const remaining = MAX_LENGTH - text.length;
+  const isNearLimit = remaining < 100;
+  const isOverLimit = remaining < 0;
+
   return (
     <div className="composer-wrap">
-      <div
-        className="delivery-switch"
-        role="group"
-        aria-label="Message delivery"
-      >
+      <div className="delivery-switch" role="group" aria-label="Message delivery">
         <button
           className={delivery === "steer" ? "is-active" : ""}
           type="button"
@@ -57,8 +55,10 @@ export function Composer({
           }}
           placeholder="Ask or steer the agent…"
           aria-label="Ask or steer the agent"
+          aria-describedby="composer-char-count"
           rows={2}
           disabled={disabled}
+          maxLength={MAX_LENGTH}
         />
         <div className="composer-tools">
           <button
@@ -69,6 +69,16 @@ export function Composer({
           >
             <Paperclip size={17} />
           </button>
+          <span
+            id="composer-char-count"
+            className={`char-count ${isNearLimit ? "near-limit" : ""} ${isOverLimit ? "over-limit" : ""}`}
+            aria-live="off"
+            aria-atomic="true"
+          >
+            {text.length > 0
+              ? `${text.length.toLocaleString()} / ${MAX_LENGTH.toLocaleString()}`
+              : ""}
+          </span>
           <span>
             <CornerDownLeft size={13} /> Enter to send
           </span>
@@ -76,7 +86,7 @@ export function Composer({
             className="send-button"
             type="button"
             onClick={submit}
-            disabled={disabled || !text.trim()}
+            disabled={disabled || !text.trim() || isOverLimit}
             aria-label="Send"
           >
             <ArrowUp size={18} />
