@@ -318,6 +318,8 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   }): Promise<RoomRevision> {
     const revision = this.revisionForCommit(input.commitSHA);
     if (!revision) throw new Error("Deployment does not match a published room revision");
+    // A poll started before the readiness callback can finish after it.
+    if (revision.status === "ready" && input.status !== "ready") return revision;
     const previewURL = input.previewURL ? validatePreviewURL(input.previewURL) : undefined;
     if (input.status === "ready" && !previewURL)
       throw new Error("A ready deployment requires a preview URL");
@@ -499,6 +501,23 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       revision.status === "failed"
     )
       return;
+    // Recover previews whose successful callback was overwritten by an older poll.
+    if (revision.previewURL) {
+      const ready = await verifyReadyPreview(revision.previewURL, revision.commitSHA).then(
+        () => true,
+        () => false,
+      );
+      if (ready) {
+        await this.recordDeployment({
+          commitSHA: revision.commitSHA,
+          status: "ready",
+          previewURL: revision.previewURL,
+          provider: revision.provider,
+          deploymentID: revision.deploymentID,
+        });
+        return;
+      }
+    }
     if (Date.now() - revision.createdAt > 15 * 60_000) {
       await this.recordDeployment({
         commitSHA: revision.commitSHA,
