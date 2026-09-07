@@ -51,11 +51,7 @@ export class EmbeddedOpenCodeRunner {
       message: "OpenCode is running in the room Durable Object",
     });
 
-    const session = await this.resolveSession(
-      opencode,
-      request.sessionID,
-      request.model,
-    );
+    const session = await this.resolveSession(opencode, request.sessionID, request.model);
     await onEvent?.({ type: "session", sessionID: session.id });
 
     const controller = new AbortController();
@@ -96,6 +92,10 @@ export class EmbeddedOpenCodeRunner {
       }
     })();
 
+    // Feature work can spend longer than 15 minutes in provider retries and builds.
+    // Use one deadline for the entire request, and stop the session if it expires.
+    const timeoutMs = request.timeoutMs ?? 3_600_000;
+    const executionSignal = AbortSignal.timeout(timeoutMs);
     let executionError: unknown;
     try {
       await opencode.sessions.prompt(
@@ -104,14 +104,17 @@ export class EmbeddedOpenCodeRunner {
           text: request.prompt,
           delivery: request.delivery,
         },
-        { signal: AbortSignal.timeout(request.timeoutMs ?? 900_000) },
+        { signal: executionSignal },
       );
-      await opencode.sessions.wait(
-        { sessionID: session.id },
-        { signal: AbortSignal.timeout(request.timeoutMs ?? 900_000) },
-      );
+      await opencode.sessions.wait({ sessionID: session.id }, { signal: executionSignal });
     } catch (error) {
-      executionError = error;
+      executionError = executionSignal.aborted
+        ? new Error(
+            `Agent turn timed out after ${Math.round(timeoutMs / 1_000)} seconds; saved changes can be resumed.`,
+            { cause: error },
+          )
+        : error;
+      if (executionSignal.aborted) await this.interrupt(session.id);
     } finally {
       controller.abort();
       try {
@@ -172,12 +175,7 @@ export class EmbeddedOpenCodeRunner {
       location: { directory: "/workspace/repository" },
     });
     return response.data
-      .filter(
-        (model) =>
-          model.enabled &&
-          model.capabilities.tools &&
-          model.status !== "deprecated",
-      )
+      .filter((model) => model.enabled && model.capabilities.tools && model.status !== "deprecated")
       .map((model) => ({
         id: `${model.providerID}/${model.modelID}`,
         name: model.name,
@@ -193,11 +191,7 @@ export class EmbeddedOpenCodeRunner {
           ),
       }))
       .sort((left, right) =>
-        left.free === right.free
-          ? left.name.localeCompare(right.name)
-          : left.free
-            ? -1
-            : 1,
+        left.free === right.free ? left.name.localeCompare(right.name) : left.free ? -1 : 1,
       );
   }
 
@@ -207,9 +201,7 @@ export class EmbeddedOpenCodeRunner {
     model: string,
   ) {
     if (sessionID) {
-      const existing = await opencode.sessions
-        .get({ sessionID })
-        .catch(() => undefined);
+      const existing = await opencode.sessions.get({ sessionID }).catch(() => undefined);
       if (existing) {
         const modelRef = openCodeModelRef(model);
         if (
@@ -239,24 +231,18 @@ export function openCodeModelRef(model: string) {
   return { providerID, id: modelParts.join("/") };
 }
 
-function deferredProviderFailure(
-  event: Record<string, unknown>,
-): Error | undefined {
+function deferredProviderFailure(event: Record<string, unknown>): Error | undefined {
   if (event.type !== "session.retry.scheduled") return undefined;
   const data = asRecord(event.data);
   const retryAt = typeof data.at === "number" ? data.at : 0;
   if (!retryAt || retryAt <= Date.now() + 60_000) return undefined;
   const providerError = asRecord(data.error);
   const message =
-    typeof providerError.message === "string"
-      ? providerError.message
-      : "Provider request failed";
+    typeof providerError.message === "string" ? providerError.message : "Provider request failed";
   return new Error(`OpenCode provider retry deferred too long: ${message}`);
 }
 
-export function eventSessionID(
-  event: Record<string, unknown>,
-): string | undefined {
+export function eventSessionID(event: Record<string, unknown>): string | undefined {
   const data = asRecord(event.data);
   if (typeof data.sessionID === "string") return data.sessionID;
   const form = asRecord(data.form);
@@ -266,14 +252,10 @@ export function eventSessionID(
 function eventCursor(event: Record<string, unknown>): string | undefined {
   const durable = asRecord(event.durable);
   const seq = durable.seq;
-  return typeof seq === "number" || typeof seq === "string"
-    ? String(seq)
-    : undefined;
+  return typeof seq === "number" || typeof seq === "string" ? String(seq) : undefined;
 }
 
-function terminalStatus(
-  event: Record<string, unknown>,
-): EmbeddedTurnResult["status"] | undefined {
+function terminalStatus(event: Record<string, unknown>): EmbeddedTurnResult["status"] | undefined {
   if (event.type === "session.execution.succeeded") return "succeeded";
   if (event.type === "session.execution.failed") return "failed";
   if (event.type === "session.execution.interrupted") return "interrupted";
