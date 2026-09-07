@@ -56,3 +56,38 @@ describe("deployment readiness", () => {
     },
   );
 });
+
+describe("concurrent publication", () => {
+  it("shares one GitHub publication between finishing turns and permits the next revision", async () => {
+    let finish!: (value: { commitSHA: string }) => void;
+    const publishPullRequest = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const room = Object.assign(Object.create(AgentRoom.prototype), { publishPullRequest });
+    const input = { accessToken: "test", login: "maintainer" };
+    const first = room.createPullRequest(input);
+    const second = room.createPullRequest(input);
+    expect(publishPullRequest).toHaveBeenCalledTimes(1);
+    finish({ commitSHA: "one" });
+    expect(await first).toEqual({ commitSHA: "one" });
+    expect(await second).toEqual({ commitSHA: "one" });
+    const next = room.createPullRequest(input);
+    expect(publishPullRequest).toHaveBeenCalledTimes(2);
+    finish({ commitSHA: "two" });
+    expect(await next).toEqual({ commitSHA: "two" });
+  });
+
+  it("releases a failed publication so a later attempt can retry", async () => {
+    const publishPullRequest = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("GitHub unavailable"))
+      .mockResolvedValue({ commitSHA: "retry" });
+    const room = Object.assign(Object.create(AgentRoom.prototype), { publishPullRequest });
+    const input = { accessToken: "test", login: "maintainer" };
+    await expect(room.createPullRequest(input)).rejects.toThrow("GitHub unavailable");
+    await expect(room.createPullRequest(input)).resolves.toEqual({ commitSHA: "retry" });
+  });
+});

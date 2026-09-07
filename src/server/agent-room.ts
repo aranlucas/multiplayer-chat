@@ -155,6 +155,7 @@ interface HandoffClientState {
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export class AgentRoom extends DurableObject<WorkerEnv> {
+  private pullRequestPublication?: Promise<PullRequestResult>;
   private readonly workspace: RepositoryWorkspace;
   private readonly sandbox: RailwayRoomSandbox;
   private readonly runner?: EmbeddedOpenCodeRunner;
@@ -218,8 +219,22 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     title?: string;
     body?: string;
   }): Promise<PullRequestResult> {
-    const room = this.getRoom();
+    if (!this.pullRequestPublication) {
+      this.pullRequestPublication = this.publishPullRequest(input).finally(() => {
+        this.pullRequestPublication = undefined;
+      });
+    }
+    return this.pullRequestPublication;
+  }
+
+  private async publishPullRequest(input: {
+    accessToken: string;
+    login: string;
+    title?: string;
+    body?: string;
+  }): Promise<PullRequestResult> {
     const workspace = await this.workspace.pullRequestWorkspace();
+    const room = this.getRoom();
     const title = cleanPullRequestText(input.title, `Relay: ${room.title}`, 160);
     const body = cleanPullRequestText(
       input.body,
@@ -265,16 +280,17 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       this.env,
     );
     this.ctx.storage.sql.exec(
-      "UPDATE relay_room SET pull_request_url = ?, pull_request_number = ?, pull_request_branch = ?, pull_request_repository = ?, pull_request_head_sha = ?, github_credential = ?, published_workspace_revision = workspace_revision WHERE singleton = 1",
+      "UPDATE relay_room SET pull_request_url = ?, pull_request_number = ?, pull_request_branch = ?, pull_request_repository = ?, pull_request_head_sha = ?, github_credential = ?, published_workspace_revision = ? WHERE singleton = 1",
       result.url,
       result.number,
       result.branch,
       result.writeRepository,
       result.commitSHA,
       sealedCredential,
+      room.workspaceRevision,
     );
     const revision = this.insertRevision({
-      workspaceRevision: this.getRoom().workspaceRevision,
+      workspaceRevision: room.workspaceRevision,
       commitSHA: result.commitSHA,
       status: "waiting",
       provider: "github",
@@ -301,11 +317,14 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   }
 
   async publishSavedPullRequest(): Promise<PullRequestResult | undefined> {
-    const room = this.getRoom();
-    if (room.workspaceRevision <= room.publishedWorkspaceRevision) return undefined;
-    const credential = this.githubCredential();
-    if (!credential) return undefined;
-    return this.createPullRequest(await unsealGitHubCredential(credential, this.env));
+    let result: PullRequestResult | undefined;
+    for (;;) {
+      const room = this.getRoom();
+      if (room.workspaceRevision <= room.publishedWorkspaceRevision) return result;
+      const credential = this.githubCredential();
+      if (!credential) return result;
+      result = await this.createPullRequest(await unsealGitHubCredential(credential, this.env));
+    }
   }
 
   async recordDeployment(input: {
