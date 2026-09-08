@@ -7,9 +7,7 @@ export default defineConfig({
     __dirname: JSON.stringify("/"),
     __filename: JSON.stringify("/index.js"),
     __RELAY_BUILD_SHA__: JSON.stringify(
-      process.env.WORKERS_CI_COMMIT_SHA ??
-        process.env.RELAY_BUILD_SHA ??
-        "local-preview",
+      process.env.WORKERS_CI_COMMIT_SHA ?? process.env.RELAY_BUILD_SHA ?? "local-preview",
     ),
   },
   plugins: [react(), cloudflare({ configPath: "./preview/wrangler.jsonc" })],

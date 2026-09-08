@@ -10,10 +10,10 @@ const reviewer = {
   color: "#488dcc",
 };
 
-function render(brief: Brief, canEdit = true) {
+function render(input: Brief, canEdit = true) {
   return renderToStaticMarkup(
     <ImplementationBrief
-      brief={brief}
+      brief={input}
       decisions={[]}
       canEdit={canEdit}
       onUpdate={() => true}

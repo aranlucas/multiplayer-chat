@@ -14,19 +14,13 @@ interface QuestionCardProps {
   onCancel: (sessionID: string, formID: string) => boolean;
 }
 
-export function QuestionCard({
-  question,
-  onReply,
-  onCancel,
-}: QuestionCardProps) {
+export function QuestionCard({ question, onReply, onCancel }: QuestionCardProps) {
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [custom, setCustom] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState<"reply" | "cancel">();
 
   const answer = buildAnswer(question.fields, selected, custom);
-  const complete = question.fields.every(
-    (field) => answerValues(answer[field.key]).length > 0,
-  );
+  const complete = question.fields.every((field) => answerValues(answer[field.key]).length > 0);
 
   if (question.status !== "pending") {
     return (
@@ -38,16 +32,13 @@ export function QuestionCard({
               <div key={field.key}>
                 <span>{field.title}</span>
                 <strong>
-                  {answerValues(question.answer?.[field.key]).join(", ") ||
-                    "Unanswered"}
+                  {answerValues(question.answer?.[field.key]).join(", ") || "Unanswered"}
                 </strong>
               </div>
             ))}
           </div>
         ) : (
-          <p className="question-dismissed-copy">
-            The question was dismissed without an answer.
-          </p>
+          <p className="question-dismissed-copy">The question was dismissed without an answer.</p>
         )}
       </div>
     );
@@ -55,14 +46,21 @@ export function QuestionCard({
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!complete || submitting) return;
-    if (onReply(question.sessionID, question.formID, answer))
+    if (!complete || submitting) {
+      return;
+    }
+    if (onReply(question.sessionID, question.formID, answer)) {
       setSubmitting("reply");
+    }
   }
 
   function cancel() {
-    if (submitting) return;
-    if (onCancel(question.sessionID, question.formID)) setSubmitting("cancel");
+    if (submitting) {
+      return;
+    }
+    if (onCancel(question.sessionID, question.formID)) {
+      setSubmitting("cancel");
+    }
   }
 
   return (
@@ -87,27 +85,21 @@ export function QuestionCard({
                       value={option.value}
                       checked={checked ?? false}
                       onChange={() => {
-                        setSelected((current) =>
-                          selectOption(current, field, option.value),
-                        );
-                        if (field.type === "string")
+                        setSelected((current) => selectOption(current, field, option.value));
+                        if (field.type === "string") {
                           setCustom((current) => ({
                             ...current,
                             [field.key]: "",
                           }));
+                        }
                       }}
                     />
-                    <span
-                      className="question-option-control"
-                      aria-hidden="true"
-                    >
+                    <span className="question-option-control" aria-hidden="true">
                       {checked ? <Check size={13} /> : null}
                     </span>
                     <span>
                       <strong>{option.label}</strong>
-                      {option.description ? (
-                        <em>{option.description}</em>
-                      ) : null}
+                      {option.description ? <em>{option.description}</em> : null}
                     </span>
                   </label>
                 );
@@ -126,11 +118,12 @@ export function QuestionCard({
                       ...current,
                       [field.key]: value,
                     }));
-                    if (field.type === "string" && value)
+                    if (field.type === "string" && value) {
                       setSelected((current) => ({
                         ...current,
                         [field.key]: [],
                       }));
+                    }
                   }}
                 />
               </label>
@@ -145,11 +138,7 @@ export function QuestionCard({
           onClick={cancel}
           disabled={Boolean(submitting)}
         >
-          {submitting === "cancel" ? (
-            <LoaderCircle className="spin" size={14} />
-          ) : (
-            <X size={14} />
-          )}
+          {submitting === "cancel" ? <LoaderCircle className="spin" size={14} /> : <X size={14} />}
           Dismiss
         </button>
         <button
@@ -187,12 +176,10 @@ function QuestionHeading({ question }: { question: QuestionDisplay }) {
   );
 }
 
-function selectOption(
-  current: Record<string, string[]>,
-  field: QuestionField,
-  value: string,
-) {
-  if (field.type === "string") return { ...current, [field.key]: [value] };
+function selectOption(current: Record<string, string[]>, field: QuestionField, value: string) {
+  if (field.type === "string") {
+    return { ...current, [field.key]: [value] };
+  }
   const existing = current[field.key] ?? [];
   return {
     ...current,
@@ -210,17 +197,17 @@ function buildAnswer(
   return Object.fromEntries(
     fields.map((field) => {
       const ownAnswer = custom[field.key]?.trim();
-      if (field.type === "string")
+      if (field.type === "string") {
         return [field.key, ownAnswer || selected[field.key]?.[0] || ""];
-      return [
-        field.key,
-        [...(selected[field.key] ?? []), ...(ownAnswer ? [ownAnswer] : [])],
-      ];
+      }
+      return [field.key, [...(selected[field.key] ?? []), ...(ownAnswer ? [ownAnswer] : [])]];
     }),
   ) as Record<string, string | string[]>;
 }
 
 function answerValues(value: string | string[] | undefined) {
-  if (Array.isArray(value)) return value.filter(Boolean);
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
   return value ? [value] : [];
 }

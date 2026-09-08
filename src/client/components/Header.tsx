@@ -57,10 +57,9 @@ export function Header({
   const [copied, setCopied] = useState(false);
   const [editingRepository, setEditingRepository] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
+  const [shareError, setShareError] = useState<string>();
   const [editingModel, setEditingModel] = useState(false);
-  const [repository, setRepository] = useState(
-    room?.repository ?? DEFAULT_REPOSITORY,
-  );
+  const [repository, setRepository] = useState(room?.repository ?? DEFAULT_REPOSITORY);
   const [branch, setBranch] = useState(room?.branch ?? DEFAULT_BRANCH);
   const [title, setTitle] = useState(room?.title ?? "");
   const [model, setModel] = useState(room?.model ?? "");
@@ -68,30 +67,37 @@ export function Header({
   const running = room?.agentStatus === "running";
 
   async function share() {
-    await navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1_800);
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1_800);
+    } catch {
+      setShareError("Unable to copy the link. Copy it from your address bar.");
+    }
   }
 
   function configureRepository(event: React.FormEvent) {
     event.preventDefault();
-    if (onConfigure(repository.trim(), branch.trim()))
+    if (onConfigure(repository.trim(), branch.trim())) {
       setEditingRepository(false);
+    }
   }
 
   function renameRoom(event: React.FormEvent) {
     event.preventDefault();
-    if (onRenameRoom(title.trim())) setEditingTitle(false);
+    if (onRenameRoom(title.trim())) {
+      setEditingTitle(false);
+    }
   }
 
   function configureModel(event: React.FormEvent) {
     event.preventDefault();
-    if (onConfigureModel(model)) setEditingModel(false);
+    if (onConfigureModel(model)) {
+      setEditingModel(false);
+    }
   }
 
-  const selectedModel = models.find(
-    (candidate) => candidate.id === room?.model,
-  );
+  const selectedModel = models.find((candidate) => candidate.id === room?.model);
 
   return (
     <header className="app-header">
@@ -138,17 +144,14 @@ export function Header({
         <ChevronDown size={14} aria-hidden />
       </button>
       {editingModel ? (
-        <form
-          id="model-editor"
-          className="model-popover"
-          onSubmit={configureModel}
-        >
+        <form id="model-editor" className="model-popover" onSubmit={configureModel}>
           <strong>OpenCode model</strong>
           <label>
             Available from the configured provider
             <select
               value={model}
               onChange={(event) => setModel(event.target.value)}
+              // oxlint-disable-next-line jsx-a11y/no-autofocus -- Focus the editor explicitly opened by the user.
               autoFocus
             >
               {!models.some((candidate) => candidate.id === model) && model ? (
@@ -163,8 +166,8 @@ export function Header({
             </select>
           </label>
           <small>
-            Changing this keeps the room and switches the existing OpenCode
-            session on its next turn.
+            Changing this keeps the room and switches the existing OpenCode session on its next
+            turn.
           </small>
           <div>
             <button type="button" onClick={() => setEditingModel(false)}>
@@ -185,6 +188,7 @@ export function Header({
               value={repository}
               onChange={(event) => setRepository(event.target.value)}
               placeholder="owner/repository"
+              // oxlint-disable-next-line jsx-a11y/no-autofocus -- Focus the editor explicitly opened by the user.
               autoFocus
             />
           </label>
@@ -200,10 +204,7 @@ export function Header({
             <button type="button" onClick={() => setEditingRepository(false)}>
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={!repository.trim() || !branch.trim()}
-            >
+            <button type="submit" disabled={!repository.trim() || !branch.trim()}>
               Clone workspace
             </button>
           </div>
@@ -223,19 +224,11 @@ export function Header({
           setEditingTitle((current) => !current);
         }}
       >
-        <span>
-          {room?.titleAuto
-            ? "Untitled thread"
-            : (room?.title ?? "Untitled thread")}
-        </span>
+        <span>{room?.titleAuto ? "Untitled thread" : (room?.title ?? "Untitled thread")}</span>
         <ChevronDown size={14} aria-hidden />
       </button>
       {editingTitle ? (
-        <form
-          id="room-title-editor"
-          className="title-popover"
-          onSubmit={renameRoom}
-        >
+        <form id="room-title-editor" className="title-popover" onSubmit={renameRoom}>
           <strong>Room title</strong>
           <label>
             Shared with everyone in this room
@@ -243,6 +236,7 @@ export function Header({
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               maxLength={100}
+              // oxlint-disable-next-line jsx-a11y/no-autofocus -- Focus the editor explicitly opened by the user.
               autoFocus
               onFocus={(event) => event.currentTarget.select()}
             />
@@ -282,10 +276,7 @@ export function Header({
                             : "Agent ready"}
         </span>
       </div>
-      <div
-        className="header-avatars"
-        aria-label={`${online.length} participants online`}
-      >
+      <div className="header-avatars" aria-label={`${online.length} participants online`}>
         {online.slice(0, 4).map((participant) => (
           <span
             className="avatar avatar-small"
@@ -297,11 +288,7 @@ export function Header({
           </span>
         ))}
       </div>
-      <button
-        className="header-button new-thread-button"
-        type="button"
-        onClick={onNewThread}
-      >
+      <button className="header-button new-thread-button" type="button" onClick={onNewThread}>
         <MessageSquarePlus size={16} />
         <span>New thread</span>
       </button>
@@ -314,26 +301,23 @@ export function Header({
           creatingPullRequest ||
           room?.workspaceStatus !== "ready"
         }
-        title={
-          githubLogin
-            ? `GitHub: @${githubLogin}`
-            : "Connect GitHub to create a pull request"
-        }
+        title={githubLogin ? `GitHub: @${githubLogin}` : "Connect GitHub to create a pull request"}
       >
         {creatingPullRequest ? (
           <LoaderCircle className="spin" size={16} />
         ) : (
           <GitPullRequest size={16} />
         )}
-        <span>
-          {pullRequestURL
-            ? "View PR"
-            : githubLogin
-              ? "Create PR"
-              : "Connect GitHub"}
-        </span>
+        <span>{pullRequestURL ? "View PR" : githubLogin ? "Create PR" : "Connect GitHub"}</span>
       </button>
-      <button className="header-button" type="button" onClick={share}>
+      {shareError ? <span role="alert">{shareError}</span> : null}
+      <button
+        className="header-button"
+        type="button"
+        onClick={() => {
+          void share();
+        }}
+      >
         {copied ? <Check size={16} /> : <Share2 size={16} />}
         <span>{copied ? "Copied" : "Share"}</span>
       </button>

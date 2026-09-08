@@ -39,11 +39,15 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
       events: { subscribe: async function* () {} },
       sessions: {
         create: vi.fn().mockResolvedValue({ id: "session-1" }),
-        prompt: vi.fn().mockResolvedValue(undefined),
-        wait: vi.fn().mockImplementation(async () => {
-          controller.abort();
-          throw new Error("Transport");
-        }),
+        prompt: vi
+          .fn<(input: unknown, options: { signal: AbortSignal }) => Promise<void>>()
+          .mockResolvedValue(undefined),
+        wait: vi
+          .fn<(input: unknown, options: { signal: AbortSignal }) => Promise<void>>()
+          .mockImplementation(async () => {
+            controller.abort();
+            throw new Error("Transport");
+          }),
         interrupt: vi.fn().mockResolvedValue(undefined),
       },
     };
@@ -97,7 +101,7 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
     const runner = new EmbeddedOpenCodeRunner(
       Promise.resolve(opencode as never),
       workspace as never,
-      {} as never,
+      { killActive: vi.fn().mockResolvedValue(undefined) } as never,
     );
 
     await expect(
@@ -116,7 +120,7 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
     expect(onEvent).toHaveBeenCalledWith({ type: "changes", changes });
   });
 
-  it("checkpoints workspace changes when the event stream fails", async () => {
+  it("interrupts a pending prompt and checkpoints when the event stream fails", async () => {
     const failure = new Error("Transport");
     const workspace = {
       ensureReady: vi.fn().mockResolvedValue(undefined),
@@ -125,20 +129,31 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
     const opencode = {
       events: {
         subscribe: async function* () {
-          if (!failure.message) yield { type: "ignored" };
+          if (!failure.message) {
+            yield { type: "ignored" };
+          }
+          await new Promise((resolve) => setTimeout(resolve, 0));
           throw failure;
         },
       },
       sessions: {
         create: vi.fn().mockResolvedValue({ id: "session-1" }),
-        prompt: vi.fn().mockResolvedValue(undefined),
+        prompt: vi
+          .fn<(input: unknown, options: { signal: AbortSignal }) => Promise<void>>()
+          .mockImplementation(
+            (_input, { signal }) =>
+              new Promise((_resolve, reject) => {
+                signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+              }),
+          ),
         wait: vi.fn().mockResolvedValue(undefined),
+        interrupt: vi.fn().mockResolvedValue(undefined),
       },
     };
     const runner = new EmbeddedOpenCodeRunner(
       Promise.resolve(opencode as never),
       workspace as never,
-      {} as never,
+      { killActive: vi.fn().mockResolvedValue(undefined) } as never,
     );
 
     await expect(
@@ -150,6 +165,8 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
       }),
     ).rejects.toBe(failure);
 
+    expect(opencode.sessions.interrupt).toHaveBeenCalledWith({ sessionID: "session-1" });
+    expect(opencode.sessions.wait).not.toHaveBeenCalled();
     expect(workspace.syncSandboxChanges).toHaveBeenCalledOnce();
   });
 });

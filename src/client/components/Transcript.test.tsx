@@ -20,9 +20,7 @@ function toolEvent(
         data: {
           tool,
           input,
-          ...(lifecycle === "success"
-            ? { content: [{ type: "text", text: "ok" }] }
-            : {}),
+          ...(lifecycle === "success" ? { content: [{ type: "text", text: "ok" }] } : {}),
           ...(lifecycle === "failed" ? { error: "boom" } : {}),
         },
       },
@@ -48,25 +46,17 @@ function hasCopyButton(html: string) {
 
 describe("Bash tool card copy button", () => {
   it("renders for a completed Bash tool", () => {
-    const html = render(
-      toolEvent("bash", "success", { command: "git status --short" }),
-    );
+    const html = render(toolEvent("bash", "success", { command: "git status --short" }));
     expect(hasCopyButton(html)).toBe(true);
     expect(html).toContain('title="Copy command"');
   });
 
   it("does not render for running, failed, or non-Bash tools", () => {
-    expect(
-      hasCopyButton(render(toolEvent("bash", "called", { command: "pwd" }))),
-    ).toBe(false);
-    expect(
-      hasCopyButton(render(toolEvent("bash", "failed", { command: "false" }))),
-    ).toBe(false);
-    expect(
-      hasCopyButton(
-        render(toolEvent("edit", "success", { filePath: "src/index.ts" })),
-      ),
-    ).toBe(false);
+    expect(hasCopyButton(render(toolEvent("bash", "called", { command: "pwd" })))).toBe(false);
+    expect(hasCopyButton(render(toolEvent("bash", "failed", { command: "false" })))).toBe(false);
+    expect(hasCopyButton(render(toolEvent("edit", "success", { filePath: "src/index.ts" })))).toBe(
+      false,
+    );
   });
 
   it("keeps the copy button outside the expand toggle", () => {
@@ -97,8 +87,7 @@ describe("question card", () => {
                 {
                   key: "q0",
                   title: "README updates",
-                  description:
-                    "What specific changes would you like made to the README?",
+                  description: "What specific changes would you like made to the README?",
                   type: "multiselect",
                   options: [
                     {

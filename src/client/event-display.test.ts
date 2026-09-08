@@ -17,15 +17,17 @@ function rawToolEvent(tool: string, input: Record<string, unknown>) {
 
 describe("tool event display", () => {
   it("shows Bash commands without a serialized tool-call wrapper", () => {
-    expect(
-      displayEvent(rawToolEvent("bash", { command: "git status --short" })),
-    ).toMatchObject({ title: "bash", detail: "$ git status --short" });
+    expect(displayEvent(rawToolEvent("bash", { command: "git status --short" }))).toMatchObject({
+      title: "bash",
+      detail: "$ git status --short",
+    });
   });
 
   it("presents the shell compatibility alias as Bash", () => {
-    expect(
-      displayEvent(rawToolEvent("shell", { command: "pnpm test" })),
-    ).toMatchObject({ title: "bash", detail: "$ pnpm test" });
+    expect(displayEvent(rawToolEvent("shell", { command: "pnpm test" }))).toMatchObject({
+      title: "bash",
+      detail: "$ pnpm test",
+    });
   });
 
   it("keeps the command summary after a direct tool succeeds", () => {
@@ -138,18 +140,14 @@ describe("tool event display", () => {
   });
 
   it("keeps the copyable command free of its display prefix", () => {
-    const display = displayEvent(
-      rawToolEvent("bash", { command: "git status --short" }),
-    );
+    const display = displayEvent(rawToolEvent("bash", { command: "git status --short" }));
     expect(display).toMatchObject({
       title: "bash",
       detail: "$ git status --short",
       command: "git status --short",
     });
     expect(
-      "command" in display && display.command
-        ? display.command.startsWith("$ ")
-        : undefined,
+      "command" in display && display.command ? display.command.startsWith("$ ") : undefined,
     ).toBe(false);
   });
 
@@ -159,8 +157,7 @@ describe("tool event display", () => {
         rawToolEvent("question", {
           questions: [
             {
-              question:
-                "What specific changes would you like made to the README?",
+              question: "What specific changes would you like made to the README?",
               header: "README updates",
               options: [],
               multiple: true,
@@ -197,8 +194,7 @@ describe("question form display", () => {
                 {
                   key: "q0",
                   title: "README updates",
-                  description:
-                    "What specific changes would you like made to the README?",
+                  description: "What specific changes would you like made to the README?",
                   type: "multiselect",
                   options: [
                     {

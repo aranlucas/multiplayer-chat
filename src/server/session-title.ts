@@ -14,21 +14,21 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-export function sessionTitleFromEvent(
-  event: Record<string, unknown>,
-): string | undefined {
+export function sessionTitleFromEvent(event: Record<string, unknown>): string | undefined {
   const type = typeof event.type === "string" ? event.type : "";
-  if (type !== "session.updated" && type !== "session.next.updated")
+  if (type !== "session.updated" && type !== "session.next.updated") {
     return undefined;
+  }
   const data = asRecord(event.data);
   const properties = asRecord(event.properties);
-  const info = asRecord(
-    data.info ?? properties.info ?? (event as Record<string, unknown>).info,
-  );
-  const candidate =
-    info.title ?? (typeof data.title === "string" ? data.title : undefined);
-  if (typeof candidate !== "string") return undefined;
+  const info = asRecord(data.info ?? properties.info ?? event.info);
+  const candidate = info.title ?? (typeof data.title === "string" ? data.title : undefined);
+  if (typeof candidate !== "string") {
+    return undefined;
+  }
   const title = candidate.trim();
-  if (!title || /^(new session|untitled)/i.test(title)) return undefined;
+  if (!title || /^(new session|untitled)/i.test(title)) {
+    return undefined;
+  }
   return title;
 }

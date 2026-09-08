@@ -1,3 +1,4 @@
+import { textValue } from "../shared/text-value";
 import type { TimelineEvent } from "../shared/protocol";
 
 const STREAM_TYPES = new Set(["session.reasoning.delta", "session.text.delta"]);
@@ -8,9 +9,7 @@ const STREAM_BOUNDARIES = new Set([
   "session.text.ended",
 ]);
 
-export function coalesceTimelineEvents(
-  events: TimelineEvent[],
-): TimelineEvent[] {
+export function coalesceTimelineEvents(events: TimelineEvent[]): TimelineEvent[] {
   const result: TimelineEvent[] = [];
   const streams = new Map<string, number>();
   const tools = new Map<string, number>();
@@ -22,7 +21,7 @@ export function coalesceTimelineEvents(
       result.push(event);
       continue;
     }
-    const type = String(raw.type ?? "");
+    const type = textValue(raw.type ?? "");
     const data = asRecord(raw.data);
     if (type.startsWith("form.")) {
       mergeFormLifecycle(result, forms, event, type, data);
@@ -39,26 +38,19 @@ export function coalesceTimelineEvents(
         event,
         type,
         data,
-        String(data.delta ?? ""),
+        textValue(data.delta ?? ""),
         data.streaming !== false,
       );
       continue;
     }
     if (type === "session.reasoning.ended" || type === "session.text.ended") {
       const deltaType = type.replace(".ended", ".delta");
-      mergeStream(
-        result,
-        streams,
-        event,
-        deltaType,
-        data,
-        String(data.text ?? ""),
-        false,
-        true,
-      );
+      mergeStream(result, streams, event, deltaType, data, textValue(data.text ?? ""), false, true);
       continue;
     }
-    if (STREAM_BOUNDARIES.has(type)) continue;
+    if (STREAM_BOUNDARIES.has(type)) {
+      continue;
+    }
     result.push(event);
   }
   return result;
@@ -72,14 +64,12 @@ function mergeFormLifecycle(
   data: Record<string, unknown>,
 ) {
   const incomingForm = asRecord(data.form);
-  const id = String(incomingForm.id ?? data.id ?? event.id);
+  const id = textValue(incomingForm.id ?? data.id ?? event.id);
   const existingIndex = forms.get(id);
-  const existing =
-    existingIndex === undefined ? undefined : result[existingIndex];
+  const existing = existingIndex === undefined ? undefined : result[existingIndex];
   const existingRaw = existing ? rawEvent(existing) : undefined;
   const existingData = asRecord(existingRaw?.data);
-  const form =
-    Object.keys(incomingForm).length > 0 ? incomingForm : existingData.form;
+  const form = Object.keys(incomingForm).length > 0 ? incomingForm : existingData.form;
   const merged: TimelineEvent = {
     ...(existing ?? event),
     id: `form:${id}`,
@@ -110,19 +100,13 @@ function mergeToolLifecycle(
 ) {
   const key = toolKey(event, data);
   const existingIndex = tools.get(key);
-  const existing =
-    existingIndex === undefined ? undefined : result[existingIndex];
+  const existing = existingIndex === undefined ? undefined : result[existingIndex];
   const existingRaw = existing ? rawEvent(existing) : undefined;
   const existingData = asRecord(existingRaw?.data);
-  const tool = String(
-    data.tool ??
-      data.name ??
-      existingData.tool ??
-      existingData.name ??
-      "tool call",
+  const tool = textValue(
+    data.tool ?? data.name ?? existingData.tool ?? existingData.name ?? "tool call",
   );
-  const parsedInput =
-    data.input ?? parseToolInput(data.text) ?? existingData.input ?? {};
+  const parsedInput = data.input ?? parseToolInput(data.text) ?? existingData.input ?? {};
   const finalType =
     type === "session.tool.success" || type === "session.tool.failed"
       ? type
@@ -172,7 +156,9 @@ function toolKey(event: TimelineEvent, data: Record<string, unknown>): string {
 }
 
 function parseToolInput(value: unknown): unknown {
-  if (typeof value !== "string" || value.length === 0) return undefined;
+  if (typeof value !== "string" || value.length === 0) {
+    return undefined;
+  }
   try {
     return JSON.parse(value);
   } catch {
@@ -193,22 +179,25 @@ function mergeStream(
   const key = streamKey(type, data);
   const index = streams.get(key);
   if (index === undefined) {
-    if (text.length === 0) return;
+    if (text.length === 0) {
+      return;
+    }
     streams.set(key, result.length);
     result.push(streamEvent(event, key, type, data, text, streaming));
     return;
   }
   const existing = result[index];
-  const existingRaw = rawEvent(existing)!;
+  const existingRaw = rawEvent(existing);
+  if (!existingRaw) {
+    return;
+  }
   const existingData = asRecord(existingRaw.data);
   result[index] = streamEvent(
     existing,
     key,
     type,
     data,
-    replace && text.length > 0
-      ? text
-      : String(existingData.delta ?? "") + (replace ? "" : text),
+    replace && text.length > 0 ? text : textValue(existingData.delta ?? "") + (replace ? "" : text),
     streaming,
   );
 }
@@ -237,19 +226,16 @@ function streamEvent(
 }
 
 function streamKey(type: string, data: Record<string, unknown>): string {
-  return [type, data.sessionID, data.assistantMessageID, data.ordinal ?? 0]
-    .map(String)
-    .join(":");
+  return [type, data.sessionID, data.assistantMessageID, data.ordinal ?? 0].map(String).join(":");
 }
 
 function rawEvent(event: TimelineEvent): Record<string, unknown> | undefined {
-  if (event.kind !== "opencode" || event.payload.type !== "raw")
+  if (event.kind !== "opencode" || event.payload.type !== "raw") {
     return undefined;
+  }
   return asRecord(event.payload.event);
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : {};
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }

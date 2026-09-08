@@ -1,3 +1,5 @@
+import { usePreviewHandoff } from "./use-preview-handoff";
+import type { Participant, QueuedPrompt } from "../shared/protocol";
 import { useEffect, useRef, useState } from "react";
 import { useRoom } from "./use-room";
 import { useGitHub } from "./use-github";
@@ -21,7 +23,9 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
       undefined,
   );
   const [mobileTab, setMobileTab] = useState<MobileTab>(() => {
-    if (bootstrap.resumeState?.mobileTab) return bootstrap.resumeState.mobileTab;
+    if (bootstrap.resumeState?.mobileTab) {
+      return bootstrap.resumeState.mobileTab;
+    }
     const stored = window.sessionStorage.getItem(`relay:${roomID}:mobile-tab`);
     return stored === "brief" || stored === "people" || stored === "queue" ? stored : "transcript";
   });
@@ -29,8 +33,17 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
     () =>
       bootstrap.resumeState?.draft ?? window.sessionStorage.getItem(`relay:${roomID}:draft`) ?? "",
   );
-  const [transitioning, setTransitioning] = useState(false);
-  const handoffRevision = useRef<string | undefined>(undefined);
+  const handoff = usePreviewHandoff({
+    roomID,
+    controlOrigin,
+    identity,
+    draft,
+    selectedID,
+    mobileTab,
+    revision: state.room?.latestRevision,
+  });
+  const { transitioning } = handoff;
+  const attemptedPublication = useRef<string | undefined>(undefined);
   const pendingPermission = state.permissions.find((permission) => permission.status === "pending");
   const canApprove = identity.role === "maintainer";
 
@@ -39,66 +52,20 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
     if (
       !github.state.authenticated ||
       github.state.creating ||
+      github.state.error ||
       room?.agentStatus !== "idle" ||
       room.autoPublishConfigured ||
       room.workspaceRevision <= room.publishedWorkspaceRevision
-    )
+    ) {
       return;
+    }
+    const publicationKey = `${roomID}:${room.repository}:${room.branch}:${room.workspaceRevision}`;
+    if (attemptedPublication.current === publicationKey) {
+      return;
+    }
+    attemptedPublication.current = publicationKey;
     void github.createPullRequest();
-  }, [github, state.room]);
-
-  useEffect(() => {
-    const revision = state.room?.latestRevision;
-    if (
-      revision?.status !== "ready" ||
-      !revision.previewURL ||
-      handoffRevision.current === revision.id ||
-      state.room?.activeRevision?.id === revision.id
-    )
-      return;
-    handoffRevision.current = revision.id;
-    const controller = new AbortController();
-    setTransitioning(true);
-    const sameOrigin = new URL(revision.previewURL).origin === window.location.origin;
-    const endpoint = sameOrigin
-      ? `${controlOrigin}/api/rooms/${encodeURIComponent(roomID)}/revisions/activate`
-      : `${controlOrigin}/api/rooms/${encodeURIComponent(roomID)}/handoffs`;
-    fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        sameOrigin
-          ? { revisionID: revision.id, currentOrigin: window.location.origin }
-          : {
-              participant: identity,
-              currentOrigin: window.location.origin,
-              clientState: { draft, selectedID, mobileTab },
-            },
-      ),
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const result = (await response.json()) as {
-          url?: string;
-          error?: string;
-        };
-        if (!response.ok || (!sameOrigin && !result.url))
-          throw new Error(result.error || "Unable to move to the preview");
-        window.sessionStorage.setItem(`relay:${roomID}:mobile-tab`, mobileTab);
-        if (selectedID) window.sessionStorage.setItem(`relay:${roomID}:selected`, selectedID);
-        window.sessionStorage.setItem(`relay:${roomID}:draft`, draft);
-        window.setTimeout(
-          () => (sameOrigin ? window.location.reload() : window.location.assign(result.url!)),
-          450,
-        );
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setTransitioning(false);
-        console.error(error);
-      });
-    return () => controller.abort();
-  }, [controlOrigin, draft, identity, mobileTab, roomID, selectedID, state.room]);
+  }, [github, roomID, state.room]);
 
   function reply(id: string, response: "once" | "reject") {
     actions.reply(id, response);
@@ -127,7 +94,9 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
         githubLogin={github.state.user?.login}
         creatingPullRequest={github.state.creating}
         pullRequestURL={state.room?.pullRequestURL}
-        onPullRequest={handlePullRequest}
+        onPullRequest={() => {
+          void handlePullRequest();
+        }}
         onNewThread={createThread}
         onPause={actions.pause}
         canConfigure={identity.role === "maintainer"}
@@ -162,9 +131,9 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
             mobile
           />
         ) : mobileTab === "people" ? (
-          <MobilePeople />
+          <MobilePeople participants={state.participants} />
         ) : mobileTab === "queue" ? (
-          <MobileQueue />
+          <MobileQueue queue={state.queue} />
         ) : (
           <Transcript
             events={state.events}
@@ -177,7 +146,7 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
           />
         )}
         <Composer
-          disabled={state.connection !== "connected"}
+          disabled={state.connection !== "connected" || transitioning}
           text={draft}
           onTextChange={setDraft}
           onSend={actions.prompt}
@@ -203,6 +172,14 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
       {state.error || github.state.error ? (
         <div className="error-toast">{state.error ?? github.state.error}</div>
       ) : null}
+      {handoff.error ? (
+        <div role="alert" className="error-toast">
+          {handoff.error}{" "}
+          <button type="button" onClick={handoff.retry}>
+            Retry preview
+          </button>
+        </div>
+      ) : null}
       {transitioning ? (
         <div className="room-transition" role="status">
           <span className="transition-pulse" />
@@ -218,42 +195,39 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
       </div>
     </div>
   );
+}
 
-  function MobilePeople() {
-    return (
-      <section className="mobile-panel">
-        <h1>Participants</h1>
-        {state.participants.map((participant) => (
-          <div className="mobile-person" key={participant.id}>
-            <span
-              className="avatar"
-              style={{ "--avatar": participant.color } as React.CSSProperties}
-            >
-              {participant.name.charAt(0).toUpperCase()}
-            </span>
-            <div>
-              <strong>{participant.name}</strong>
-              <span>{participant.role}</span>
-            </div>
-            <em>{participant.online ? "Online" : "Away"}</em>
+function MobilePeople({ participants }: { participants: Participant[] }) {
+  return (
+    <section className="mobile-panel">
+      <h1>Participants</h1>
+      {participants.map((participant) => (
+        <div className="mobile-person" key={participant.id}>
+          <span className="avatar" style={{ "--avatar": participant.color } as React.CSSProperties}>
+            {participant.name.charAt(0).toUpperCase()}
+          </span>
+          <div>
+            <strong>{participant.name}</strong>
+            <span>{participant.role}</span>
           </div>
-        ))}
-      </section>
-    );
-  }
+          <em>{participant.online ? "Online" : "Away"}</em>
+        </div>
+      ))}
+    </section>
+  );
+}
 
-  function MobileQueue() {
-    return (
-      <section className="mobile-panel">
-        <h1>Queued follow-ups</h1>
-        {state.queue.map((item) => (
-          <div className="mobile-queue-item" key={item.eventID}>
-            <strong>{item.participant.name}</strong>
-            <p>{item.text}</p>
-          </div>
-        ))}
-        {!state.queue.length ? <p className="empty-copy">Nothing queued yet.</p> : null}
-      </section>
-    );
-  }
+function MobileQueue({ queue }: { queue: QueuedPrompt[] }) {
+  return (
+    <section className="mobile-panel">
+      <h1>Queued follow-ups</h1>
+      {queue.map((item) => (
+        <div className="mobile-queue-item" key={item.eventID}>
+          <strong>{item.participant.name}</strong>
+          <p>{item.text}</p>
+        </div>
+      ))}
+      {!queue.length ? <p className="empty-copy">Nothing queued yet.</p> : null}
+    </section>
+  );
 }

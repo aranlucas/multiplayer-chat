@@ -33,6 +33,10 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Lint (type-aware, zero warnings)
+        run: pnpm lint
+      - name: Check formatting
+        run: pnpm format:check
       - name: Type-check
         run: pnpm typecheck
       - name: Test

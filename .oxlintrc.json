@@ -1,10 +1,76 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["jsx-a11y", "react", "typescript", "unicorn"],
+  "plugins": ["typescript", "oxc", "unicorn", "import", "react", "jsx-a11y", "promise", "vitest"],
   "env": {
     "browser": true,
     "node": true,
     "es2026": true
   },
-  "ignorePatterns": ["dist/**", "node_modules/**", "worker-configuration.d.ts"]
+  "ignorePatterns": ["dist/**", "dist-preview/**", "node_modules/**", "worker-configuration.d.ts"],
+  "categories": {
+    "correctness": "error"
+  },
+  "options": {
+    "denyWarnings": true,
+    "reportUnusedDisableDirectives": "error",
+    "typeAware": true
+  },
+  "rules": {
+    "eqeqeq": ["error", "always"],
+    "curly": ["error", "all"],
+    "no-var": "error",
+    "prefer-const": "error",
+    "no-throw-literal": "error",
+    "no-warning-comments": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/ban-ts-comment": [
+      "error",
+      {
+        "ts-ignore": true,
+        "ts-nocheck": true,
+        "ts-expect-error": true,
+        "ts-check": false
+      }
+    ],
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/await-thenable": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-non-null-assertion": "error",
+    "react/exhaustive-deps": "error",
+    "react/rules-of-hooks": "error",
+    "import/no-cycle": "error",
+    "import/no-duplicates": "error",
+    "vitest/no-focused-tests": "error",
+    "vitest/no-disabled-tests": "error",
+    "vitest/valid-expect": "error",
+    "react/react-in-jsx-scope": "off",
+    "no-shadow": "error",
+    "typescript/no-misused-spread": "error",
+    "typescript/unbound-method": "error",
+    "react/no-unstable-nested-components": [
+      "error",
+      {
+        "allowAsProps": true
+      }
+    ],
+    "vitest/require-mock-type-parameters": "off",
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-new-func": "error",
+    "no-async-promise-executor": "error"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "typescript/no-extraneous-class": "off"
+      }
+    }
+  ]
 }

@@ -26,18 +26,14 @@ describe("hasLiveOpenCode", () => {
   });
 
   it("requires Railway sandbox access", () => {
-    expect(hasLiveOpenCode(env({ RAILWAY_ENVIRONMENT_ID: undefined }))).toBe(
-      false,
-    );
+    expect(hasLiveOpenCode(env({ RAILWAY_ENVIRONMENT_ID: undefined }))).toBe(false);
     expect(hasLiveOpenCode(env({ RAILWAY_TOKEN: undefined }))).toBe(false);
-    expect(
-      liveOpenCodeConfigurationError(
-        env({ RAILWAY_ENVIRONMENT_ID: undefined }),
-      ),
-    ).toBe("The Railway environment ID is not configured.");
-    expect(
-      liveOpenCodeConfigurationError(env({ RAILWAY_TOKEN: undefined })),
-    ).toBe("A Railway project or API token is not configured.");
+    expect(liveOpenCodeConfigurationError(env({ RAILWAY_ENVIRONMENT_ID: undefined }))).toBe(
+      "The Railway environment ID is not configured.",
+    );
+    expect(liveOpenCodeConfigurationError(env({ RAILWAY_TOKEN: undefined }))).toBe(
+      "A Railway project or API token is not configured.",
+    );
   });
 
   it("requires the configured OpenRouter API key", () => {
@@ -55,9 +51,7 @@ describe("hasLiveOpenCode", () => {
 
   it("keeps simulation mode offline", () => {
     expect(hasLiveOpenCode(env({ OPENCODE_MODE: "simulation" }))).toBe(false);
-    expect(
-      liveOpenCodeConfigurationError(env({ OPENCODE_MODE: "simulation" })),
-    ).toBeUndefined();
+    expect(liveOpenCodeConfigurationError(env({ OPENCODE_MODE: "simulation" }))).toBeUndefined();
   });
 
   it("normalizes the configured model allowlist", () => {
@@ -75,14 +69,13 @@ describe("hasLiveOpenCode", () => {
     const config = openCodeConfiguration(
       env({
         OPENCODE_MODEL: "opencode/muse-spark-1.2-contributor-free",
-        OPENCODE_MODEL_ALLOWLIST:
-          "opencode/big-pickle,opencode/muse-spark-1.2-contributor-free",
+        OPENCODE_MODEL_ALLOWLIST: "opencode/big-pickle,opencode/muse-spark-1.2-contributor-free",
       }),
     );
 
-    expect(
-      config.providers?.opencode?.models?.["muse-spark-1.2-contributor-free"],
-    ).toEqual({ name: "Muse Spark 1.2 Contributor Free" });
+    expect(config.providers?.opencode?.models?.["muse-spark-1.2-contributor-free"]).toEqual({
+      name: "Muse Spark 1.2 Contributor Free",
+    });
     expect(config.providers?.opencode?.settings).toEqual({
       apiKey: "zen-test-key",
     });
@@ -93,8 +86,7 @@ describe("hasLiveOpenCode", () => {
       env({
         OPENCODE_PROVIDER: "openrouter",
         OPENCODE_MODEL: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-        OPENCODE_MODEL_ALLOWLIST:
-          "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+        OPENCODE_MODEL_ALLOWLIST: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
         OPENCODE_ZEN_API_KEY: undefined,
         OPENROUTER_API_KEY: "openrouter-test-key",
       }),
@@ -104,9 +96,7 @@ describe("hasLiveOpenCode", () => {
       apiKey: "openrouter-test-key",
     });
     expect(
-      config.providers?.openrouter?.models?.[
-        "nvidia/nemotron-3-ultra-550b-a55b:free"
-      ],
+      config.providers?.openrouter?.models?.["nvidia/nemotron-3-ultra-550b-a55b:free"],
     ).toEqual({ name: "NVIDIA Nemotron 3 Ultra (free)" });
   });
 
@@ -123,8 +113,7 @@ describe("hasLiveOpenCode", () => {
         env({
           OPENCODE_PROVIDER: "openrouter",
           OPENCODE_MODEL: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-          OPENCODE_MODEL_ALLOWLIST:
-            "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+          OPENCODE_MODEL_ALLOWLIST: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
         }),
       ),
     ).toEqual([

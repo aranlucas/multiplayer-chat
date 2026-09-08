@@ -17,8 +17,7 @@ export function createThread() {
 }
 
 export async function resolveRelayBootstrap(): Promise<RelayBootstrap> {
-  const roomID =
-    window.location.pathname.match(/^\/r\/([^/]+)/)?.[1] ?? "reconnect-loop";
+  const roomID = window.location.pathname.match(/^\/r\/([^/]+)/)?.[1] ?? "reconnect-loop";
   const params = new URLSearchParams(window.location.search);
   const storedControl = window.sessionStorage.getItem("relay:control-origin");
   const controlOrigin = safeOrigin(
@@ -45,15 +44,12 @@ export async function resolveRelayBootstrap(): Promise<RelayBootstrap> {
     clientState?: RelayBootstrap["resumeState"];
     error?: string;
   };
-  if (!response.ok || !result.participant)
+  if (!response.ok || !result.participant) {
     throw new Error(result.error || "Unable to enter the deployed room");
+  }
 
   rememberIdentity(roomID, result.participant);
-  window.history.replaceState(
-    null,
-    "",
-    `${window.location.pathname}${window.location.search}`,
-  );
+  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
   return {
     roomID,
     controlOrigin,
@@ -65,16 +61,14 @@ export async function resolveRelayBootstrap(): Promise<RelayBootstrap> {
 function rememberIdentity(roomID: string, identity: RoomIdentity) {
   const storageKey = `relay:${roomID}:${identity.name}:participant`;
   window.localStorage.setItem(storageKey, identity.id);
-  window.localStorage.setItem(
-    `relay:${roomID}:identity`,
-    JSON.stringify(identity),
-  );
+  window.localStorage.setItem(`relay:${roomID}:identity`, JSON.stringify(identity));
 }
 
 function safeOrigin(value: string): string {
   const url = new URL(value, window.location.origin);
   const local = url.hostname === "127.0.0.1" || url.hostname === "localhost";
-  if (url.protocol !== "https:" && !(local && url.protocol === "http:"))
+  if (url.protocol !== "https:" && !(local && url.protocol === "http:")) {
     return window.location.origin;
+  }
   return url.origin;
 }

@@ -17,11 +17,7 @@ interface ActivityRailProps {
   onSelect: (id: string) => void;
 }
 
-export function ActivityRail({
-  events,
-  selectedID,
-  onSelect,
-}: ActivityRailProps) {
+export function ActivityRail({ events, selectedID, onSelect }: ActivityRailProps) {
   return (
     <aside className="activity-rail">
       <div className="rail-heading">
@@ -41,9 +37,7 @@ export function ActivityRail({
               type="button"
               onClick={() => onSelect(event.id)}
             >
-              <span className="activity-time">
-                {formatTime(event.createdAt)}
-              </span>
+              <span className="activity-time">{formatTime(event.createdAt)}</span>
               <span className={`activity-icon activity-icon-${display.type}`}>
                 {display.type === "prompt" ? (
                   <UserRound size={15} />

@@ -76,10 +76,7 @@ export function LandingPage() {
           <a href="#how">How it works</a>
           <a href="/r/reconnect-loop">Live room</a>
         </nav>
-        <button
-          className="button-primary landing-nav-cta"
-          onClick={createThread}
-        >
+        <button className="button-primary landing-nav-cta" onClick={createThread}>
           Start a thread
         </button>
       </header>
@@ -91,14 +88,12 @@ export function LandingPage() {
               <Zap size={13} aria-hidden /> Multiplayer coding-agent room
             </span>
             <h1>
-              Code with an AI agent —{" "}
-              <span className="accent">together, in real time.</span>
+              Code with an AI agent — <span className="accent">together, in real time.</span>
             </h1>
             <p className="landing-lead">
-              Relay is a shared room where people and an OpenCode agent work on
-              the same repository at once. One ordered event stream, live
-              presence, queued prompts, and one-click pull requests — all inside
-              a hardware-isolated workspace.
+              Relay is a shared room where people and an OpenCode agent work on the same repository
+              at once. One ordered event stream, live presence, queued prompts, and one-click pull
+              requests — all inside a hardware-isolated workspace.
             </p>
             <div className="landing-actions">
               <button className="button-primary" onClick={createThread}>
@@ -127,9 +122,8 @@ export function LandingPage() {
           <div className="section-head">
             <h2>Everything a shared agent room needs</h2>
             <p>
-              Relay keeps OpenCode authoritative and gives every participant the
-              same view of the work — from the first prompt to the merged pull
-              request.
+              Relay keeps OpenCode authoritative and gives every participant the same view of the
+              work — from the first prompt to the merged pull request.
             </p>
           </div>
           <div className="feature-grid">
@@ -148,9 +142,7 @@ export function LandingPage() {
         <section id="how" className="landing-section landing-section-alt">
           <div className="section-head">
             <h2>From empty room to shipped PR in three steps</h2>
-            <p>
-              No setup, no client to install. Open a link and start building.
-            </p>
+            <p>No setup, no client to install. Open a link and start building.</p>
           </div>
           <div className="steps">
             {steps.map((step, index) => (
@@ -182,10 +174,7 @@ export function LandingPage() {
           <Zap size={18} strokeWidth={2.1} aria-hidden />
           <span>Relay</span>
         </div>
-        <p>
-          Multiplayer coding-agent rooms on Cloudflare Durable Objects and
-          Railway Sandbox.
-        </p>
+        <p>Multiplayer coding-agent rooms on Cloudflare Durable Objects and Railway Sandbox.</p>
         <a className="landing-footer-link" href="/r/reconnect-loop">
           Try a live room <ArrowRight size={14} />
         </a>
@@ -268,10 +257,7 @@ function RelayMock() {
                 <strong>agent</strong>
                 <span className="mock-tag mock-tag-done">done</span>
               </div>
-              <p>
-                Added validation and a failing test now passes. Ready for
-                review.
-              </p>
+              <p>Added validation and a failing test now passes. Ready for review.</p>
             </div>
           </div>
           <div className="mock-composer">
@@ -285,10 +271,7 @@ function RelayMock() {
             People <span>3</span>
           </div>
           <div className="mock-person">
-            <span
-              className="avatar"
-              style={{ "--avatar": "#6685ff" } as React.CSSProperties}
-            >
+            <span className="avatar" style={{ "--avatar": "#6685ff" } as React.CSSProperties}>
               S
             </span>
             <div>
@@ -297,10 +280,7 @@ function RelayMock() {
             </div>
           </div>
           <div className="mock-person">
-            <span
-              className="avatar"
-              style={{ "--avatar": "#95e853" } as React.CSSProperties}
-            >
+            <span className="avatar" style={{ "--avatar": "#95e853" } as React.CSSProperties}>
               M
             </span>
             <div>
@@ -309,10 +289,7 @@ function RelayMock() {
             </div>
           </div>
           <div className="mock-person">
-            <span
-              className="avatar"
-              style={{ "--avatar": "#eba62c" } as React.CSSProperties}
-            >
+            <span className="avatar" style={{ "--avatar": "#eba62c" } as React.CSSProperties}>
               A
             </span>
             <div>

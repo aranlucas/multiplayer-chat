@@ -26,9 +26,7 @@ export function PermissionCard({
         <span>{permission.status}</span>
       </div>
       {!compact ? (
-        <p>
-          {permission.message ?? "This side effect needs maintainer approval."}
-        </p>
+        <p>{permission.message ?? "This side effect needs maintainer approval."}</p>
       ) : null}
       {!compact ? <code>$ {permission.action} --env production</code> : null}
       {!compact ? (

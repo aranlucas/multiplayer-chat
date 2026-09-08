@@ -87,14 +87,17 @@ export function getIdentity(roomID: string): RoomIdentity {
 function rememberedIdentity(roomID: string): RoomIdentity | undefined {
   try {
     const value = window.localStorage.getItem(`relay:${roomID}:identity`);
-    if (!value) return undefined;
+    if (!value) {
+      return undefined;
+    }
     const identity = JSON.parse(value) as Partial<RoomIdentity>;
     if (
       typeof identity.id === "string" &&
       typeof identity.name === "string" &&
       (identity.role === "maintainer" || identity.role === "contributor")
-    )
+    ) {
       return identity as RoomIdentity;
+    }
   } catch {
     // Ignore malformed local identity state.
   }
@@ -132,16 +135,25 @@ export function useRoom(
         const events = appendEvent(current.events, message.event);
         return { ...current, events, queue: queuedPrompts(events) };
       }
-      if (message.type === "presence") return { ...current, participants: message.participants };
-      if (message.type === "room") return { ...current, room: message.room };
-      if (message.type === "permissions") return { ...current, permissions: message.permissions };
-      if (message.type === "planning")
+      if (message.type === "presence") {
+        return { ...current, participants: message.participants };
+      }
+      if (message.type === "room") {
+        return { ...current, room: message.room };
+      }
+      if (message.type === "permissions") {
+        return { ...current, permissions: message.permissions };
+      }
+      if (message.type === "planning") {
         return {
           ...current,
           brief: message.brief,
           decisions: message.decisions,
         };
-      if (message.type === "error") return { ...current, error: message.message };
+      }
+      if (message.type === "error") {
+        return { ...current, error: message.message };
+      }
       return current;
     });
   }, []);
@@ -185,7 +197,9 @@ export function useRoom(
         }
       });
       socket.addEventListener("close", () => {
-        if (disposed) return;
+        if (disposed) {
+          return;
+        }
         retryCountRef.current += 1;
         setState((current) => ({ ...current, connection: "reconnecting" }));
         retryRef.current = window.setTimeout(
@@ -199,7 +213,9 @@ export function useRoom(
     connect();
     return () => {
       disposed = true;
-      if (retryRef.current) window.clearTimeout(retryRef.current);
+      if (retryRef.current) {
+        window.clearTimeout(retryRef.current);
+      }
       socketRef.current?.close(1000, "component unmounted");
     };
   }, [controlOrigin, handleMessage, identity.id, identity.name, identity.role, roomID]);
@@ -219,7 +235,7 @@ export function useRoom(
 
   const actions = useMemo(
     () => ({
-      prompt(text: string, delivery: DeliveryMode) {
+      prompt(this: void, text: string, delivery: DeliveryMode) {
         return send({
           type: "prompt",
           text,
@@ -227,10 +243,15 @@ export function useRoom(
           requestID: crypto.randomUUID(),
         });
       },
-      reply(requestID: string, reply: "once" | "always" | "reject") {
+      reply(this: void, requestID: string, reply: "once" | "always" | "reject") {
         return send({ type: "permission.reply", requestID, reply });
       },
-      answerQuestion(sessionID: string, formID: string, answer: Record<string, string | string[]>) {
+      answerQuestion(
+        this: void,
+        sessionID: string,
+        formID: string,
+        answer: Record<string, string | string[]>,
+      ) {
         return send({
           type: "question.reply",
           sessionID,
@@ -239,7 +260,7 @@ export function useRoom(
           requestID: crypto.randomUUID(),
         });
       },
-      dismissQuestion(sessionID: string, formID: string) {
+      dismissQuestion(this: void, sessionID: string, formID: string) {
         return send({
           type: "question.cancel",
           sessionID,
@@ -247,17 +268,17 @@ export function useRoom(
           requestID: crypto.randomUUID(),
         });
       },
-      pause() {
+      pause(this: void) {
         return send({ type: "agent.pause" });
       },
-      renameRoom(title: string) {
+      renameRoom(this: void, title: string) {
         return send({
           type: "room.rename",
           title,
           requestID: crypto.randomUUID(),
         });
       },
-      configureRepository(repository: string, branch: string) {
+      configureRepository(this: void, repository: string, branch: string) {
         return send({
           type: "room.configure",
           repository,
@@ -265,21 +286,24 @@ export function useRoom(
           requestID: crypto.randomUUID(),
         });
       },
-      configureModel(model: string) {
+      configureModel(this: void, model: string) {
         return send({
           type: "room.model.configure",
           model,
           requestID: crypto.randomUUID(),
         });
       },
-      updateBrief(brief: Pick<ImplementationBrief, "objective" | "constraints" | "validation">) {
+      updateBrief(
+        this: void,
+        brief: Pick<ImplementationBrief, "objective" | "constraints" | "validation">,
+      ) {
         return send({
           type: "brief.update",
           ...brief,
           requestID: crypto.randomUUID(),
         });
       },
-      createDecision(text: string, rationale?: string, sourceEventID?: string) {
+      createDecision(this: void, text: string, rationale?: string, sourceEventID?: string) {
         return send({
           type: "decision.create",
           text,
@@ -288,20 +312,20 @@ export function useRoom(
           requestID: crypto.randomUUID(),
         });
       },
-      startBriefReview() {
+      startBriefReview(this: void) {
         return send({
           type: "brief.review.start",
           requestID: crypto.randomUUID(),
         });
       },
-      commentOnBrief(text: string) {
+      commentOnBrief(this: void, text: string) {
         return send({
           type: "brief.review.comment",
           text,
           requestID: crypto.randomUUID(),
         });
       },
-      resolveBriefReview(outcome: "approved" | "changes_requested", comment?: string) {
+      resolveBriefReview(this: void, outcome: "approved" | "changes_requested", comment?: string) {
         return send({
           type: "brief.review.resolve",
           outcome,

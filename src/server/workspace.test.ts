@@ -39,7 +39,9 @@ describe("RepositoryWorkspace.ensureReady", () => {
       sql: {
         exec: vi.fn((query: string) => ({
           one: () => {
-            if (query.startsWith("SELECT * FROM relay_room")) return room;
+            if (query.startsWith("SELECT * FROM relay_room")) {
+              return room;
+            }
             throw new Error(`Unexpected query: ${query}`);
           },
         })),
@@ -95,6 +97,22 @@ describe("published workspace association", () => {
             .get(),
         ).toEqual({ url: "https://github.com/owner/repo/pull/30", branch: "relay/feature" });
       }
+      database.exec(
+        "ALTER TABLE relay_room ADD COLUMN workspace_revision INTEGER NOT NULL DEFAULT 1",
+      );
+      vi.spyOn(workspace, "ensureReady").mockResolvedValue({
+        repository: "owner/repo",
+        branch: "main",
+        commitSHA: "base",
+        directory: "/workspace/repository",
+      });
+      workspace.syncNativeAgentChanges([{ path: "feature.ts", content: "published snapshot" }]);
+      const snapshot = await workspace.pullRequestWorkspace();
+      database.exec("UPDATE relay_room SET workspace_revision = 2");
+      workspace.syncNativeAgentChanges([{ path: "feature.ts", content: "newer edit" }]);
+      expect(snapshot.workspaceRevision).toBe(1);
+      expect(snapshot.changes).toEqual([{ path: "feature.ts", content: "published snapshot" }]);
+      expect((await workspace.pullRequestWorkspace()).workspaceRevision).toBe(2);
     } finally {
       database.close();
     }

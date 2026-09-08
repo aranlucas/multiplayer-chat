@@ -197,24 +197,32 @@ describe("room protocol", () => {
   });
 
   it("rejects malformed or overlong messages", () => {
-    expect(() => parseClientMessage({ type: "prompt", text: "", delivery: "steer" })).toThrow();
+    expect(() => parseClientMessage({ type: "prompt", text: "", delivery: "steer" })).toThrow(
+      "Prompt must be between 1 and 8,000 characters",
+    );
     expect(() =>
       parseClientMessage({
         type: "prompt",
         text: "x".repeat(8_001),
         delivery: "steer",
       }),
-    ).toThrow();
+    ).toThrow("Prompt must be between 1 and 8,000 characters");
     expect(() =>
       parseClientMessage({
         type: "permission.reply",
         requestID: "p1",
         reply: "maybe",
       }),
-    ).toThrow();
-    expect(() => parseClientMessage({ type: "room.rename", title: "   " })).toThrow();
-    expect(() => parseClientMessage({ type: "room.rename", title: "x".repeat(101) })).toThrow();
-    expect(() => parseClientMessage({ type: "room.model.configure", model: "hy3-free" })).toThrow();
+    ).toThrow("Invalid permission reply");
+    expect(() => parseClientMessage({ type: "room.rename", title: "   " })).toThrow(
+      "Room title must be between 1 and 100 characters",
+    );
+    expect(() => parseClientMessage({ type: "room.rename", title: "x".repeat(101) })).toThrow(
+      "Room title must be between 1 and 100 characters",
+    );
+    expect(() => parseClientMessage({ type: "room.model.configure", model: "hy3-free" })).toThrow(
+      "Choose a valid OpenCode model",
+    );
     expect(() =>
       parseClientMessage({
         type: "question.reply",

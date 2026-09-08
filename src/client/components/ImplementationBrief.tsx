@@ -64,8 +64,9 @@ export function ImplementationBrief({
         constraints: lines(constraints),
         validation: lines(validation),
       })
-    )
+    ) {
       setEditing(false);
+    }
   }
 
   function saveDecision(event: FormEvent) {
@@ -145,9 +146,9 @@ export function ImplementationBrief({
           )}
           <BriefList title="Constraints" items={brief.constraints} />
           <BriefList title="Validation" items={brief.validation} checks />
-          {brief.updatedBy ? (
+          {brief.updatedBy && brief.updatedAt !== undefined ? (
             <small className="brief-updated">
-              Updated by {brief.updatedBy.name} · {formatTime(brief.updatedAt!)}
+              Updated by {brief.updatedBy.name} · {formatTime(brief.updatedAt)}
             </small>
           ) : null}
         </div>
@@ -228,7 +229,11 @@ export function ImplementationBrief({
               <button
                 className="decision-source"
                 type="button"
-                onClick={() => onSelectEvent(item.sourceEventID!)}
+                onClick={() => {
+                  if (item.sourceEventID) {
+                    onSelectEvent(item.sourceEventID);
+                  }
+                }}
               >
                 <Link2 size={12} /> View source
               </button>
@@ -374,7 +379,9 @@ function ReviewPanel({
 function ReviewMeta({ brief }: { brief: Brief }) {
   const actor = brief.review.resolvedBy ?? brief.review.startedBy;
   const at = brief.review.resolvedAt ?? brief.review.startedAt;
-  if (!actor || !at) return null;
+  if (!actor || !at) {
+    return null;
+  }
   return (
     <small className="review-meta">
       Review {brief.review.round} · {actor.name} · {formatTime(at)}
@@ -383,9 +390,15 @@ function ReviewMeta({ brief }: { brief: Brief }) {
 }
 
 function reviewStatusLabel(status: Brief["review"]["status"]) {
-  if (status === "in_review") return "In review";
-  if (status === "approved") return "Approved";
-  if (status === "changes_requested") return "Changes requested";
+  if (status === "in_review") {
+    return "In review";
+  }
+  if (status === "approved") {
+    return "Approved";
+  }
+  if (status === "changes_requested") {
+    return "Changes requested";
+  }
   return "Draft";
 }
 
@@ -398,7 +411,9 @@ function BriefList({
   items: string[];
   checks?: boolean;
 }) {
-  if (!items.length) return null;
+  if (!items.length) {
+    return null;
+  }
   return (
     <div className="brief-list">
       <strong>

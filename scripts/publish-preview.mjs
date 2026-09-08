@@ -10,15 +10,11 @@ if (!branch || !commitSHA) {
   throw new Error("Preview publishing requires a branch and exact commit SHA");
 }
 if (!roomID) {
-  process.stdout.write(
-    `Skipping room preview for non-Relay branch ${branch}.\n`,
-  );
+  process.stdout.write(`Skipping room preview for non-Relay branch ${branch}.\n`);
   process.exit(0);
 }
 if (!controlOrigin || !webhookSecret) {
-  throw new Error(
-    "RELAY_CONTROL_ORIGIN and RELAY_DEPLOYMENT_WEBHOOK_SECRET are required",
-  );
+  throw new Error("RELAY_CONTROL_ORIGIN and RELAY_DEPLOYMENT_WEBHOOK_SECRET are required");
 }
 
 const alias = `r-${commitSHA.slice(0, 12).toLowerCase()}`;
@@ -46,8 +42,7 @@ if (upload.status !== 0) {
   process.exit(upload.status ?? 1);
 }
 
-const previewURL =
-  output.match(/https:\/\/[^\s]+\.workers\.dev\/?/i)?.[0] ?? undefined;
+const previewURL = output.match(/https:\/\/[^\s]+\.workers\.dev\/?/i)?.[0] ?? undefined;
 if (!previewURL) {
   await report({
     status: "failed",
@@ -59,6 +54,7 @@ if (!previewURL) {
 await waitUntilReady(previewURL, commitSHA);
 await report({ status: "ready", previewURL, deploymentID: alias });
 
+/** @param {{ status: string; failure?: string; previewURL?: string; deploymentID?: string }} input */
 async function report(input) {
   const response = await fetch(new URL("/api/deployments", controlOrigin), {
     method: "POST",
@@ -80,29 +76,33 @@ async function report(input) {
   }
 }
 
-async function waitUntilReady(previewURL, expectedSHA) {
+/** @param {string} targetURL @param {string} expectedSHA */
+async function waitUntilReady(targetURL, expectedSHA) {
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const response = await fetch(new URL("/__relay/ready", previewURL)).catch(
-      () => undefined,
-    );
-    const result = await response?.json().catch(() => undefined);
+    const response = await fetch(new URL("/__relay/ready", targetURL)).catch(() => undefined);
+    const result =
+      /** @type {{ ready?: boolean; commitSHA?: string; roomProtocol?: number } | undefined} */ (
+        await response?.json().catch(() => undefined)
+      );
     if (
       response?.ok &&
       result?.ready === true &&
       result.commitSHA === expectedSHA &&
       result.roomProtocol === 1
-    )
+    ) {
       return;
+    }
     await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
   await report({
     status: "failed",
-    previewURL,
+    previewURL: targetURL,
     failure: "Preview did not become healthy with the published commit",
   });
   throw new Error("Preview readiness check timed out");
 }
 
+/** @param {string | undefined} value */
 function roomFromBranch(value) {
   const match = value?.match(/^relay\/(.+)--[a-z0-9]+$/i);
   return match?.[1];

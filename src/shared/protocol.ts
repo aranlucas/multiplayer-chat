@@ -1,3 +1,4 @@
+import { textValue } from "./text-value";
 export type ParticipantRole = "maintainer" | "contributor";
 
 export const DEFAULT_REPOSITORY = "aranlucas/multiplayer-chat";
@@ -80,12 +81,18 @@ export function queuedPrompts(events: TimelineEvent[]): QueuedPrompt[] {
         event.payload.queueStatus === "pending" &&
         event.actor,
     )
-    .map((event) => ({
-      eventID: event.id,
-      participant: event.actor!,
-      text: String(event.payload.text ?? ""),
-      createdAt: event.createdAt,
-    }));
+    .flatMap((event) =>
+      event.actor
+        ? [
+            {
+              eventID: event.id,
+              participant: event.actor,
+              text: textValue(event.payload.text ?? ""),
+              createdAt: event.createdAt,
+            },
+          ]
+        : [],
+    );
 }
 
 export interface PermissionRequest {
@@ -239,12 +246,15 @@ export function safeParticipantName(value: string | null): string {
 }
 
 export function parseClientMessage(value: unknown): ClientMessage {
-  if (!value || typeof value !== "object") throw new Error("Invalid message");
+  if (!value || typeof value !== "object") {
+    throw new Error("Invalid message");
+  }
   const message = value as Record<string, unknown>;
   if (message.type === "prompt") {
     const text = typeof message.text === "string" ? message.text.trim() : "";
-    if (!text || text.length > 8_000)
+    if (!text || text.length > 8_000) {
       throw new Error("Prompt must be between 1 and 8,000 characters");
+    }
     if (message.delivery !== "steer" && message.delivery !== "queue") {
       throw new Error("Invalid delivery mode");
     }
@@ -256,7 +266,9 @@ export function parseClientMessage(value: unknown): ClientMessage {
     };
   }
   if (message.type === "permission.reply") {
-    if (typeof message.requestID !== "string") throw new Error("Missing permission request ID");
+    if (typeof message.requestID !== "string") {
+      throw new Error("Missing permission request ID");
+    }
     if (message.reply !== "once" && message.reply !== "always" && message.reply !== "reject") {
       throw new Error("Invalid permission reply");
     }
@@ -269,20 +281,26 @@ export function parseClientMessage(value: unknown): ClientMessage {
   if (message.type === "question.reply") {
     const sessionID = parseQuestionIdentifier(message.sessionID, "session");
     const formID = parseQuestionIdentifier(message.formID, "form");
-    if (!message.answer || typeof message.answer !== "object")
+    if (!message.answer || typeof message.answer !== "object") {
       throw new Error("Question answer is required");
+    }
     const entries = Object.entries(message.answer);
-    if (entries.length > 20) throw new Error("Question answer is too large");
+    if (entries.length > 20) {
+      throw new Error("Question answer is too large");
+    }
     const answer: Record<string, string | string[]> = {};
     for (const [key, raw] of entries) {
-      if (!/^q\d+$/.test(key)) throw new Error("Invalid question field");
+      if (!/^q\d+$/.test(key)) {
+        throw new Error("Invalid question field");
+      }
       const values = Array.isArray(raw) ? raw : [raw];
       if (
         values.length > 20 ||
         values.some((item) => typeof item !== "string" || item.length > 2_000)
-      )
+      ) {
         throw new Error("Invalid question answer");
-      answer[key] = Array.isArray(raw) ? (values as string[]) : values[0];
+      }
+      answer[key] = Array.isArray(raw) ? (values as string[]) : (values[0] as string);
     }
     return {
       type: "question.reply",
@@ -322,7 +340,9 @@ export function parseClientMessage(value: unknown): ClientMessage {
       requestID: typeof message.requestID === "string" ? message.requestID : undefined,
     };
   }
-  if (message.type === "agent.pause") return { type: "agent.pause" };
+  if (message.type === "agent.pause") {
+    return { type: "agent.pause" };
+  }
   if (message.type === "brief.update") {
     return {
       type: "brief.update",
@@ -361,11 +381,13 @@ export function parseClientMessage(value: unknown): ClientMessage {
     };
   }
   if (message.type === "brief.review.resolve") {
-    if (message.outcome !== "approved" && message.outcome !== "changes_requested")
+    if (message.outcome !== "approved" && message.outcome !== "changes_requested") {
       throw new Error("Choose a valid review outcome");
+    }
     const comment = parsePlanningText(message.comment, "review comment", 4_000);
-    if (message.outcome === "changes_requested" && !comment)
+    if (message.outcome === "changes_requested" && !comment) {
       throw new Error("Describe the changes you are requesting");
+    }
     return {
       type: "brief.review.resolve",
       outcome: message.outcome,
@@ -376,8 +398,12 @@ export function parseClientMessage(value: unknown): ClientMessage {
   if (message.type === "room.configure") {
     const repository = typeof message.repository === "string" ? message.repository.trim() : "";
     const branch = typeof message.branch === "string" ? message.branch.trim() : "";
-    if (!repository || repository.length > 200) throw new Error("Repository is required");
-    if (!branch || branch.length > 200) throw new Error("Branch is required");
+    if (!repository || repository.length > 200) {
+      throw new Error("Repository is required");
+    }
+    if (!branch || branch.length > 200) {
+      throw new Error("Branch is required");
+    }
     return {
       type: "room.configure",
       repository,
@@ -385,23 +411,28 @@ export function parseClientMessage(value: unknown): ClientMessage {
       requestID: typeof message.requestID === "string" ? message.requestID : undefined,
     };
   }
-  if (message.type === "ping") return { type: "ping" };
+  if (message.type === "ping") {
+    return { type: "ping" };
+  }
   throw new Error("Unknown message type");
 }
 
 function parsePlanningText(value: unknown, label: string, maximum: number, required = false) {
   const text = typeof value === "string" ? value.trim() : "";
-  if ((required && !text) || text.length > maximum || text.includes("\0"))
+  if ((required && !text) || text.length > maximum || text.includes("\0")) {
     throw new Error(
       required
         ? `${label} must be between 1 and ${maximum.toLocaleString()} characters`
         : `${label} must be no more than ${maximum.toLocaleString()} characters`,
     );
+  }
   return text;
 }
 
 function parsePlanningList(value: unknown, label: string) {
-  if (!Array.isArray(value) || value.length > 30) throw new Error(`Brief ${label} are invalid`);
+  if (!Array.isArray(value) || value.length > 30) {
+    throw new Error(`Brief ${label} are invalid`);
+  }
   return value.map((item) => {
     const text = parsePlanningText(item, label, 1_000, true);
     return text;
@@ -409,7 +440,8 @@ function parsePlanningList(value: unknown, label: string) {
 }
 
 function parseQuestionIdentifier(value: unknown, label: string) {
-  if (typeof value !== "string" || !value || value.length > 200 || value.includes("\0"))
+  if (typeof value !== "string" || !value || value.length > 200 || value.includes("\0")) {
     throw new Error(`Invalid question ${label} ID`);
+  }
   return value;
 }

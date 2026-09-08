@@ -22,8 +22,9 @@ export function railwayTools({
     id: "relay.railway-tools",
     async setup(ctx) {
       await ctx.tool.transform((draft) => {
-        for (const name of ["patch", "file_diff", "file-diff"])
+        for (const name of ["patch", "file_diff", "file-diff"]) {
           draft.remove(name);
+        }
 
         draft.add({
           name: "shell",
@@ -58,9 +59,7 @@ export function railwayTools({
               return { content: formatCommandResult(result) };
             }
             const command = requiredString(input.command, "command");
-            const cwd = resolveWorkspacePath(
-              optionalString(input.workdir) ?? WORKSPACE_DIRECTORY,
-            );
+            const cwd = resolveWorkspacePath(optionalString(input.workdir) ?? WORKSPACE_DIRECTORY);
             if (input.background === true) {
               const detached = await sandbox.detach(command, { cwd, timeout });
               return {
@@ -99,9 +98,7 @@ export function railwayTools({
           execute: async (raw) => {
             const input = asRecord(raw);
             await ensureWorkspace();
-            const path = resolveWorkspacePath(
-              requiredString(input.path, "path"),
-            );
+            const path = resolveWorkspacePath(requiredString(input.path, "path"));
             const stat = await sandbox.stat(path);
             const offset = optionalInteger(input.offset) ?? 1;
             const limit = optionalInteger(input.limit) ?? 2_000;
@@ -140,9 +137,7 @@ export function railwayTools({
           execute: async (raw) => {
             const input = asRecord(raw);
             await ensureWorkspace();
-            const path = resolveWorkspacePath(
-              requiredString(input.path, "path"),
-            );
+            const path = resolveWorkspacePath(requiredString(input.path, "path"));
             const content = requiredString(input.content, "content", true);
             ensureSize(path, content);
             await sandbox.writeFile(path, content);
@@ -170,9 +165,7 @@ export function railwayTools({
           execute: async (raw) => {
             const input = asRecord(raw);
             await ensureWorkspace();
-            const path = resolveWorkspacePath(
-              requiredString(input.path, "path"),
-            );
+            const path = resolveWorkspacePath(requiredString(input.path, "path"));
             const current = await sandbox.readFile(path);
             const content = replaceExact(
               current,
@@ -189,8 +182,7 @@ export function railwayTools({
 
         draft.add({
           name: "glob",
-          description:
-            "Find files in the Railway workspace using a gitignore-style glob pattern.",
+          description: "Find files in the Railway workspace using a gitignore-style glob pattern.",
           input: {
             type: "object",
             properties: {
@@ -218,8 +210,9 @@ export function railwayTools({
                 retryOnInterrupted: true,
               },
             );
-            if (!result.success)
+            if (!result.success) {
               throw new Error(result.stderr || "File search failed");
+            }
             return { content: truncate(result.stdout || "No files found.") };
           },
         });
@@ -256,8 +249,9 @@ export function railwayTools({
                 retryOnInterrupted: true,
               },
             );
-            if (result.exitCode !== 0 && result.exitCode !== 1)
+            if (result.exitCode !== 0 && result.exitCode !== 1) {
               throw new Error(result.stderr || "Repository search failed");
+            }
             return { content: truncate(result.stdout || "No matches found.") };
           },
         });
@@ -277,21 +271,26 @@ function resolveWorkspacePath(value: string): string {
   const raw = value.startsWith("/") ? value : `${WORKSPACE_DIRECTORY}/${value}`;
   const parts: string[] = [];
   for (const part of raw.split("/")) {
-    if (!part || part === ".") continue;
-    if (part === "..") parts.pop();
-    else parts.push(part);
+    if (!part || part === ".") {
+      continue;
+    }
+    if (part === "..") {
+      parts.pop();
+    } else {
+      parts.push(part);
+    }
   }
   const normalized = `/${parts.join("/")}`;
-  if (
-    normalized !== WORKSPACE_DIRECTORY &&
-    !normalized.startsWith(`${WORKSPACE_DIRECTORY}/`)
-  )
+  if (normalized !== WORKSPACE_DIRECTORY && !normalized.startsWith(`${WORKSPACE_DIRECTORY}/`)) {
     throw new Error("Tool paths must stay inside /workspace/repository");
+  }
   return normalized;
 }
 
 function relativeWorkspacePath(path: string): string {
-  if (path === WORKSPACE_DIRECTORY) return ".";
+  if (path === WORKSPACE_DIRECTORY) {
+    return ".";
+  }
   return path.slice(WORKSPACE_DIRECTORY.length + 1);
 }
 
@@ -311,25 +310,22 @@ function formatCommandResult(result: {
 }
 
 function ensureSize(path: string, content: string) {
-  if (new TextEncoder().encode(content).byteLength > MAX_WORKSPACE_FILE_BYTES)
+  if (new TextEncoder().encode(content).byteLength > MAX_WORKSPACE_FILE_BYTES) {
     throw new Error(`File is too large: ${relativeWorkspacePath(path)}`);
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value))
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Tool input must be an object");
+  }
   return value as Record<string, unknown>;
 }
 
-function requiredString(
-  value: unknown,
-  field: string,
-  allowEmpty = false,
-): string {
-  if (typeof value !== "string" || (!allowEmpty && !value))
-    throw new Error(
-      `${field} must be a${allowEmpty ? "" : " non-empty"} string`,
-    );
+function requiredString(value: unknown, field: string, allowEmpty = false): string {
+  if (typeof value !== "string" || (!allowEmpty && !value)) {
+    throw new Error(`${field} must be a${allowEmpty ? "" : " non-empty"} string`);
+  }
   return value;
 }
 
@@ -338,9 +334,7 @@ function optionalString(value: unknown): string | undefined {
 }
 
 function optionalInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isInteger(value)
-    ? value
-    : undefined;
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
 function shellQuote(value: string): string {

@@ -34,15 +34,9 @@ interface SandboxRow {
 }
 
 interface RailwaySandboxFactory {
-  connect(
-    id: string,
-    options: ReturnType<typeof clientOptions>,
-  ): Promise<Sandbox>;
+  connect(id: string, options: ReturnType<typeof clientOptions>): Promise<Sandbox>;
   create(options: ReturnType<typeof createOptions>): Promise<Sandbox>;
-  create(
-    checkpoint: string,
-    options: ReturnType<typeof createOptions>,
-  ): Promise<Sandbox>;
+  create(checkpoint: string, options: ReturnType<typeof createOptions>): Promise<Sandbox>;
 }
 
 const factory: RailwaySandboxFactory = Sandbox;
@@ -63,17 +57,16 @@ export class RailwayRoomSandbox {
   }
 
   configurationError(): string | undefined {
-    if (!this.env.RAILWAY_ENVIRONMENT_ID)
+    if (!this.env.RAILWAY_ENVIRONMENT_ID) {
       return "The Railway environment ID is not configured.";
-    if (!this.env.RAILWAY_TOKEN && !this.env.RAILWAY_API_TOKEN)
+    }
+    if (!this.env.RAILWAY_TOKEN && !this.env.RAILWAY_API_TOKEN) {
       return "A Railway project or API token is not configured.";
+    }
     return undefined;
   }
 
-  async exec(
-    command: string,
-    options: SandboxCommandOptions = {},
-  ): Promise<SandboxCommandResult> {
+  async exec(command: string, options: SandboxCommandOptions = {}): Promise<SandboxCommandResult> {
     const sandbox = await this.get();
     const handle = sandbox.exec(command, execOptions(options));
     this.active.add(handle);
@@ -81,30 +74,34 @@ export class RailwayRoomSandbox {
       const result = await handle;
       return commandResult(result);
     } catch (error) {
-      if (!(error instanceof ExecInterruptedError)) throw error;
+      if (!(error instanceof ExecInterruptedError)) {
+        throw error;
+      }
 
       const sessionName = await handle.sessionName.catch(() => undefined);
       if (sessionName) {
-        if (!(await this.isStillRunning(sandbox))) throw error;
+        if (!(await this.isStillRunning(sandbox))) {
+          throw error;
+        }
         try {
-          const resumed = await this.runReattach(
-            sandbox,
-            sessionName,
-            options,
-            true,
-          );
+          const resumed = await this.runReattach(sandbox, sessionName, options, true);
           return mergeInterruptedResult(error, resumed);
         } catch (resumeError) {
           if (
             !options.retryOnInterrupted ||
             !(resumeError instanceof ExecInterruptedError) ||
             !(await this.isStillRunning(sandbox))
-          )
+          ) {
             throw resumeError;
+          }
         }
       } else {
-        if (!options.retryOnInterrupted) throw error;
-        if (!(await this.isStillRunning(sandbox))) throw error;
+        if (!options.retryOnInterrupted) {
+          throw error;
+        }
+        if (!(await this.isStillRunning(sandbox))) {
+          throw error;
+        }
       }
 
       return this.runExec(sandbox, command, options);
@@ -131,18 +128,19 @@ export class RailwayRoomSandbox {
   private async isStillRunning(sandbox: Sandbox): Promise<boolean> {
     try {
       await sandbox.refresh();
-      if (sandbox.status === "RUNNING") return true;
+      if (sandbox.status === "RUNNING") {
+        return true;
+      }
     } catch {
       // The original interruption remains the most useful error to surface.
     }
-    if (this.current === sandbox) this.current = undefined;
+    if (this.current === sandbox) {
+      this.current = undefined;
+    }
     return false;
   }
 
-  async detach(
-    command: string,
-    options: SandboxCommandOptions = {},
-  ): Promise<string> {
+  async detach(command: string, options: SandboxCommandOptions = {}): Promise<string> {
     const sandbox = await this.get();
     const handle = sandbox.exec(command, execOptions(options));
     const sessionName = await handle.sessionName;
@@ -183,9 +181,7 @@ export class RailwayRoomSandbox {
   }
 
   async killActive(): Promise<void> {
-    await Promise.allSettled(
-      [...this.active].map((handle) => handle.kill("TERM")),
-    );
+    await Promise.allSettled([...this.active].map((handle) => handle.kill("TERM")));
   }
 
   async readFile(path: string): Promise<string> {
@@ -210,7 +206,9 @@ export class RailwayRoomSandbox {
 
   async destroy(): Promise<void> {
     const sandbox = await this.getExisting();
-    if (!sandbox) return;
+    if (!sandbox) {
+      return;
+    }
     await sandbox.destroy();
     this.current = undefined;
     this.setSandboxID(null);
@@ -218,8 +216,12 @@ export class RailwayRoomSandbox {
 
   async get(): Promise<Sandbox> {
     const error = this.configurationError();
-    if (error) throw new Error(error);
-    if (this.current?.status === "RUNNING") return this.current;
+    if (error) {
+      throw new Error(error);
+    }
+    if (this.current?.status === "RUNNING") {
+      return this.current;
+    }
     if (!this.connecting) {
       this.connecting = this.connectOrCreate().finally(() => {
         this.connecting = undefined;
@@ -233,13 +235,14 @@ export class RailwayRoomSandbox {
     const id = this.sandboxID();
     if (id) {
       try {
-        const sandbox = await this.sandboxFactory.connect(
-          id,
-          clientOptions(this.env),
-        );
-        if (sandbox.status === "RUNNING") return sandbox;
+        const sandbox = await this.sandboxFactory.connect(id, clientOptions(this.env));
+        if (sandbox.status === "RUNNING") {
+          return sandbox;
+        }
       } catch (error) {
-        if (!(error instanceof SandboxNotFoundError)) throw error;
+        if (!(error instanceof SandboxNotFoundError)) {
+          throw error;
+        }
       }
       this.setSandboxID(null);
     }
@@ -254,9 +257,13 @@ export class RailwayRoomSandbox {
   }
 
   private async getExisting(): Promise<Sandbox | undefined> {
-    if (this.current?.status === "RUNNING") return this.current;
+    if (this.current?.status === "RUNNING") {
+      return this.current;
+    }
     const id = this.sandboxID();
-    if (!id || this.configurationError()) return undefined;
+    if (!id || this.configurationError()) {
+      return undefined;
+    }
     try {
       return await this.sandboxFactory.connect(id, clientOptions(this.env));
     } catch (error) {
@@ -271,18 +278,13 @@ export class RailwayRoomSandbox {
   private sandboxID(): string | undefined {
     return (
       this.storage.sql
-        .exec<SandboxRow>(
-          "SELECT railway_sandbox_id FROM relay_room WHERE singleton = 1",
-        )
+        .exec<SandboxRow>("SELECT railway_sandbox_id FROM relay_room WHERE singleton = 1")
         .one().railway_sandbox_id ?? undefined
     );
   }
 
   private setSandboxID(id: string | null) {
-    this.storage.sql.exec(
-      "UPDATE relay_room SET railway_sandbox_id = ? WHERE singleton = 1",
-      id,
-    );
+    this.storage.sql.exec("UPDATE relay_room SET railway_sandbox_id = ? WHERE singleton = 1", id);
   }
 }
 
@@ -290,9 +292,7 @@ function clientOptions(env: RailwaySandboxEnv) {
   const token = env.RAILWAY_TOKEN ?? env.RAILWAY_API_TOKEN ?? "";
   return {
     token,
-    authType: env.RAILWAY_TOKEN
-      ? ("project-token" as const)
-      : ("bearer" as const),
+    authType: env.RAILWAY_TOKEN ? ("project-token" as const) : ("bearer" as const),
     environmentId: env.RAILWAY_ENVIRONMENT_ID,
     fetch: railwayFetch,
   };
@@ -303,12 +303,8 @@ const railwayFetch: typeof fetch = (input, init) => fetch(input, init);
 function createOptions(env: RailwaySandboxEnv) {
   return {
     ...clientOptions(env),
-    idleTimeoutMinutes: idleTimeoutMinutes(
-      env.RAILWAY_SANDBOX_IDLE_TIMEOUT_MINUTES,
-    ),
-    ...(env.RAILWAY_SANDBOX_REGION?.trim()
-      ? { region: env.RAILWAY_SANDBOX_REGION.trim() }
-      : {}),
+    idleTimeoutMinutes: idleTimeoutMinutes(env.RAILWAY_SANDBOX_IDLE_TIMEOUT_MINUTES),
+    ...(env.RAILWAY_SANDBOX_REGION?.trim() ? { region: env.RAILWAY_SANDBOX_REGION.trim() } : {}),
   };
 }
 
@@ -337,17 +333,16 @@ function mergeInterruptedResult(
 }
 
 function timeoutSeconds(milliseconds: number | undefined): number | undefined {
-  return milliseconds === undefined
-    ? undefined
-    : Math.max(1, Math.ceil(milliseconds / 1_000));
+  return milliseconds === undefined ? undefined : Math.max(1, Math.ceil(milliseconds / 1_000));
 }
 
 function idleTimeoutMinutes(value: string | undefined): number {
-  if (!value) return 120;
+  if (!value) {
+    return 120;
+  }
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 120)
-    throw new Error(
-      "RAILWAY_SANDBOX_IDLE_TIMEOUT_MINUTES must be between 1 and 120",
-    );
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 120) {
+    throw new Error("RAILWAY_SANDBOX_IDLE_TIMEOUT_MINUTES must be between 1 and 120");
+  }
   return parsed;
 }
