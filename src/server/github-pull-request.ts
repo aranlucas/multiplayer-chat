@@ -65,57 +65,47 @@ export class GitHubPullRequestClient {
     input: PullRequestInput,
     existing?: ExistingPullRequest,
   ): Promise<PullRequestResult> {
-    if (!input.changes.length)
-      throw new Error(
-        "There are no shared workspace changes to put in a pull request",
-      );
-    const baseRepository = await this.request<RepositoryResponse>(
-      `/repos/${input.repository}`,
-    );
+    if (!input.changes.length) {
+      throw new Error("There are no shared workspace changes to put in a pull request");
+    }
+    const baseRepository = await this.request<RepositoryResponse>(`/repos/${input.repository}`);
     const writeRepository =
       existing?.writeRepository ??
       (baseRepository.permissions?.push
         ? baseRepository.full_name
         : await this.ensureFork(input.login, baseRepository));
-    const baseCommit = await this.waitForCommit(
-      writeRepository,
-      input.baseCommitSHA,
-    );
+    const baseCommit = await this.waitForCommit(writeRepository, input.baseCommitSHA);
     const blobs = await Promise.all(
       input.changes.map(async (change) => {
-        if (change.content === null) return { path: change.path, sha: null };
+        if (change.content === null) {
+          return { path: change.path, sha: null };
+        }
         return {
           path: change.path,
           sha: (
-            await this.request<{ sha: string }>(
-              `/repos/${writeRepository}/git/blobs`,
-              {
-                method: "POST",
-                body: JSON.stringify({
-                  content: change.content,
-                  encoding: "utf-8",
-                }),
-              },
-            )
+            await this.request<{ sha: string }>(`/repos/${writeRepository}/git/blobs`, {
+              method: "POST",
+              body: JSON.stringify({
+                content: change.content,
+                encoding: "utf-8",
+              }),
+            })
           ).sha,
         };
       }),
     );
-    const tree = await this.request<{ sha: string }>(
-      `/repos/${writeRepository}/git/trees`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          base_tree: baseCommit.tree.sha,
-          tree: blobs.map((blob) => ({
-            path: blob.path,
-            mode: "100644",
-            type: "blob",
-            sha: blob.sha,
-          })),
-        }),
-      },
-    );
+    const tree = await this.request<{ sha: string }>(`/repos/${writeRepository}/git/trees`, {
+      method: "POST",
+      body: JSON.stringify({
+        base_tree: baseCommit.tree.sha,
+        tree: blobs.map((blob) => ({
+          path: blob.path,
+          mode: "100644",
+          type: "blob",
+          sha: blob.sha,
+        })),
+      }),
+    });
     let parentSHA = input.baseCommitSHA;
     if (existing) {
       const remote = await this.request<{ object: { sha: string } }>(
@@ -128,26 +118,20 @@ export class GitHubPullRequestClient {
       }
       parentSHA = remote.object.sha;
     }
-    const commit = await this.request<{ sha: string }>(
-      `/repos/${writeRepository}/git/commits`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          message: input.title,
-          tree: tree.sha,
-          parents: [parentSHA],
-        }),
-      },
-    );
+    const commit = await this.request<{ sha: string }>(`/repos/${writeRepository}/git/commits`, {
+      method: "POST",
+      body: JSON.stringify({
+        message: input.title,
+        tree: tree.sha,
+        parents: [parentSHA],
+      }),
+    });
     const branch = existing?.branch ?? branchName(input.roomID);
     if (existing) {
-      await this.request(
-        `/repos/${writeRepository}/git/refs/heads/${refPath(branch)}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ sha: commit.sha, force: false }),
-        },
-      );
+      await this.request(`/repos/${writeRepository}/git/refs/heads/${refPath(branch)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sha: commit.sha, force: false }),
+      });
     } else {
       await this.request(`/repos/${writeRepository}/git/refs`, {
         method: "POST",
@@ -165,9 +149,7 @@ export class GitHubPullRequestClient {
               body: input.body,
               base: input.baseBranch,
               head:
-                writeRepository === baseRepository.full_name
-                  ? branch
-                  : `${input.login}:${branch}`,
+                writeRepository === baseRepository.full_name ? branch : `${input.login}:${branch}`,
             }),
           },
         );
@@ -181,16 +163,13 @@ export class GitHubPullRequestClient {
     };
   }
 
-  async findDeployment(
-    repository: string,
-    commitSHA: string,
-  ): Promise<DeploymentObservation> {
-    const deployments = await this.request<
-      Array<{ id: number; environment?: string }>
-    >(
+  async findDeployment(repository: string, commitSHA: string): Promise<DeploymentObservation> {
+    const deployments = await this.request<Array<{ id: number; environment?: string }>>(
       `/repos/${repository}/deployments?sha=${encodeURIComponent(commitSHA)}&per_page=20`,
     );
-    if (!deployments.length) return { status: "waiting" };
+    if (!deployments.length) {
+      return { status: "waiting" };
+    }
 
     for (const deployment of deployments) {
       const statuses = await this.request<
@@ -200,11 +179,11 @@ export class GitHubPullRequestClient {
           environment_url?: string;
           description?: string;
         }>
-      >(
-        `/repos/${repository}/deployments/${deployment.id}/statuses?per_page=20`,
-      );
+      >(`/repos/${repository}/deployments/${deployment.id}/statuses?per_page=20`);
       const latest = statuses[0];
-      if (!latest) continue;
+      if (!latest) {
+        continue;
+      }
       if (latest.state === "success" && latest.environment_url) {
         return {
           status: "ready",
@@ -213,11 +192,7 @@ export class GitHubPullRequestClient {
           deploymentID: String(deployment.id),
         };
       }
-      if (
-        latest.state === "failure" ||
-        latest.state === "error" ||
-        latest.state === "inactive"
-      ) {
+      if (latest.state === "failure" || latest.state === "error" || latest.state === "inactive") {
         return {
           status: "failed",
           environment: deployment.environment,
@@ -234,21 +209,11 @@ export class GitHubPullRequestClient {
     return { status: "waiting" };
   }
 
-  private async ensureFork(
-    login: string,
-    base: RepositoryResponse,
-  ): Promise<string> {
+  private async ensureFork(login: string, base: RepositoryResponse): Promise<string> {
     const forkName = `${login}/${base.name}`;
-    const existing = await this.request<RepositoryResponse>(
-      `/repos/${forkName}`,
-      {},
-      true,
-    );
+    const existing = await this.request<RepositoryResponse>(`/repos/${forkName}`, {}, true);
     if (existing) {
-      if (
-        existing.full_name !== forkName ||
-        existing.parent?.full_name !== base.full_name
-      ) {
+      if (existing.full_name !== forkName || existing.parent?.full_name !== base.full_name) {
         throw new Error(
           `GitHub repository ${forkName} exists but is not a fork of ${base.full_name}`,
         );
@@ -262,30 +227,22 @@ export class GitHubPullRequestClient {
     return forkName;
   }
 
-  private async waitForCommit(
-    repository: string,
-    sha: string,
-  ): Promise<GitCommitResponse> {
+  private async waitForCommit(repository: string, sha: string): Promise<GitCommitResponse> {
     for (let attempt = 0; attempt < 20; attempt += 1) {
       const commit = await this.request<GitCommitResponse>(
         `/repos/${repository}/git/commits/${sha}`,
         {},
         true,
       );
-      if (commit) return commit;
-      await new Promise((resolve) =>
-        setTimeout(resolve, Math.min(250 * 2 ** attempt, 2_000)),
-      );
+      if (commit) {
+        return commit;
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(250 * 2 ** attempt, 2_000)));
     }
-    throw new Error(
-      `GitHub fork did not make commit ${sha.slice(0, 12)} available in time`,
-    );
+    throw new Error(`GitHub fork did not make commit ${sha.slice(0, 12)} available in time`);
   }
 
-  private async request<T = unknown>(
-    path: string,
-    init?: RequestInit,
-  ): Promise<T>;
+  private async request<T = unknown>(path: string, init?: RequestInit): Promise<T>;
   private async request<T = unknown>(
     path: string,
     init: RequestInit,
@@ -296,22 +253,21 @@ export class GitHubPullRequestClient {
     init: RequestInit = {},
     allowNotFound = false,
   ): Promise<T | undefined> {
-    const response = await this.fetcher.call(
-      globalThis,
-      `https://api.github.com${path}`,
-      {
-        ...init,
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${this.accessToken}`,
-          "Content-Type": "application/json",
-          "User-Agent": "relay-multiplayer-agent",
-          "X-GitHub-Api-Version": API_VERSION,
-          ...init.headers,
-        },
-      },
-    );
-    if (allowNotFound && response.status === 404) return undefined;
+    const headers = new Headers({
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${this.accessToken}`,
+      "Content-Type": "application/json",
+      "User-Agent": "relay-multiplayer-agent",
+      "X-GitHub-Api-Version": API_VERSION,
+    });
+    new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+    const response = await this.fetcher.call(globalThis, `https://api.github.com${path}`, {
+      ...init,
+      headers,
+    });
+    if (allowNotFound && response.status === 404) {
+      return undefined;
+    }
     const value: Record<string, unknown> = await response
       .json<Record<string, unknown>>()
       .catch(() => ({}));

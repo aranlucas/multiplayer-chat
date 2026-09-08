@@ -1,9 +1,4 @@
-import {
-  ExecInterruptedError,
-  type ExecHandle,
-  type ExecResult,
-  type Sandbox,
-} from "railway";
+import { ExecInterruptedError, type ExecHandle, type ExecResult, type Sandbox } from "railway";
 import { describe, expect, it, vi } from "vitest";
 import { RailwayRoomSandbox } from "./railway-sandbox";
 
@@ -67,11 +62,7 @@ describe("RailwayRoomSandbox.exec", () => {
       success: true,
     });
     expect(sandbox.exec).toHaveBeenCalledTimes(2);
-    expect(sandbox.exec).toHaveBeenNthCalledWith(
-      2,
-      "rg --files",
-      expect.any(Object),
-    );
+    expect(sandbox.exec).toHaveBeenNthCalledWith(2, "rg --files", expect.any(Object));
     expect(sandbox.refresh).toHaveBeenCalledTimes(1);
   });
 
@@ -104,15 +95,15 @@ describe("RailwayRoomSandbox.exec", () => {
       fakeExecHandle(interrupted, "exec-session-1"),
       fakeExecHandle(successfulResult, "exec-session-2"),
     );
-    sandbox.refresh.mockImplementation(async () => {
+    sandbox.refresh.mockImplementation(() => {
       Object.defineProperty(sandbox, "status", { value: "DESTROYED" });
       return sandbox;
     });
     const roomSandbox = railwayRoomSandbox(sandbox);
 
-    await expect(
-      roomSandbox.exec("rg --files", { retryOnInterrupted: true }),
-    ).rejects.toBe(interrupted);
+    await expect(roomSandbox.exec("rg --files", { retryOnInterrupted: true })).rejects.toBe(
+      interrupted,
+    );
     expect(sandbox.exec).toHaveBeenCalledTimes(1);
     expect(sandbox.refresh).toHaveBeenCalledTimes(1);
   });
@@ -133,19 +124,11 @@ function fakeSandbox(...handles: ExecHandle[]): Sandbox & {
   };
 }
 
-function fakeExecHandle(
-  outcome: ExecResult | Error,
-  sessionName: string | Error,
-): ExecHandle {
-  const result =
-    outcome instanceof Error
-      ? Promise.reject(outcome)
-      : Promise.resolve(outcome);
+function fakeExecHandle(outcome: ExecResult | Error, sessionName: string | Error): ExecHandle {
+  const result = outcome instanceof Error ? Promise.reject(outcome) : Promise.resolve(outcome);
   return Object.assign(result, {
     sessionName:
-      sessionName instanceof Error
-        ? Promise.reject(sessionName)
-        : Promise.resolve(sessionName),
+      sessionName instanceof Error ? Promise.reject(sessionName) : Promise.resolve(sessionName),
     kill: vi.fn().mockResolvedValue(true),
     detach: vi.fn().mockResolvedValue(undefined),
     result: () => result,

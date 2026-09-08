@@ -12,9 +12,12 @@ import { AgentRoom } from "./agent-room";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("deployment readiness", () => {
-  it.each(["abc", "wrong-commit"])(
+  it.each([
+    ["abc", 1],
+    ["wrong-commit", 0],
+  ] as const)(
     "recovers a saved preview only for its published SHA (%s)",
-    async (commitSHA) => {
+    async (commitSHA, expectedCalls) => {
       const revision = {
         commitSHA: "abc",
         status: "waiting",
@@ -26,19 +29,18 @@ describe("deployment readiness", () => {
         vi.fn().mockResolvedValue(Response.json({ ready: true, commitSHA, roomProtocol: 1 })),
       );
       const recordDeployment = vi.fn();
-      const room = Object.assign(Object.create(AgentRoom.prototype), {
+      const room = Object.assign(Object.create(AgentRoom.prototype) as object, {
         getRoomOrNull: () => ({ pullRequestHeadSHA: "abc", latestRevision: revision }),
         githubCredential: () => undefined,
         recordDeployment,
-      });
+      }) as unknown as AgentRoom;
       await room.alarm();
-      if (commitSHA === "abc") {
-        expect(recordDeployment).toHaveBeenCalledWith(
+      expect(recordDeployment).toHaveBeenCalledTimes(expectedCalls);
+      expect(recordDeployment.mock.calls).toEqual(
+        Array.from({ length: expectedCalls }, (): unknown[] => [
           expect.objectContaining({ status: "ready", commitSHA: "abc" }),
-        );
-      } else {
-        expect(recordDeployment).not.toHaveBeenCalled();
-      }
+        ]),
+      );
     },
   );
   it.each(["waiting", "building", "failed"] as const)(
@@ -51,10 +53,10 @@ describe("deployment readiness", () => {
         previewURL: "https://preview.example",
       };
       const exec = vi.fn();
-      const room = Object.assign(Object.create(AgentRoom.prototype), {
+      const room = Object.assign(Object.create(AgentRoom.prototype) as object, {
         revisionForCommit: () => ready,
         ctx: { storage: { sql: { exec } } },
-      });
+      }) as unknown as AgentRoom;
       expect(await room.recordDeployment({ commitSHA: "abc", status })).toBe(ready);
       expect(exec).not.toHaveBeenCalled();
     },
@@ -75,11 +77,11 @@ describe("concurrent publication", () => {
         state.publishedWorkspaceRevision = 2;
         return { commitSHA: "second" };
       });
-    const room = Object.assign(Object.create(AgentRoom.prototype), {
+    const room = Object.assign(Object.create(AgentRoom.prototype) as object, {
       getRoom: () => state,
       githubCredential: () => "sealed",
       createPullRequest,
-    });
+    }) as unknown as AgentRoom;
     expect(await room.publishSavedPullRequest()).toEqual({ commitSHA: "second" });
     expect(createPullRequest).toHaveBeenCalledTimes(2);
   });
@@ -91,7 +93,9 @@ describe("concurrent publication", () => {
           finish = resolve;
         }),
     );
-    const room = Object.assign(Object.create(AgentRoom.prototype), { publishPullRequest });
+    const room = Object.assign(Object.create(AgentRoom.prototype) as object, {
+      publishPullRequest,
+    }) as unknown as AgentRoom;
     const input = { accessToken: "test", login: "maintainer" };
     const first = room.createPullRequest(input);
     const second = room.createPullRequest(input);
@@ -110,7 +114,9 @@ describe("concurrent publication", () => {
       .fn()
       .mockRejectedValueOnce(new Error("GitHub unavailable"))
       .mockResolvedValue({ commitSHA: "retry" });
-    const room = Object.assign(Object.create(AgentRoom.prototype), { publishPullRequest });
+    const room = Object.assign(Object.create(AgentRoom.prototype) as object, {
+      publishPullRequest,
+    }) as unknown as AgentRoom;
     const input = { accessToken: "test", login: "maintainer" };
     await expect(room.createPullRequest(input)).rejects.toThrow("GitHub unavailable");
     await expect(room.createPullRequest(input)).resolves.toEqual({ commitSHA: "retry" });

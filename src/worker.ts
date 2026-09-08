@@ -2,10 +2,7 @@ import { Hono } from "hono";
 import { Sandbox } from "railway";
 import { safeParticipantName, safeRoomID } from "./shared/protocol";
 import { AgentRoom } from "./server/agent-room";
-import {
-  liveOpenCodeConfigurationError,
-  type WorkerEnv,
-} from "./server/opencode";
+import { liveOpenCodeConfigurationError, type WorkerEnv } from "./server/opencode";
 import {
   beginGitHubAuthorization,
   clearGitHubSessionCookie,
@@ -33,7 +30,9 @@ app.get("/api/health", async (context) => {
 
 async function railwaySandboxReachable(env: WorkerEnv): Promise<boolean> {
   const token = env.RAILWAY_TOKEN ?? env.RAILWAY_API_TOKEN;
-  if (!token || !env.RAILWAY_ENVIRONMENT_ID) return false;
+  if (!token || !env.RAILWAY_ENVIRONMENT_ID) {
+    return false;
+  }
   try {
     return await Promise.race([
       Sandbox.list({
@@ -43,9 +42,7 @@ async function railwaySandboxReachable(env: WorkerEnv): Promise<boolean> {
         first: 1,
         fetch: (input, init) => fetch(input, init),
       }).then(() => true),
-      new Promise<boolean>((resolve) =>
-        setTimeout(() => resolve(false), 5_000),
-      ),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5_000)),
     ]);
   } catch (error) {
     console.error(
@@ -74,7 +71,9 @@ app.get("/api/auth/github/callback", async (context) => {
 
 app.get("/api/auth/github/session", async (context) => {
   const result = await readGitHubSession(context.req.raw, context.env);
-  if (result.setCookie) context.header("Set-Cookie", result.setCookie);
+  if (result.setCookie) {
+    context.header("Set-Cookie", result.setCookie);
+  }
   return context.json({
     configured: githubOAuthConfigured(context.env),
     authenticated: Boolean(result.session),
@@ -91,26 +90,21 @@ app.post("/api/auth/github/logout", (context) => {
 
 app.post("/api/rooms/:room/pull-requests", async (context) => {
   if (context.req.header("Origin") !== new URL(context.req.url).origin) {
-    return context.json(
-      { error: "Pull request creation requires a same-origin request" },
-      403,
-    );
+    return context.json({ error: "Pull request creation requires a same-origin request" }, 403);
   }
   const auth = await readGitHubSession(context.req.raw, context.env);
-  if (!auth.session)
-    return context.json(
-      { error: "Connect GitHub before creating a pull request" },
-      401,
-    );
-  if (auth.setCookie) context.header("Set-Cookie", auth.setCookie);
+  if (!auth.session) {
+    return context.json({ error: "Connect GitHub before creating a pull request" }, 401);
+  }
+  if (auth.setCookie) {
+    context.header("Set-Cookie", auth.setCookie);
+  }
   try {
     const roomID = safeRoomID(context.req.param("room"));
     const input: { title?: string; body?: string } = await context.req
       .json<{ title?: string; body?: string }>()
       .catch(() => ({}));
-    const stub = context.env.AGENT_ROOMS.getByName(
-      roomID,
-    ) as DurableObjectStub<AgentRoom>;
+    const stub = context.env.AGENT_ROOMS.getByName(roomID) as DurableObjectStub<AgentRoom>;
     await stub.initialize(roomID);
     const pullRequest = await stub.createPullRequest({
       accessToken: auth.session.accessToken,
@@ -140,34 +134,25 @@ app.post("/api/rooms/:room/handoffs", async (context) => {
         mobileTab?: "transcript" | "people" | "queue";
       };
     }>();
-    if (!input.participant?.id || !input.participant.name)
+    if (!input.participant?.id || !input.participant.name) {
       throw new Error("Participant identity is required");
-    const stub = context.env.AGENT_ROOMS.getByName(
-      roomID,
-    ) as DurableObjectStub<AgentRoom>;
+    }
+    const stub = context.env.AGENT_ROOMS.getByName(roomID) as DurableObjectStub<AgentRoom>;
     await stub.initialize(roomID);
     const handoff = await stub.createHandoff({
       participant: {
         id: input.participant.id,
         name: safeParticipantName(input.participant.name),
-        role:
-          input.participant.role === "contributor"
-            ? "contributor"
-            : "maintainer",
+        role: input.participant.role === "contributor" ? "contributor" : "maintainer",
       },
       clientState: input.clientState,
       currentOrigin:
-        input.currentOrigin ??
-        context.req.header("Origin") ??
-        new URL(context.req.url).origin,
+        input.currentOrigin ?? context.req.header("Origin") ?? new URL(context.req.url).origin,
       controlOrigin: new URL(context.req.url).origin,
     });
     return handoffCors(context.req.raw, context.json(handoff));
   } catch (error) {
-    return handoffCors(
-      context.req.raw,
-      context.json({ error: errorMessage(error) }, 400),
-    );
+    return handoffCors(context.req.raw, context.json({ error: errorMessage(error) }, 400));
   }
 });
 
@@ -179,22 +164,18 @@ app.post("/api/rooms/:room/handoffs/redeem", async (context) => {
   try {
     const roomID = safeRoomID(context.req.param("room"));
     const input = await context.req.json<{ token?: string }>();
-    if (!input.token) throw new Error("Room handoff ticket is required");
-    const stub = context.env.AGENT_ROOMS.getByName(
-      roomID,
-    ) as DurableObjectStub<AgentRoom>;
+    if (!input.token) {
+      throw new Error("Room handoff ticket is required");
+    }
+    const stub = context.env.AGENT_ROOMS.getByName(roomID) as DurableObjectStub<AgentRoom>;
     await stub.initialize(roomID);
     const result = await stub.redeemHandoff({
       token: input.token,
-      targetOrigin:
-        context.req.header("Origin") ?? new URL(context.req.url).origin,
+      targetOrigin: context.req.header("Origin") ?? new URL(context.req.url).origin,
     });
     return handoffCors(context.req.raw, context.json(result));
   } catch (error) {
-    return handoffCors(
-      context.req.raw,
-      context.json({ error: errorMessage(error) }, 400),
-    );
+    return handoffCors(context.req.raw, context.json({ error: errorMessage(error) }, 400));
   }
 });
 
@@ -209,43 +190,39 @@ app.post("/api/rooms/:room/revisions/activate", async (context) => {
       revisionID?: string;
       currentOrigin?: string;
     }>();
-    if (!input.revisionID) throw new Error("Room revision is required");
-    const stub = context.env.AGENT_ROOMS.getByName(
-      roomID,
-    ) as DurableObjectStub<AgentRoom>;
+    if (!input.revisionID) {
+      throw new Error("Room revision is required");
+    }
+    const stub = context.env.AGENT_ROOMS.getByName(roomID) as DurableObjectStub<AgentRoom>;
     await stub.initialize(roomID);
     const revision = await stub.activateRevision({
       revisionID: input.revisionID,
       currentOrigin:
-        input.currentOrigin ??
-        context.req.header("Origin") ??
-        new URL(context.req.url).origin,
+        input.currentOrigin ?? context.req.header("Origin") ?? new URL(context.req.url).origin,
     });
     return handoffCors(context.req.raw, context.json({ revision }));
   } catch (error) {
-    return handoffCors(
-      context.req.raw,
-      context.json({ error: errorMessage(error) }, 400),
-    );
+    return handoffCors(context.req.raw, context.json({ error: errorMessage(error) }, 400));
   }
 });
 
 app.post("/api/rooms/:room/local-preview", async (context) => {
   const hostname = new URL(context.req.url).hostname;
   const localRequest = hostname === "127.0.0.1" || hostname === "localhost";
-  if (context.env.OPENCODE_MODE !== "simulation" && !localRequest)
+  if (context.env.OPENCODE_MODE !== "simulation" && !localRequest) {
     return context.json({ error: "Local previews are disabled" }, 404);
+  }
   try {
     const roomID = safeRoomID(context.req.param("room"));
     const input = await context.req.json<{
       previewURL?: string;
       commitSHA?: string;
     }>();
-    if (!input.previewURL) throw new Error("Preview URL is required");
+    if (!input.previewURL) {
+      throw new Error("Preview URL is required");
+    }
     await verifyPreview(input.previewURL, input.commitSHA);
-    const stub = context.env.AGENT_ROOMS.getByName(
-      roomID,
-    ) as DurableObjectStub<AgentRoom>;
+    const stub = context.env.AGENT_ROOMS.getByName(roomID) as DurableObjectStub<AgentRoom>;
     await stub.initialize(roomID);
     return context.json({
       revision: await stub.createLocalPreview({
@@ -260,8 +237,9 @@ app.post("/api/rooms/:room/local-preview", async (context) => {
 
 app.post("/api/deployments", async (context) => {
   const expected = context.env.RELAY_DEPLOYMENT_WEBHOOK_SECRET;
-  if (!expected || context.req.header("Authorization") !== `Bearer ${expected}`)
+  if (!expected || context.req.header("Authorization") !== `Bearer ${expected}`) {
     return context.json({ error: "Unauthorized deployment callback" }, 401);
+  }
   try {
     const input = await context.req.json<{
       roomID?: string;
@@ -272,17 +250,17 @@ app.post("/api/deployments", async (context) => {
       deploymentID?: string;
       failure?: string;
     }>();
-    if (!input.roomID || !input.commitSHA || !input.status)
+    if (!input.roomID || !input.commitSHA || !input.status) {
       throw new Error("Room, commit, and deployment status are required");
+    }
     if (input.status === "ready") {
-      if (!input.previewURL)
+      if (!input.previewURL) {
         throw new Error("A ready deployment requires a preview URL");
+      }
       await verifyPreview(input.previewURL, input.commitSHA);
     }
     const roomID = safeRoomID(input.roomID);
-    const stub = context.env.AGENT_ROOMS.getByName(
-      roomID,
-    ) as DurableObjectStub<AgentRoom>;
+    const stub = context.env.AGENT_ROOMS.getByName(roomID) as DurableObjectStub<AgentRoom>;
     await stub.initialize(roomID);
     return context.json({
       revision: await stub.recordDeployment({
@@ -302,14 +280,10 @@ app.post("/api/deployments", async (context) => {
 app.all("/api/rooms/:room/*", async (context) => {
   const roomID = safeRoomID(context.req.param("room"));
   const url = new URL(context.req.url);
-  if (url.searchParams.has("name"))
-    url.searchParams.set(
-      "name",
-      safeParticipantName(url.searchParams.get("name")),
-    );
-  const stub = context.env.AGENT_ROOMS.getByName(
-    roomID,
-  ) as DurableObjectStub<AgentRoom>;
+  if (url.searchParams.has("name")) {
+    url.searchParams.set("name", safeParticipantName(url.searchParams.get("name")));
+  }
+  const stub = context.env.AGENT_ROOMS.getByName(roomID) as DurableObjectStub<AgentRoom>;
   await stub.initialize(roomID);
   return stub.fetch(new Request(url, context.req.raw));
 });
@@ -325,7 +299,9 @@ function errorMessage(error: unknown): string {
 
 function handoffCors(request: Request, response: Response): Response {
   const origin = request.headers.get("Origin");
-  if (!origin) return response;
+  if (!origin) {
+    return response;
+  }
   const headers = new Headers(response.headers);
   headers.set("Access-Control-Allow-Origin", origin);
   headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -340,23 +316,25 @@ function handoffCors(request: Request, response: Response): Response {
 
 async function verifyPreview(previewURL: string, commitSHA?: string) {
   const preview = new URL(previewURL);
-  const local =
-    preview.hostname === "127.0.0.1" || preview.hostname === "localhost";
-  if (preview.protocol !== "https:" && !(local && preview.protocol === "http:"))
+  const local = preview.hostname === "127.0.0.1" || preview.hostname === "localhost";
+  if (preview.protocol !== "https:" && !(local && preview.protocol === "http:")) {
     throw new Error("Preview URL must use HTTPS unless it is local");
+  }
   const readiness = new URL("/__relay/ready", preview);
   const response = await fetch(readiness, {
     headers: { Accept: "application/json" },
     signal: AbortSignal.timeout(8_000),
   });
-  const result: { ready?: boolean; commitSHA?: string; roomProtocol?: number } =
-    await response
-      .json<{ ready?: boolean; commitSHA?: string; roomProtocol?: number }>()
-      .catch(() => ({}));
-  if (!response.ok || !result.ready)
+  const result: { ready?: boolean; commitSHA?: string; roomProtocol?: number } = await response
+    .json<{ ready?: boolean; commitSHA?: string; roomProtocol?: number }>()
+    .catch(() => ({}));
+  if (!response.ok || !result.ready) {
     throw new Error("Preview did not pass its Relay readiness check");
-  if (result.roomProtocol !== 1)
+  }
+  if (result.roomProtocol !== 1) {
     throw new Error("Preview uses an incompatible Relay room protocol");
-  if (commitSHA && result.commitSHA !== commitSHA)
+  }
+  if (commitSHA && result.commitSHA !== commitSHA) {
     throw new Error("Preview commit does not match the published revision");
+  }
 }

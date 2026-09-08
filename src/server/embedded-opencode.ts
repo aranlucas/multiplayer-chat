@@ -55,6 +55,10 @@ export class EmbeddedOpenCodeRunner {
     await onEvent?.({ type: "session", sessionID: session.id });
 
     const controller = new AbortController();
+    const streamFailure = new AbortController();
+    const timeoutMs = request.timeoutMs ?? 3_600_000;
+    const deadline = AbortSignal.timeout(timeoutMs);
+    const executionSignal = AbortSignal.any([deadline, streamFailure.signal]);
     let cursor = request.after;
     let observedStatus: EmbeddedTurnResult["status"] | undefined;
     let deferredProviderError: Error | undefined;
@@ -65,16 +69,21 @@ export class EmbeddedOpenCodeRunner {
           signal: controller.signal,
         })) {
           const record = event as unknown as Record<string, unknown>;
-          if (eventSessionID(record) !== session.id) continue;
+          if (eventSessionID(record) !== session.id) {
+            continue;
+          }
           const nextCursor = eventCursor(record);
           if (
             nextCursor &&
             cursor &&
             Number.isFinite(Number(nextCursor)) &&
             Number(nextCursor) <= Number(cursor)
-          )
+          ) {
             continue;
-          if (nextCursor) cursor = nextCursor;
+          }
+          if (nextCursor) {
+            cursor = nextCursor;
+          }
           observedStatus = terminalStatus(record) ?? observedStatus;
           await onEvent?.({
             type: "opencode",
@@ -88,14 +97,15 @@ export class EmbeddedOpenCodeRunner {
           }
         }
       } catch (error) {
-        if (!controller.signal.aborted) throw error;
+        if (!controller.signal.aborted) {
+          eventError = error;
+          streamFailure.abort(error);
+        }
       }
     })();
 
     // Feature work can spend longer than 15 minutes in provider retries and builds.
     // Use one deadline for the entire request, and stop the session if it expires.
-    const timeoutMs = request.timeoutMs ?? 3_600_000;
-    const executionSignal = AbortSignal.timeout(timeoutMs);
     let executionError: unknown;
     try {
       await opencode.sessions.prompt(
@@ -108,34 +118,37 @@ export class EmbeddedOpenCodeRunner {
       );
       await opencode.sessions.wait({ sessionID: session.id }, { signal: executionSignal });
     } catch (error) {
-      executionError = executionSignal.aborted
+      executionError = deadline.aborted
         ? new Error(
             `Agent turn timed out after ${Math.round(timeoutMs / 1_000)} seconds; saved changes can be resumed.`,
             { cause: error },
           )
         : error;
-      if (executionSignal.aborted) await this.interrupt(session.id);
+      if (executionSignal.aborted) {
+        await this.interrupt(session.id);
+      }
     } finally {
       controller.abort();
-      try {
-        await eventTask;
-      } catch (error) {
-        eventError = error;
-      }
+      await eventTask;
     }
-    const turnError = deferredProviderError ?? executionError ?? eventError;
+    const turnError = deferredProviderError ?? eventError ?? executionError;
     let changes: WorkspaceChange[];
     try {
       changes = await this.workspace.syncSandboxChanges();
     } catch (checkpointError) {
-      if (!turnError) throw checkpointError;
+      if (!turnError) {
+        throw checkpointError;
+      }
       throw new AggregateError(
         [turnError, checkpointError],
         "The agent turn failed and its workspace checkpoint could not be saved",
+        { cause: checkpointError },
       );
     }
     await onEvent?.({ type: "changes", changes });
-    if (turnError) throw turnError;
+    if (turnError) {
+      throw turnError;
+    }
 
     const latest = await opencode.sessions.get({ sessionID: session.id });
     const status = latest.outcome ?? observedStatus ?? "succeeded";
@@ -226,16 +239,21 @@ export class EmbeddedOpenCodeRunner {
 
 export function openCodeModelRef(model: string) {
   const [providerID, ...modelParts] = model.split("/");
-  if (!providerID || !modelParts.length || modelParts.some((part) => !part))
+  if (!providerID || !modelParts.length || modelParts.some((part) => !part)) {
     throw new Error(`Invalid OpenCode model: ${model}`);
+  }
   return { providerID, id: modelParts.join("/") };
 }
 
 function deferredProviderFailure(event: Record<string, unknown>): Error | undefined {
-  if (event.type !== "session.retry.scheduled") return undefined;
+  if (event.type !== "session.retry.scheduled") {
+    return undefined;
+  }
   const data = asRecord(event.data);
   const retryAt = typeof data.at === "number" ? data.at : 0;
-  if (!retryAt || retryAt <= Date.now() + 60_000) return undefined;
+  if (!retryAt || retryAt <= Date.now() + 60_000) {
+    return undefined;
+  }
   const providerError = asRecord(data.error);
   const message =
     typeof providerError.message === "string" ? providerError.message : "Provider request failed";
@@ -244,7 +262,9 @@ function deferredProviderFailure(event: Record<string, unknown>): Error | undefi
 
 export function eventSessionID(event: Record<string, unknown>): string | undefined {
   const data = asRecord(event.data);
-  if (typeof data.sessionID === "string") return data.sessionID;
+  if (typeof data.sessionID === "string") {
+    return data.sessionID;
+  }
   const form = asRecord(data.form);
   return typeof form.sessionID === "string" ? form.sessionID : undefined;
 }
@@ -256,9 +276,15 @@ function eventCursor(event: Record<string, unknown>): string | undefined {
 }
 
 function terminalStatus(event: Record<string, unknown>): EmbeddedTurnResult["status"] | undefined {
-  if (event.type === "session.execution.succeeded") return "succeeded";
-  if (event.type === "session.execution.failed") return "failed";
-  if (event.type === "session.execution.interrupted") return "interrupted";
+  if (event.type === "session.execution.succeeded") {
+    return "succeeded";
+  }
+  if (event.type === "session.execution.failed") {
+    return "failed";
+  }
+  if (event.type === "session.execution.interrupted") {
+    return "interrupted";
+  }
   return undefined;
 }
 

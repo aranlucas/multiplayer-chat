@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TimelineEvent } from "../shared/protocol";
 import { coalesceTimelineEvents } from "./coalesce-events";
 
-function raw(
-  seq: number,
-  type: string,
-  data: Record<string, unknown>,
-): TimelineEvent {
+function raw(seq: number, type: string, data: Record<string, unknown>): TimelineEvent {
   return {
     seq,
     id: `event-${seq}`,
@@ -32,9 +28,9 @@ describe("coalesceTimelineEvents", () => {
       }),
     ]);
     expect(events).toHaveLength(1);
-    expect(
-      (events[0].payload.event as { data: { delta: string } }).data.delta,
-    ).toBe("Inspecting the repository.");
+    expect((events[0].payload.event as { data: { delta: string } }).data.delta).toBe(
+      "Inspecting the repository.",
+    );
   });
 
   it("uses the authoritative completed text and removes boundary events", () => {
@@ -49,9 +45,7 @@ describe("coalesceTimelineEvents", () => {
       raw(3, "session.text.ended", { ...identity, text: "Complete response." }),
     ]);
     expect(events).toHaveLength(1);
-    const data = (
-      events[0].payload.event as { data: { delta: string; streaming: boolean } }
-    ).data;
+    const data = (events[0].payload.event as { data: { delta: string; streaming: boolean } }).data;
     expect(data).toEqual(
       expect.objectContaining({
         delta: "Complete response.",
@@ -106,10 +100,7 @@ describe("coalesceTimelineEvents", () => {
       }),
     ]);
     expect(
-      events.map(
-        (event) =>
-          (event.payload.event as { data: { delta: string } }).data.delta,
-      ),
+      events.map((event) => (event.payload.event as { data: { delta: string } }).data.delta),
     ).toEqual(["One", "Two"]);
   });
 

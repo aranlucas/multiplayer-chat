@@ -21,16 +21,15 @@ const initialState: GitHubState = {
   creating: false,
 };
 
-export function useGitHub(
-  roomID: string,
-  controlOrigin = window.location.origin,
-) {
-  const [state, setState] = useState(initialState);
+export function useGitHub(roomID: string, controlOrigin = window.location.origin) {
+  const [state, setState] = useState(() => ({
+    ...initialState,
+    loading: controlOrigin === window.location.origin,
+  }));
   const creatingRef = useRef(false);
 
   useEffect(() => {
     if (controlOrigin !== window.location.origin) {
-      setState((current) => ({ ...current, loading: false }));
       return;
     }
     const controller = new AbortController();
@@ -39,19 +38,20 @@ export function useGitHub(
       signal: controller.signal,
     })
       .then(async (response) => {
-        if (!response.ok)
+        if (!response.ok) {
           throw new Error("Unable to read the GitHub connection");
+        }
         return response.json() as Promise<{
           configured: boolean;
           authenticated: boolean;
           user?: GitHubUser;
         }>;
       })
-      .then((session) =>
-        setState((current) => ({ ...current, ...session, loading: false })),
-      )
+      .then((session) => setState((current) => ({ ...current, ...session, loading: false })))
       .catch((error) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) {
+          return;
+        }
         setState((current) => ({
           ...current,
           loading: false,
@@ -69,7 +69,9 @@ export function useGitHub(
   }, [controlOrigin]);
 
   const createPullRequest = useCallback(async () => {
-    if (creatingRef.current) return undefined;
+    if (creatingRef.current) {
+      return undefined;
+    }
     creatingRef.current = true;
     setState((current) => ({ ...current, creating: true, error: undefined }));
     try {
@@ -86,8 +88,9 @@ export function useGitHub(
         pullRequest?: { url: string };
         error?: string;
       };
-      if (!response.ok || !result.pullRequest)
+      if (!response.ok || !result.pullRequest) {
         throw new Error(result.error || "Pull request creation failed");
+      }
       setState((current) => ({ ...current, creating: false }));
       creatingRef.current = false;
       return result.pullRequest.url;

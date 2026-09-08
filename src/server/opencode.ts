@@ -19,18 +19,14 @@ export interface WorkerEnv extends GitHubOAuthEnv, RailwaySandboxEnv {
 
 const MUSE_SPARK_MODEL = "opencode/muse-spark-1.2-contributor-free";
 const MUSE_SPARK_MODEL_NAME = "Muse Spark 1.2 Contributor Free";
-const OPENROUTER_NEMOTRON_MODEL =
-  "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free";
+const OPENROUTER_NEMOTRON_MODEL = "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free";
 const OPENROUTER_NEMOTRON_MODEL_NAME = "NVIDIA Nemotron 3 Ultra (free)";
 
 export function openCodeModelAllowlist(env: WorkerEnv): string[] {
   return (env.OPENCODE_MODEL_ALLOWLIST ?? "")
     .split(",")
     .map((model) => model.trim())
-    .filter(
-      (model, index, models) =>
-        Boolean(model) && models.indexOf(model) === index,
-    );
+    .filter((model, index, models) => Boolean(model) && models.indexOf(model) === index);
 }
 
 export function configuredOpenCodeModels(
@@ -47,10 +43,7 @@ export function configuredOpenCodeModels(
           ? MUSE_SPARK_MODEL_NAME
           : modelDisplayName(model),
     providerID: model.split("/", 1)[0] || "unknown",
-    free:
-      model.endsWith("-free") ||
-      model.endsWith(":free") ||
-      model === "opencode/big-pickle",
+    free: model.endsWith("-free") || model.endsWith(":free") || model === "opencode/big-pickle",
   }));
 }
 
@@ -58,33 +51,31 @@ export function hasLiveOpenCode(env: WorkerEnv) {
   return env.OPENCODE_MODE === "live" && !liveOpenCodeConfigurationError(env);
 }
 
-export function liveOpenCodeConfigurationError(
-  env: WorkerEnv,
-): string | undefined {
-  if (env.OPENCODE_MODE !== "live") return undefined;
-  if (!env.RAILWAY_ENVIRONMENT_ID)
+export function liveOpenCodeConfigurationError(env: WorkerEnv): string | undefined {
+  if (env.OPENCODE_MODE !== "live") {
+    return undefined;
+  }
+  if (!env.RAILWAY_ENVIRONMENT_ID) {
     return "The Railway environment ID is not configured.";
-  if (!env.RAILWAY_TOKEN && !env.RAILWAY_API_TOKEN)
+  }
+  if (!env.RAILWAY_TOKEN && !env.RAILWAY_API_TOKEN) {
     return "A Railway project or API token is not configured.";
-  if (env.OPENCODE_PROVIDER === "opencode-zen" && !env.OPENCODE_ZEN_API_KEY)
+  }
+  if (env.OPENCODE_PROVIDER === "opencode-zen" && !env.OPENCODE_ZEN_API_KEY) {
     return "The OpenCode Zen API key is not configured.";
-  if (env.OPENCODE_PROVIDER === "openrouter" && !env.OPENROUTER_API_KEY)
+  }
+  if (env.OPENCODE_PROVIDER === "openrouter" && !env.OPENROUTER_API_KEY) {
     return "The OpenRouter API key is not configured.";
-  if (
-    env.OPENCODE_PROVIDER === "cloudflare-workers-ai" &&
-    !env.CLOUDFLARE_API_TOKEN
-  )
+  }
+  if (env.OPENCODE_PROVIDER === "cloudflare-workers-ai" && !env.CLOUDFLARE_API_TOKEN) {
     return "The Cloudflare API token is not configured.";
+  }
   return undefined;
 }
 
-export function openCodeConfiguration(
-  env: WorkerEnv,
-): OpenCodeWorkerd.Configuration {
+export function openCodeConfiguration(env: WorkerEnv): OpenCodeWorkerd.Configuration {
   const [modelProvider] = env.OPENCODE_MODEL.split("/", 1);
-  type ProviderConfiguration = NonNullable<
-    OpenCodeWorkerd.Configuration["providers"]
-  >[string];
+  type ProviderConfiguration = NonNullable<OpenCodeWorkerd.Configuration["providers"]>[string];
   const providers: Record<string, ProviderConfiguration> = {};
   if (env.OPENCODE_PROVIDER === "opencode-zen" && env.OPENCODE_ZEN_API_KEY) {
     providers[modelProvider] = {
@@ -96,10 +87,7 @@ export function openCodeConfiguration(
       settings: { apiKey: env.OPENROUTER_API_KEY },
     };
   }
-  if (
-    env.OPENCODE_PROVIDER === "cloudflare-workers-ai" &&
-    env.CLOUDFLARE_API_TOKEN
-  ) {
+  if (env.OPENCODE_PROVIDER === "cloudflare-workers-ai" && env.CLOUDFLARE_API_TOKEN) {
     providers[modelProvider] = {
       settings: {
         apiKey: env.CLOUDFLARE_API_TOKEN,
@@ -155,8 +143,12 @@ function modelDisplayName(model: string) {
     .replace(/:free$/, "-free")
     .split("-")
     .map((part) => {
-      if (part === "mimo") return "MiMo";
-      if (/^v\d/i.test(part)) return part.toUpperCase();
+      if (part === "mimo") {
+        return "MiMo";
+      }
+      if (/^v\d/i.test(part)) {
+        return part.toUpperCase();
+      }
       return part.charAt(0).toUpperCase() + part.slice(1);
     })
     .join(" ");

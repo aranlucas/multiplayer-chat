@@ -43,11 +43,12 @@ export function Transcript({
   const selectedRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (selectedID)
+    if (selectedID) {
       selectedRef.current?.scrollIntoView({
         behavior: "smooth",
         block: "center",
       });
+    }
   }, [selectedID]);
 
   return (
@@ -96,9 +97,7 @@ function TranscriptEvent({
   const display = displayEvent(event);
 
   if (display.type === "tool") {
-    return (
-      <ToolEvent event={event} selected={selected} elementRef={elementRef} />
-    );
+    return <ToolEvent event={event} selected={selected} elementRef={elementRef} />;
   }
 
   if (display.type === "question") {
@@ -114,11 +113,7 @@ function TranscriptEvent({
           </span>
         </div>
         <div className="event-body question-event-body">
-          <QuestionCard
-            question={display}
-            onReply={onQuestionReply}
-            onCancel={onQuestionCancel}
-          />
+          <QuestionCard question={display} onReply={onQuestionReply} onCancel={onQuestionCancel} />
         </div>
       </div>
     );
@@ -177,15 +172,19 @@ function ToolEvent({
   elementRef?: React.RefObject<HTMLDivElement | null>;
 }) {
   const display = displayEvent(event);
-  if (display.type !== "tool") return null;
-  const [expanded, setExpanded] = useState(Boolean(display.output));
+  const [expanded, setExpanded] = useState(display.type === "tool" && Boolean(display.output));
   const [copied, setCopied] = useState(false);
+  if (display.type !== "tool") {
+    return null;
+  }
   const successful = display.status === "completed";
   const command = display.command;
   const copyable = successful && Boolean(command);
 
   async function copyCommand() {
-    if (!command) return;
+    if (!command) {
+      return;
+    }
     try {
       await copyText(command);
       setCopied(true);
@@ -216,9 +215,7 @@ function ToolEvent({
             <Terminal size={15} />
             <code>{display.title}</code>
             <span className="tool-spacer" />
-            {display.status === "running" ? (
-              <LoaderCircle className="spin" size={15} />
-            ) : null}
+            {display.status === "running" ? <LoaderCircle className="spin" size={15} /> : null}
             {successful ? <Check className="tool-success" size={16} /> : null}
             {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           </button>
@@ -226,7 +223,9 @@ function ToolEvent({
             <button
               className="tool-copy"
               type="button"
-              onClick={copyCommand}
+              onClick={() => {
+                void copyCommand();
+              }}
               aria-label={copied ? "Copied command" : "Copy command"}
               title={copied ? "Copied" : "Copy command"}
             >
@@ -234,12 +233,8 @@ function ToolEvent({
             </button>
           ) : null}
         </div>
-        {display.detail ? (
-          <div className="tool-summary">{display.detail}</div>
-        ) : null}
-        {expanded && display.output ? (
-          <pre className="tool-output">{display.output}</pre>
-        ) : null}
+        {display.detail ? <div className="tool-summary">{display.detail}</div> : null}
+        {expanded && display.output ? <pre className="tool-output">{display.output}</pre> : null}
       </div>
     </div>
   );
@@ -259,6 +254,8 @@ async function copyText(value: string) {
     textarea.select();
     const copied = document.execCommand("copy");
     textarea.remove();
-    if (!copied) throw new Error("Clipboard copy was rejected");
+    if (!copied) {
+      throw new Error("Clipboard copy was rejected");
+    }
   }
 }

@@ -1,3 +1,4 @@
+import { textValue } from "../shared/text-value";
 import { DurableObject } from "cloudflare:workers";
 import { OpenCodeWorkerd } from "@opencode-ai/sdk/workerd";
 import type { WorkspaceChange } from "../shared/workspace-change";
@@ -287,10 +288,10 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       result.writeRepository,
       result.commitSHA,
       sealedCredential,
-      room.workspaceRevision,
+      workspace.workspaceRevision,
     );
     const revision = this.insertRevision({
-      workspaceRevision: room.workspaceRevision,
+      workspaceRevision: workspace.workspaceRevision,
       commitSHA: result.commitSHA,
       status: "waiting",
       provider: "github",
@@ -320,9 +321,13 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     let result: PullRequestResult | undefined;
     for (;;) {
       const room = this.getRoom();
-      if (room.workspaceRevision <= room.publishedWorkspaceRevision) return result;
+      if (room.workspaceRevision <= room.publishedWorkspaceRevision) {
+        return result;
+      }
       const credential = this.githubCredential();
-      if (!credential) return result;
+      if (!credential) {
+        return result;
+      }
       result = await this.createPullRequest(await unsealGitHubCredential(credential, this.env));
     }
   }
@@ -336,12 +341,17 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     failure?: string;
   }): Promise<RoomRevision> {
     const revision = this.revisionForCommit(input.commitSHA);
-    if (!revision) throw new Error("Deployment does not match a published room revision");
+    if (!revision) {
+      throw new Error("Deployment does not match a published room revision");
+    }
     // A poll started before the readiness callback can finish after it.
-    if (revision.status === "ready" && input.status !== "ready") return revision;
+    if (revision.status === "ready" && input.status !== "ready") {
+      return revision;
+    }
     const previewURL = input.previewURL ? validatePreviewURL(input.previewURL) : undefined;
-    if (input.status === "ready" && !previewURL)
+    if (input.status === "ready" && !previewURL) {
       throw new Error("A ready deployment requires a preview URL");
+    }
     const now = Date.now();
     this.ctx.storage.sql.exec(
       "UPDATE relay_revisions SET status = ?, preview_url = COALESCE(?, preview_url), provider = COALESCE(?, provider), deployment_id = COALESCE(?, deployment_id), failure = ?, updated_at = ? WHERE id = ?",
@@ -353,7 +363,10 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       now,
       revision.id,
     );
-    const updated = this.revisionByID(revision.id)!;
+    const updated = this.revisionByID(revision.id);
+    if (!updated) {
+      throw new Error("Saved room revision is missing");
+    }
     if (input.status === "ready" || input.status === "failed") {
       const event = this.insertEvent({
         id: `deployment:${updated.id}:${input.status}`,
@@ -424,13 +437,15 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     controlOrigin: string;
   }): Promise<{ url: string; expiresAt: number }> {
     const revision = this.latestRevision();
-    if (!revision?.previewURL || revision.status !== "ready")
+    if (!revision?.previewURL || revision.status !== "ready") {
       throw new Error("The latest room preview is not ready");
+    }
     const target = new URL(revision.previewURL);
     const currentOrigin = new URL(input.currentOrigin).origin;
     const controlOrigin = new URL(input.controlOrigin).origin;
-    if (target.origin === currentOrigin)
+    if (target.origin === currentOrigin) {
       throw new Error("The room is already on the latest preview");
+    }
     const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", "");
     const tokenHash = await sha256(token);
     const expiresAt = Date.now() + 60_000;
@@ -456,16 +471,20 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     clientState?: HandoffClientState;
     roomID: string;
   }> {
-    if (!/^[a-f0-9]{64}$/i.test(input.token)) throw new Error("Invalid room handoff ticket");
+    if (!/^[a-f0-9]{64}$/i.test(input.token)) {
+      throw new Error("Invalid room handoff ticket");
+    }
     const tokenHash = await sha256(input.token);
     const rows = this.ctx.storage.sql
       .exec<HandoffRow>("SELECT * FROM relay_handoffs WHERE token_hash = ?", tokenHash)
       .toArray();
     const handoff = rows[0];
-    if (!handoff || handoff.used_at || handoff.expires_at <= Date.now())
+    if (!handoff || handoff.used_at || handoff.expires_at <= Date.now()) {
       throw new Error("Room handoff ticket is expired or already used");
-    if (new URL(input.targetOrigin).origin !== handoff.target_origin)
+    }
+    if (new URL(input.targetOrigin).origin !== handoff.target_origin) {
       throw new Error("Room handoff ticket was issued for another preview");
+    }
     const now = Date.now();
     this.ctx.storage.sql.exec(
       "UPDATE relay_handoffs SET used_at = ? WHERE token_hash = ? AND used_at IS NULL",
@@ -494,32 +513,40 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     currentOrigin: string;
   }): Promise<RoomRevision> {
     const revision = this.revisionByID(input.revisionID);
-    if (!revision?.previewURL || revision.status !== "ready")
+    if (!revision?.previewURL || revision.status !== "ready") {
       throw new Error("Room revision is not ready");
-    if (new URL(revision.previewURL).origin !== new URL(input.currentOrigin).origin)
+    }
+    if (new URL(revision.previewURL).origin !== new URL(input.currentOrigin).origin) {
       throw new Error("Room revision belongs to another preview origin");
+    }
     const now = Date.now();
     this.ctx.storage.sql.exec(
       "UPDATE relay_revisions SET activated_at = COALESCE(activated_at, ?) WHERE id = ?",
       now,
       revision.id,
     );
-    const updated = this.revisionByID(revision.id)!;
+    const updated = this.revisionByID(revision.id);
+    if (!updated) {
+      throw new Error("Saved room revision is missing");
+    }
     this.broadcast({ type: "room", room: this.getRoom() });
     return updated;
   }
 
   async alarm(): Promise<void> {
     const room = this.getRoomOrNull();
-    if (!room?.pullRequestHeadSHA) return;
+    if (!room?.pullRequestHeadSHA) {
+      return;
+    }
     const revision = room.latestRevision;
     if (
       !revision ||
       revision.commitSHA !== room.pullRequestHeadSHA ||
       revision.status === "ready" ||
       revision.status === "failed"
-    )
+    ) {
       return;
+    }
     // Recover previews whose successful callback was overwritten by an older poll.
     if (revision.previewURL) {
       const ready = await verifyReadyPreview(revision.previewURL, revision.commitSHA).then(
@@ -547,7 +574,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       return;
     }
     const credential = this.githubCredential();
-    if (!credential) return;
+    if (!credential) {
+      return;
+    }
     const session = await unsealGitHubCredential(credential, this.env);
     const observation = await new GitHubPullRequestClient(session.accessToken).findDeployment(
       room.repository,
@@ -564,8 +593,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       deploymentID: observation.deploymentID,
       failure: observation.failure,
     });
-    if (observation.status === "waiting" || observation.status === "building")
+    if (observation.status === "waiting" || observation.status === "building") {
       await this.ctx.storage.setAlarm(Date.now() + 5_000);
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -599,7 +629,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
   async webSocketMessage(socket: WebSocket, raw: string | ArrayBuffer): Promise<void> {
     const attachment = socket.deserializeAttachment() as SocketAttachment | null;
-    if (!attachment) return;
+    if (!attachment) {
+      return;
+    }
 
     try {
       const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
@@ -774,7 +806,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       return [];
     }
     for (const name of tables) {
-      if (name.startsWith("_opencode_bootstrap_")) continue;
+      if (name.startsWith("_opencode_bootstrap_")) {
+        continue;
+      }
       this.ctx.storage.sql.exec(`ALTER TABLE ${name} RENAME TO _opencode_bootstrap_${name}`);
       hidden.push(`_opencode_bootstrap_${name}`);
     }
@@ -790,7 +824,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
           hidden,
         )
         .one().count;
-      if (exists) this.ctx.storage.sql.exec(`ALTER TABLE ${hidden} RENAME TO ${visible}`);
+      if (exists) {
+        this.ctx.storage.sql.exec(`ALTER TABLE ${hidden} RENAME TO ${visible}`);
+      }
     }
   }
 
@@ -807,7 +843,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     const existing = this.ctx.storage.sql
       .exec<{ count: number }>("SELECT COUNT(*) AS count FROM relay_room")
       .one();
-    if (existing.count) return;
+    if (existing.count) {
+      return;
+    }
 
     this.ctx.storage.sql.exec(
       "INSERT INTO relay_room (singleton, room_id, title, repository, branch, agent_status, workspace_status) VALUES (1, ?, ?, ?, ?, ?, ?)",
@@ -831,8 +869,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     }
 
     if (message.type === "permission.reply") {
-      if (participant.role !== "maintainer")
+      if (participant.role !== "maintainer") {
         throw new Error("Only maintainers can resolve side effects");
+      }
       await this.replyToPermission(message.requestID, message.reply, participant);
       this.send(socket, { type: "ack", requestID: message.requestID });
       return;
@@ -840,8 +879,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
     if (message.type === "question.reply" || message.type === "question.cancel") {
       const sessionID = this.getRoom().opencodeSessionID;
-      if (!this.runner || !sessionID || message.sessionID !== sessionID)
+      if (!this.runner || !sessionID || message.sessionID !== sessionID) {
         throw new Error("This question is no longer active");
+      }
       if (message.type === "question.reply") {
         await this.runner.replyToForm(message.sessionID, message.formID, message.answer);
       } else {
@@ -852,8 +892,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     }
 
     if (message.type === "room.configure") {
-      if (participant.role !== "maintainer")
+      if (participant.role !== "maintainer") {
         throw new Error("Only maintainers can change the repository");
+      }
       const info = await this.workspace.configure(message.repository, message.branch);
       const event = this.insertEvent({
         id: crypto.randomUUID(),
@@ -873,8 +914,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     }
 
     if (message.type === "room.rename") {
-      if (participant.role !== "maintainer")
+      if (participant.role !== "maintainer") {
         throw new Error("Only maintainers can rename the room");
+      }
       this.ctx.storage.sql.exec(
         "UPDATE relay_room SET title = ?, title_auto = 0 WHERE singleton = 1",
         message.title,
@@ -885,14 +927,18 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     }
 
     if (message.type === "room.model.configure") {
-      if (participant.role !== "maintainer")
+      if (participant.role !== "maintainer") {
         throw new Error("Only maintainers can change the model");
+      }
       const room = this.getRoom();
-      if (room.agentStatus === "running")
+      if (room.agentStatus === "running") {
         throw new Error("Pause the agent before changing the model");
+      }
       const models = await this.availableOpenCodeModels();
       const selected = models.find((model) => model.id === message.model);
-      if (!selected) throw new Error("That model is not available from OpenCode");
+      if (!selected) {
+        throw new Error("That model is not available from OpenCode");
+      }
       this.ctx.storage.sql.exec(
         "UPDATE relay_room SET opencode_model = ? WHERE singleton = 1",
         selected.id,
@@ -924,8 +970,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     }
 
     if (message.type === "brief.update") {
-      if (participant.role !== "maintainer")
+      if (participant.role !== "maintainer") {
         throw new Error("Only maintainers can edit the implementation brief");
+      }
       const previousStatus = this.getBrief().review.status;
       const now = Date.now();
       this.ctx.storage.sql.exec(
@@ -957,10 +1004,12 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     }
 
     if (message.type === "decision.create") {
-      if (participant.role !== "maintainer")
+      if (participant.role !== "maintainer") {
         throw new Error("Only maintainers can record decisions");
-      if (message.sourceEventID && !this.hasEvent(message.sourceEventID))
+      }
+      if (message.sourceEventID && !this.hasEvent(message.sourceEventID)) {
         throw new Error("The linked timeline event no longer exists");
+      }
       this.ctx.storage.sql.exec(
         "INSERT INTO relay_decisions (id, text, rationale, source_event_id, actor_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
         crypto.randomUUID(),
@@ -977,11 +1026,15 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
     if (message.type === "brief.review.start") {
       const brief = this.getBrief();
-      if (!brief.objective) throw new Error("Add an objective before starting review");
-      if (brief.review.status === "in_review")
+      if (!brief.objective) {
+        throw new Error("Add an objective before starting review");
+      }
+      if (brief.review.status === "in_review") {
         throw new Error("The implementation brief is already in review");
-      if (brief.review.status !== "draft")
+      }
+      if (brief.review.status !== "draft") {
         throw new Error("Edit the implementation brief before starting another review");
+      }
       const now = Date.now();
       this.ctx.storage.sql.exec(
         "UPDATE relay_brief SET review_status = 'in_review', review_round = review_round + 1, review_started_at = ?, review_started_by_json = ?, review_resolved_at = NULL, review_resolved_by_json = NULL WHERE singleton = 1",
@@ -1007,8 +1060,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
     if (message.type === "brief.review.comment") {
       const brief = this.getBrief();
-      if (brief.review.status !== "in_review")
+      if (brief.review.status !== "in_review") {
         throw new Error("Start a review before leaving feedback");
+      }
       const now = Date.now();
       this.insertBriefReviewComment(brief.review.round, message.text, participant, now);
       const event = this.insertEvent({
@@ -1030,11 +1084,13 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
     if (message.type === "brief.review.resolve") {
       const brief = this.getBrief();
-      if (brief.review.status !== "in_review")
+      if (brief.review.status !== "in_review") {
         throw new Error("The implementation brief is not in review");
+      }
       const now = Date.now();
-      if (message.comment)
+      if (message.comment) {
         this.insertBriefReviewComment(brief.review.round, message.comment, participant, now);
+      }
       this.ctx.storage.sql.exec(
         "UPDATE relay_brief SET review_status = ?, review_resolved_at = ?, review_resolved_by_json = ? WHERE singleton = 1",
         message.outcome,
@@ -1097,10 +1153,14 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     }
 
     if (!hasLiveOpenCode(this.env)) {
-      if (message.delivery === "queue" && this.getRoom().agentStatus === "running") return;
+      if (message.delivery === "queue" && this.getRoom().agentStatus === "running") {
+        return;
+      }
       const generation = this.beginAgentTurn();
       try {
-        if (message.delivery === "queue") this.consumeQueuedPrompt(event.id);
+        if (message.delivery === "queue") {
+          this.consumeQueuedPrompt(event.id);
+        }
         await this.runSimulatedTurn(message.text);
         await this.drainSimulatedQueue();
         this.completeAgentTurn(generation, "idle");
@@ -1209,7 +1269,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   private async drainSimulatedQueue() {
     while (true) {
       const next = this.getQueue()[0];
-      if (!next) return;
+      if (!next) {
+        return;
+      }
       this.consumeQueuedPrompt(next.eventID);
       await this.runSimulatedTurn(next.text);
     }
@@ -1223,7 +1285,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   ): Promise<"succeeded" | "failed" | "interrupted"> {
     const room = this.getRoom();
     const workspace = await this.workspace.nativeAgentWorkspace();
-    if (!this.runner) throw new Error("Embedded OpenCode is not running");
+    if (!this.runner) {
+      throw new Error("Embedded OpenCode is not running");
+    }
     let queueConsumed = false;
     let checkpointedChanges: WorkspaceChange[] | undefined;
     let result: EmbeddedTurnResult;
@@ -1243,7 +1307,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
             this.consumeQueuedPrompt(queuedPromptID);
             this.setAgentTurnStatus(generation, "running");
           }
-          if (event.type === "changes") checkpointedChanges = event.changes;
+          if (event.type === "changes") {
+            checkpointedChanges = event.changes;
+          }
           this.handleNativeRunnerEvent(event);
         },
       );
@@ -1271,7 +1337,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         "UPDATE relay_room SET workspace_revision = workspace_revision + 1 WHERE singleton = 1",
       );
     }
-    if (result.status === "succeeded") await this.publishSavedPullRequest();
+    if (result.status === "succeeded") {
+      await this.publishSavedPullRequest();
+    }
     return result.status;
   }
 
@@ -1293,12 +1361,15 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       );
       return;
     }
-    if (event.type !== "opencode") return;
-    if (event.cursor)
+    if (event.type !== "opencode") {
+      return;
+    }
+    if (event.cursor) {
       this.ctx.storage.sql.exec(
         "UPDATE relay_room SET opencode_event_cursor = ? WHERE singleton = 1",
         event.cursor,
       );
+    }
     const eventRecord = normalizeNativeEvent(unwrapNativeEvent(event.event));
     const data = asRecord(eventRecord.data);
     this.captureOpenCodePermission(eventRecord, data);
@@ -1329,10 +1400,16 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
   private captureSessionTitle(eventRecord: Record<string, unknown>) {
     const title = sessionTitleFromEvent(eventRecord);
-    if (!title) return;
+    if (!title) {
+      return;
+    }
     const room = this.getRoomOrNull();
-    if (!room || !room.titleAuto) return;
-    if (room.title === title) return;
+    if (!room || !room.titleAuto) {
+      return;
+    }
+    if (room.title === title) {
+      return;
+    }
     this.setRoomTitle(title);
     const event = this.insertEvent({
       id: crypto.randomUUID(),
@@ -1352,8 +1429,8 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       this.ctx.storage.sql.exec(
         "INSERT OR REPLACE INTO relay_permissions (id, session_id, action, resources_json, message, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         data.id,
-        String(data.sessionID ?? ""),
-        String(data.action ?? "Side effect"),
+        textValue(data.sessionID ?? ""),
+        textValue(data.action ?? "Side effect"),
         JSON.stringify(Array.isArray(data.resources) ? data.resources : []),
         typeof data.message === "string" ? data.message : null,
         "pending",
@@ -1385,8 +1462,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     const permission = this.ctx.storage.sql
       .exec<PermissionRow>("SELECT * FROM relay_permissions WHERE id = ?", requestID)
       .toArray()[0];
-    if (!permission || permission.status !== "pending")
+    if (!permission || permission.status !== "pending") {
       throw new Error("Permission request is no longer pending");
+    }
 
     const status = reply === "reject" ? "denied" : "approved";
     this.ctx.storage.sql.exec(
@@ -1443,7 +1521,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       id: row.id,
       kind: row.kind,
       createdAt: row.created_at,
-      actor: row.actor_json ? JSON.parse(row.actor_json) : undefined,
+      actor: row.actor_json
+        ? (JSON.parse(row.actor_json) as NonNullable<TimelineEvent["actor"]>)
+        : undefined,
       payload,
     };
   }
@@ -1490,7 +1570,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         id: row.id,
         sessionID: row.session_id,
         action: row.action,
-        resources: JSON.parse(row.resources_json),
+        resources: JSON.parse(row.resources_json) as string[],
         message: row.message ?? undefined,
         status: row.status,
         createdAt: row.created_at,
@@ -1546,7 +1626,11 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       now,
       now,
     );
-    return this.revisionByID(id)!;
+    const revision = this.revisionByID(id);
+    if (!revision) {
+      throw new Error("Saved room revision is missing");
+    }
+    return revision;
   }
 
   private revisionByID(id: string): RoomRevision | undefined {
@@ -1630,7 +1714,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         title_auto: number;
       }>("SELECT * FROM relay_room WHERE singleton = 1")
       .toArray();
-    if (!rows.length) return null;
+    if (!rows.length) {
+      return null;
+    }
     const row = rows[0];
     return {
       id: row.room_id,
@@ -1659,7 +1745,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
   private getRoom(): RoomInfo {
     const room = this.getRoomOrNull();
-    if (!room) throw new Error("Room has not been initialized");
+    if (!room) {
+      throw new Error("Room has not been initialized");
+    }
     return room;
   }
 
@@ -1697,22 +1785,26 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       .one();
     return {
       objective: row.objective,
-      constraints: JSON.parse(row.constraints_json),
-      validation: JSON.parse(row.validation_json),
+      constraints: JSON.parse(row.constraints_json) as string[],
+      validation: JSON.parse(row.validation_json) as string[],
       revision: row.revision,
       review: {
         status: row.review_status,
         round: row.review_round,
         startedAt: row.review_started_at ?? undefined,
-        startedBy: row.review_started_by_json ? JSON.parse(row.review_started_by_json) : undefined,
+        startedBy: row.review_started_by_json
+          ? (JSON.parse(row.review_started_by_json) as NonNullable<TimelineEvent["actor"]>)
+          : undefined,
         resolvedAt: row.review_resolved_at ?? undefined,
         resolvedBy: row.review_resolved_by_json
-          ? JSON.parse(row.review_resolved_by_json)
+          ? (JSON.parse(row.review_resolved_by_json) as NonNullable<TimelineEvent["actor"]>)
           : undefined,
       },
       reviewComments: this.getBriefReviewComments(),
       updatedAt: row.updated_at ?? undefined,
-      updatedBy: row.updated_by_json ? JSON.parse(row.updated_by_json) : undefined,
+      updatedBy: row.updated_by_json
+        ? (JSON.parse(row.updated_by_json) as NonNullable<TimelineEvent["actor"]>)
+        : undefined,
     };
   }
 
@@ -1726,7 +1818,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         id: row.id,
         round: row.review_round,
         text: row.text,
-        actor: JSON.parse(row.actor_json),
+        actor: JSON.parse(row.actor_json) as NonNullable<TimelineEvent["actor"]>,
         createdAt: row.created_at,
       }));
   }
@@ -1756,7 +1848,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         text: row.text,
         rationale: row.rationale ?? undefined,
         sourceEventID: row.source_event_id ?? undefined,
-        actor: JSON.parse(row.actor_json),
+        actor: JSON.parse(row.actor_json) as NonNullable<TimelineEvent["actor"]>,
         createdAt: row.created_at,
       }));
   }
@@ -1781,7 +1873,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       )
       .one().agent_turn_generation;
     const completedStatus = completedTurnStatus(currentGeneration, generation, status);
-    if (completedStatus) this.setRoomStatus(completedStatus);
+    if (completedStatus) {
+      this.setRoomStatus(completedStatus);
+    }
   }
 
   private setAgentTurnStatus(generation: number, status: RoomInfo["agentStatus"]) {
@@ -1790,7 +1884,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         "SELECT agent_turn_generation FROM relay_room WHERE singleton = 1",
       )
       .one().agent_turn_generation;
-    if (currentGeneration === generation) this.setRoomStatus(status);
+    if (currentGeneration === generation) {
+      this.setRoomStatus(status);
+    }
   }
 
   private snapshot(): RoomSnapshot {
@@ -1811,7 +1907,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   private async availableOpenCodeModels() {
     const allowlist = openCodeModelAllowlist(this.env);
     const fallbackModels = this.configuredOpenCodeModels();
-    if (!this.runner) return fallbackModels;
+    if (!this.runner) {
+      return fallbackModels;
+    }
     const models = await this.runner.models().catch((error) => {
       console.warn("OpenCode model catalog unavailable", error);
       return [];
@@ -1856,16 +1954,18 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
 function hashCode(value: string): number {
   let hash = 0;
-  for (let index = 0; index < value.length; index += 1)
+  for (let index = 0; index < value.length; index += 1) {
     hash = (hash << 5) - hash + value.charCodeAt(index);
+  }
   return hash | 0;
 }
 
 function validatePreviewURL(value: string): string {
   const url = new URL(value);
   const local = url.hostname === "127.0.0.1" || url.hostname === "localhost";
-  if (url.protocol !== "https:" && !(local && url.protocol === "http:"))
+  if (url.protocol !== "https:" && !(local && url.protocol === "http:")) {
     throw new Error("Preview URL must use HTTPS unless it is local");
+  }
   url.username = "";
   url.password = "";
   url.hash = "";
@@ -1880,7 +1980,9 @@ async function sha256(value: string): Promise<string> {
 function validateHandoffClientState(
   value: HandoffClientState | undefined,
 ): HandoffClientState | undefined {
-  if (!value) return undefined;
+  if (!value) {
+    return undefined;
+  }
   const draft = typeof value.draft === "string" ? value.draft.slice(0, 8_000) : undefined;
   const selectedID =
     typeof value.selectedID === "string" ? value.selectedID.slice(0, 200) : undefined;

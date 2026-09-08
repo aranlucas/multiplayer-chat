@@ -99,16 +99,20 @@ export class RepositoryWorkspace {
 
   async search(query: string): Promise<string> {
     const value = query.trim();
-    if (!value || value.length > 300 || value.includes("\0"))
+    if (!value || value.length > 300 || value.includes("\0")) {
       throw new Error("Search query must be 1-300 characters");
+    }
     await this.ensureReady();
-    if (!this.sandbox.configured) return this.searchRemote(value);
+    if (!this.sandbox.configured) {
+      return this.searchRemote(value);
+    }
     const result = await this.sandbox.exec(
       `rg --line-number --column --color never --hidden --glob '!.git' --glob '!node_modules' --glob '!dist' --max-count 50 -- ${shellQuote(value)} .`,
       { cwd: WORKSPACE_DIRECTORY, timeout: 30_000 },
     );
-    if (result.exitCode !== 0 && result.exitCode !== 1)
+    if (result.exitCode !== 0 && result.exitCode !== 1) {
       throw new Error(compactFailure("Repository search failed", result));
+    }
     return truncate(result.stdout || "No matches found.");
   }
 
@@ -118,8 +122,9 @@ export class RepositoryWorkspace {
     if (!this.sandbox.configured) {
       this.ensureRemoteSchema();
       const content = this.remoteFiles().get(relativePath);
-      if (content === undefined)
+      if (content === undefined) {
         throw new Error(`File is not tracked by the selected repository: ${relativePath}`);
+      }
       return numberLines(content);
     }
     const tracked = await this.sandbox.exec(
@@ -129,8 +134,9 @@ export class RepositoryWorkspace {
         timeout: 15_000,
       },
     );
-    if (!tracked.success)
+    if (!tracked.success) {
       throw new Error(`File is not tracked by the selected repository: ${relativePath}`);
+    }
     const file = await this.sandbox.readFile(`${WORKSPACE_DIRECTORY}/${relativePath}`);
     const numbered = file
       .split("\n")
@@ -152,11 +158,15 @@ export class RepositoryWorkspace {
           deleted: number;
         }>("SELECT path, original, content, deleted FROM relay_workspace_changes ORDER BY path")
         .toArray();
-      if (!changes.length) return "Working tree is clean.";
+      if (!changes.length) {
+        return "Working tree is clean.";
+      }
       return truncate(
         changes
           .map((change) => {
-            if (change.deleted) return ` D ${change.path}`;
+            if (change.deleted) {
+              return ` D ${change.path}`;
+            }
             const before = change.original.split("\n").length;
             const after = change.content.split("\n").length;
             return ` M ${change.path} (${before} → ${after} lines)`;
@@ -168,8 +178,9 @@ export class RepositoryWorkspace {
       cwd: WORKSPACE_DIRECTORY,
       timeout: 30_000,
     });
-    if (!result.success)
+    if (!result.success) {
       throw new Error(compactFailure("Unable to read the workspace diff", result));
+    }
     return truncate(result.stdout || "Working tree is clean.");
   }
 
@@ -180,23 +191,32 @@ export class RepositoryWorkspace {
     replaceAll = false,
   ): Promise<string> {
     const path = normalizeWorkspacePath(filePath);
-    if (!oldString || oldString.length > 250_000)
+    if (!oldString || oldString.length > 250_000) {
       throw new Error("oldString must be between 1 and 250,000 characters");
-    if (newString.length > 250_000) throw new Error("newString must not exceed 250,000 characters");
-    if (oldString === newString) throw new Error("oldString and newString must be different");
+    }
+    if (newString.length > 250_000) {
+      throw new Error("newString must not exceed 250,000 characters");
+    }
+    if (oldString === newString) {
+      throw new Error("oldString and newString must be different");
+    }
     await this.ensureReady();
     if (this.sandbox.configured) {
       const file = await this.sandbox
         .readFile(`${WORKSPACE_DIRECTORY}/${path}`)
         .catch(() => undefined);
-      if (!file) throw new Error(`File does not exist: ${path}`);
+      if (!file) {
+        throw new Error(`File does not exist: ${path}`);
+      }
       const content = replaceExact(file, oldString, newString, replaceAll);
       ensureFileSize(path, content);
       await this.sandbox.writeFile(`${WORKSPACE_DIRECTORY}/${path}`, content);
       this.replaceWorkspaceChanges(await this.sandboxChanges());
     } else {
       const current = this.remoteFiles().get(path);
-      if (current === undefined) throw new Error(`File does not exist: ${path}`);
+      if (current === undefined) {
+        throw new Error(`File does not exist: ${path}`);
+      }
       const content = replaceExact(current, oldString, newString, replaceAll);
       ensureFileSize(path, content);
       this.storeWorkspaceChange({ path, content });
@@ -204,12 +224,18 @@ export class RepositoryWorkspace {
     return this.diff();
   }
 
-  async pullRequestWorkspace(): Promise<PullRequestWorkspace> {
+  async pullRequestWorkspace(): Promise<PullRequestWorkspace & { workspaceRevision: number }> {
     const workspace = await this.ensureReady();
     const changes = this.workspaceChanges();
-    if (!changes.length)
+    if (!changes.length) {
       throw new Error("There are no shared workspace changes to put in a pull request");
-    return { ...workspace, changes };
+    }
+    const { workspace_revision: workspaceRevision } = this.storage.sql
+      .exec<{ workspace_revision: number }>(
+        "SELECT workspace_revision FROM relay_room WHERE singleton = 1",
+      )
+      .one();
+    return { ...workspace, changes, workspaceRevision };
   }
 
   async nativeAgentWorkspace(): Promise<PullRequestWorkspace> {
@@ -222,7 +248,9 @@ export class RepositoryWorkspace {
   }
 
   async syncSandboxChanges(): Promise<WorkspaceChange[]> {
-    if (!this.sandbox.configured) return this.workspaceChanges();
+    if (!this.sandbox.configured) {
+      return this.workspaceChanges();
+    }
     const changes = await this.sandboxChanges();
     this.replaceWorkspaceChanges(changes);
     return changes;
@@ -237,8 +265,9 @@ export class RepositoryWorkspace {
     );
 
     try {
-      if (!this.sandbox.configured)
+      if (!this.sandbox.configured) {
         return await this.prepareRemote(repository, branch, row.commit_sha);
+      }
       const current = await this.sandbox.exec(
         `git -C ${shellQuote(WORKSPACE_DIRECTORY)} rev-parse HEAD`,
         { timeout: 10_000, retryOnInterrupted: true },
@@ -261,8 +290,9 @@ export class RepositoryWorkspace {
           `git clone --depth 1 --branch ${shellQuote(branch)} -- ${shellQuote(expectedRemote)} ${shellQuote(WORKSPACE_DIRECTORY)}`,
           { timeout: 120_000 },
         );
-        if (!clone.success)
+        if (!clone.success) {
           throw new Error(compactFailure("Unable to clone the repository", clone));
+        }
       } else if (row.commit_sha && current.stdout.trim() !== row.commit_sha) {
         const checkout = await this.sandbox.exec(
           `git checkout --detach ${shellQuote(row.commit_sha)}`,
@@ -271,16 +301,18 @@ export class RepositoryWorkspace {
             timeout: 30_000,
           },
         );
-        if (!checkout.success)
+        if (!checkout.success) {
           throw new Error(compactFailure("Unable to restore the pinned commit", checkout));
+        }
       }
 
       const resolved = await this.sandbox.exec("git rev-parse HEAD", {
         cwd: WORKSPACE_DIRECTORY,
         timeout: 10_000,
       });
-      if (!resolved.success)
+      if (!resolved.success) {
         throw new Error(compactFailure("Unable to resolve the repository commit", resolved));
+      }
       const commitSHA = resolved.stdout.trim();
       await this.applyStoredChanges();
       this.storage.sql.exec(
@@ -347,7 +379,9 @@ export class RepositoryWorkspace {
         `https://codeload.github.com/${repository}/tar.gz/${commitSHA}`,
       );
       const compressed = archive.body;
-      if (!compressed) throw new Error("GitHub repository archive was empty");
+      if (!compressed) {
+        throw new Error("GitHub repository archive was empty");
+      }
       const bytes = new Uint8Array(
         await new Response(compressed.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(),
       );
@@ -383,8 +417,12 @@ export class RepositoryWorkspace {
       const lines = content.split("\n");
       for (let index = 0; index < lines.length; index += 1) {
         const column = lines[index].toLowerCase().indexOf(needle);
-        if (column >= 0) matches.push(`./${path}:${index + 1}:${column + 1}:${lines[index]}`);
-        if (matches.length >= 50) return truncate(matches.join("\n"));
+        if (column >= 0) {
+          matches.push(`./${path}:${index + 1}:${column + 1}:${lines[index]}`);
+        }
+        if (matches.length >= 50) {
+          return truncate(matches.join("\n"));
+        }
       }
     }
     return matches.length ? truncate(matches.join("\n")) : "No matches found.";
@@ -416,8 +454,11 @@ export class RepositoryWorkspace {
         "SELECT path, content, deleted FROM relay_workspace_changes",
       )
       .toArray()) {
-      if (change.deleted) files.delete(change.path);
-      else files.set(change.path, change.content);
+      if (change.deleted) {
+        files.delete(change.path);
+      } else {
+        files.set(change.path, change.content);
+      }
     }
     return files;
   }
@@ -451,27 +492,35 @@ export class RepositoryWorkspace {
 
   private replaceWorkspaceChanges(value: WorkspaceChange[]) {
     const changes = parseWorkspaceChanges(value);
-    if (JSON.stringify(this.workspaceChanges()) === JSON.stringify(changes)) return;
+    if (JSON.stringify(this.workspaceChanges()) === JSON.stringify(changes)) {
+      return;
+    }
     this.ensureRemoteSchema();
     this.storage.sql.exec("DELETE FROM relay_workspace_changes");
-    for (const change of changes) this.storeWorkspaceChange(change);
+    for (const change of changes) {
+      this.storeWorkspaceChange(change);
+    }
   }
 
   private async sandboxChanges(): Promise<WorkspaceChange[]> {
     const baseCommitSHA = this.room().commit_sha;
-    if (!baseCommitSHA) throw new Error("Repository commit is not pinned");
+    if (!baseCommitSHA) {
+      throw new Error("Repository commit is not pinned");
+    }
     const nameStatus = await this.sandbox.exec(
       `git diff --name-status -z ${shellQuote(baseCommitSHA)} --`,
       { cwd: WORKSPACE_DIRECTORY, timeout: 30_000 },
     );
-    if (!nameStatus.success)
+    if (!nameStatus.success) {
       throw new Error(compactFailure("Unable to inspect changed files", nameStatus));
+    }
     const untracked = await this.sandbox.exec("git ls-files --others --exclude-standard -z", {
       cwd: WORKSPACE_DIRECTORY,
       timeout: 30_000,
     });
-    if (!untracked.success)
+    if (!untracked.success) {
       throw new Error(compactFailure("Unable to inspect untracked files", untracked));
+    }
     const paths = parseGitChangePaths(nameStatus.stdout, untracked.stdout);
     const changes: WorkspaceChange[] = [];
     let totalBytes = 0;
@@ -484,12 +533,15 @@ export class RepositoryWorkspace {
         `test -f ${shellQuote(change.path)} && test ! -L ${shellQuote(change.path)}`,
         { cwd: WORKSPACE_DIRECTORY, timeout: 5_000 },
       );
-      if (!regular.success) throw new Error(`Changed path is not a regular file: ${change.path}`);
+      if (!regular.success) {
+        throw new Error(`Changed path is not a regular file: ${change.path}`);
+      }
       const file = await this.sandbox.readFile(`${WORKSPACE_DIRECTORY}/${change.path}`);
       ensureFileSize(change.path, file);
       totalBytes += new TextEncoder().encode(file).byteLength;
-      if (totalBytes > MAX_WORKSPACE_CHANGE_BYTES)
+      if (totalBytes > MAX_WORKSPACE_CHANGE_BYTES) {
         throw new Error("Workspace changes are too large");
+      }
       changes.push({ path: change.path, content: file });
     }
     return parseWorkspaceChanges(changes);
@@ -503,8 +555,9 @@ export class RepositoryWorkspace {
           cwd: WORKSPACE_DIRECTORY,
           timeout: 10_000,
         });
-        if (!removed.success)
+        if (!removed.success) {
           throw new Error(compactFailure(`Unable to remove ${change.path}`, removed));
+        }
         continue;
       }
       ensureFileSize(change.path, change.content);
@@ -520,8 +573,9 @@ async function githubFetch(url: string): Promise<Response> {
       "User-Agent": "relay-multiplayer-agent",
     },
   });
-  if (!response.ok)
+  if (!response.ok) {
     throw new Error(`GitHub request failed (${response.status} ${response.statusText})`);
+  }
   return response;
 }
 
@@ -532,12 +586,15 @@ async function resolveGitHubBranch(repository: string, branch: string): Promise<
       headers: { "User-Agent": "relay-multiplayer-agent" },
     },
   );
-  if (!response.ok)
+  if (!response.ok) {
     throw new Error(`GitHub refs request failed (${response.status} ${response.statusText})`);
+  }
   const refs = new TextDecoder().decode(await response.arrayBuffer());
   const escapedBranch = branch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = refs.match(new RegExp(`([0-9a-f]{40}) refs/heads/${escapedBranch}(?:\\n|\\0)`));
-  if (!match) throw new Error(`GitHub branch was not found: ${branch}`);
+  if (!match) {
+    throw new Error(`GitHub branch was not found: ${branch}`);
+  }
   return match[1];
 }
 
@@ -548,7 +605,9 @@ function readTarTextFiles(bytes: Uint8Array): Array<{ path: string; content: str
   let totalBytes = 0;
   while (offset + 512 <= bytes.length && files.length < 5_000 && totalBytes < 20_000_000) {
     const header = bytes.subarray(offset, offset + 512);
-    if (header.every((byte) => byte === 0)) break;
+    if (header.every((byte) => byte === 0)) {
+      break;
+    }
     const name = decodeTarString(header.subarray(0, 100), decoder);
     const prefix = decodeTarString(header.subarray(345, 500), decoder);
     const rawPath = prefix ? `${prefix}/${name}` : name;
@@ -573,7 +632,9 @@ function readTarTextFiles(bytes: Uint8Array): Array<{ path: string; content: str
     }
     offset = dataOffset + Math.ceil(size / 512) * 512;
   }
-  if (!files.length) throw new Error("GitHub archive did not contain readable text files");
+  if (!files.length) {
+    throw new Error("GitHub archive did not contain readable text files");
+  }
   return files;
 }
 
@@ -642,8 +703,9 @@ function normalizeWorkspacePath(value: string): string {
 }
 
 function ensureFileSize(path: string, content: string) {
-  if (new TextEncoder().encode(content).byteLength > MAX_WORKSPACE_FILE_BYTES)
+  if (new TextEncoder().encode(content).byteLength > MAX_WORKSPACE_FILE_BYTES) {
     throw new Error(`Changed file is too large: ${path}`);
+  }
 }
 
 function shellQuote(value: string): string {
@@ -659,6 +721,8 @@ function compactFailure(
 }
 
 function truncate(value: string): string {
-  if (value.length <= MAX_TOOL_OUTPUT) return value;
+  if (value.length <= MAX_TOOL_OUTPUT) {
+    return value;
+  }
   return `${value.slice(0, MAX_TOOL_OUTPUT)}\n… output truncated by Relay`;
 }

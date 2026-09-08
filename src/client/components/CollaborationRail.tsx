@@ -1,3 +1,4 @@
+import { textValue } from "../../shared/text-value";
 import { Activity, ChevronDown, Circle, Clock3, UsersRound } from "lucide-react";
 import type {
   Participant,
@@ -153,8 +154,8 @@ export function CollaborationRail({
                 {event.kind === "participant"
                   ? `${event.actor?.name ?? "A participant"} joined the session`
                   : event.kind === "permission"
-                    ? `${event.actor?.name ?? "Maintainer"} ${String(event.payload.status)} ${String(event.payload.action)}`
-                    : String(event.payload.text ?? "Session updated")}
+                    ? `${event.actor?.name ?? "Maintainer"} ${textValue(event.payload.status)} ${textValue(event.payload.action)}`
+                    : textValue(event.payload.text ?? "Session updated")}
               </p>
             </div>
           ))}

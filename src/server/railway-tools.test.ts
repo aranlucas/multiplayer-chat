@@ -14,7 +14,11 @@ describe("railwayTools", () => {
       checkpointWorkspace,
     );
 
-    await tools.get("edit")!.execute({
+    const edit = tools.get("edit");
+    if (!edit) {
+      throw new Error("edit tool was not registered");
+    }
+    await edit.execute({
       path: "src/feature.ts",
       oldString: "false",
       newString: "true",
@@ -47,12 +51,14 @@ describe("railwayTools", () => {
       checkpointWorkspace,
     );
 
-    await tools
-      .get("shell")!
-      .execute(
-        { command: "apply-some-change" },
-        { progress: vi.fn().mockResolvedValue(undefined) },
-      );
+    const shell = tools.get("shell");
+    if (!shell) {
+      throw new Error("shell tool was not registered");
+    }
+    await shell.execute(
+      { command: "apply-some-change" },
+      { progress: vi.fn().mockResolvedValue(undefined) },
+    );
 
     expect(checkpointWorkspace).toHaveBeenCalledOnce();
   });
