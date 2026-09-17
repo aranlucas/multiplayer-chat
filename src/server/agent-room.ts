@@ -160,7 +160,10 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   private readonly workspace: RepositoryWorkspace;
   private readonly sandbox: RailwayRoomSandbox;
   private readonly runner?: EmbeddedOpenCodeRunner;
-  private roomID = "reconnect-loop";
+
+  private get roomID(): string {
+    return this.ctx.id.name ?? this.getRoom().id;
+  }
 
   constructor(ctx: DurableObjectState, env: WorkerEnv) {
     super(ctx, env);
@@ -197,8 +200,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   }
 
   async initialize(roomID: string): Promise<void> {
-    this.roomID = roomID;
-    this.ensureRoom(roomID);
+    this.ensureRoom(this.ctx.id.name ?? roomID);
     if (this.getRoom().workspaceStatus !== "ready") {
       this.ctx.waitUntil(
         this.workspace
