@@ -36,6 +36,7 @@ import {
   type EmbeddedTurnResult,
   type NativeRunnerEvent,
 } from "./embedded-opencode";
+import { drainSimulatedQueue, runSimulatedTurn } from "./simulation-runner";
 import { RepositoryWorkspace, restorePullRequestAssociation } from "./workspace";
 import { RailwayRoomSandbox } from "./railway-sandbox";
 import { railwayTools } from "./railway-tools";
@@ -152,8 +153,6 @@ interface HandoffClientState {
   selectedID?: string;
   mobileTab?: "transcript" | "brief" | "people" | "queue";
 }
-
-const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export class AgentRoom extends DurableObject<WorkerEnv> {
   private pullRequestPublication?: Promise<PullRequestResult>;
@@ -1157,8 +1156,32 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         if (message.delivery === "queue") {
           this.consumeQueuedPrompt(event.id);
         }
-        await this.runSimulatedTurn(message.text);
-        await this.drainSimulatedQueue();
+        const emitEvent = (payload: Record<string, unknown>) => {
+          const simulated = this.insertEvent({
+            id: crypto.randomUUID(),
+            kind: "opencode",
+            createdAt: Date.now(),
+            payload,
+          });
+          this.broadcast({ type: "event", event: simulated });
+        };
+        await runSimulatedTurn({
+          prompt: message.text,
+          workspace: this.workspace,
+          emitEvent,
+        });
+        await drainSimulatedQueue({
+          nextQueuedPrompt: () => this.getQueue()[0],
+          consumeQueuedPrompt: (eventID) => {
+            this.consumeQueuedPrompt(eventID);
+          },
+          runTurn: (text) =>
+            runSimulatedTurn({
+              prompt: text,
+              workspace: this.workspace,
+              emitEvent,
+            }),
+        });
         this.completeAgentTurn(generation, "idle");
       } catch (error) {
         this.completeAgentTurn(generation, "error");
@@ -1192,84 +1215,6 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       });
       this.broadcast({ type: "event", event: failed });
       throw error;
-    }
-  }
-
-  private async runSimulatedTurn(prompt: string) {
-    const searchTerm = extractSearchTerm(prompt);
-    const workspace = await this.workspace.ensureReady();
-    const searchOutput = await this.workspace.search(searchTerm);
-    const diffOutput = await this.workspace.diff();
-    const workspaceKind = workspace.directory.startsWith("github://")
-      ? "Workers-native GitHub snapshot"
-      : "Railway Sandbox";
-    const sequence: Array<{ delay: number; payload: Record<string, unknown> }> = [
-      {
-        delay: 180,
-        payload: {
-          type: "reasoning",
-          text: `I’ll inspect ${workspace.repository}@${workspace.commitSHA.slice(0, 8)} for ${searchTerm}, then read the shared Git diff.`,
-        },
-      },
-      {
-        delay: 260,
-        payload: {
-          type: "tool",
-          tool: "bash",
-          status: "running",
-          summary: "Searching the repository…",
-        },
-      },
-      {
-        delay: 320,
-        payload: {
-          type: "tool",
-          tool: "bash",
-          status: "completed",
-          summary:
-            searchOutput === "No matches found." ? "No matches" : "Repository search completed",
-          output: searchOutput,
-        },
-      },
-      {
-        delay: 280,
-        payload: {
-          type: "tool",
-          tool: "bash",
-          status: "completed",
-          summary: "Shared Git diff inspected",
-          output: diffOutput,
-        },
-      },
-      {
-        delay: 240,
-        payload: {
-          type: "text",
-          text: `I inspected the real workspace pinned at ${workspace.commitSHA.slice(0, 12)}. The search and diff transcripts above came from the ${workspaceKind}; no repository files were changed.`,
-        },
-      },
-    ];
-
-    for (const step of sequence) {
-      await wait(step.delay);
-      const event = this.insertEvent({
-        id: crypto.randomUUID(),
-        kind: "opencode",
-        createdAt: Date.now(),
-        payload: step.payload,
-      });
-      this.broadcast({ type: "event", event });
-    }
-  }
-
-  private async drainSimulatedQueue() {
-    while (true) {
-      const next = this.getQueue()[0];
-      if (!next) {
-        return;
-      }
-      this.consumeQueuedPrompt(next.eventID);
-      await this.runSimulatedTurn(next.text);
     }
   }
 
@@ -2032,40 +1977,4 @@ function cleanPullRequestText(
     );
   }
   return normalized;
-}
-
-function extractSearchTerm(prompt: string): string {
-  const tokens = prompt.match(/[A-Za-z_$][\w$.-]{2,}/g) ?? [];
-  const stopwords = new Set([
-    "agent",
-    "and",
-    "are",
-    "can",
-    "check",
-    "cite",
-    "code",
-    "does",
-    "files",
-    "find",
-    "for",
-    "from",
-    "how",
-    "implemented",
-    "implementation",
-    "investigate",
-    "look",
-    "real",
-    "repository",
-    "show",
-    "the",
-    "this",
-    "where",
-    "with",
-  ]);
-
-  return (
-    tokens.find((token) => /[A-Z].*[A-Z]/.test(token) || /[_.$-]/.test(token)) ??
-    tokens.find((token) => !stopwords.has(token.toLowerCase())) ??
-    "WebSocket"
-  );
 }
