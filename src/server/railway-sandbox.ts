@@ -16,11 +16,11 @@ export interface RailwaySandboxEnv {
   RAILWAY_SANDBOX_IDLE_TIMEOUT_MINUTES?: string;
 }
 
-export interface SandboxCommandResult extends ExecResult {
+interface SandboxCommandResult extends ExecResult {
   success: boolean;
 }
 
-export interface SandboxCommandOptions {
+interface SandboxCommandOptions {
   cwd?: string;
   timeout?: number;
   onStdout?: (chunk: string) => void;
@@ -192,26 +192,12 @@ export class RailwayRoomSandbox {
     await (await this.get()).files.write(path, content);
   }
 
-  async remove(path: string): Promise<void> {
-    await (await this.get()).files.remove(path);
-  }
-
   async list(path: string): Promise<SandboxFileEntry[]> {
     return (await this.get()).files.list(path);
   }
 
   async stat(path: string): Promise<SandboxFileEntry> {
     return (await this.get()).files.stat(path);
-  }
-
-  async destroy(): Promise<void> {
-    const sandbox = await this.getExisting();
-    if (!sandbox) {
-      return;
-    }
-    await sandbox.destroy();
-    this.current = undefined;
-    this.setSandboxID(null);
   }
 
   async get(): Promise<Sandbox> {
@@ -254,25 +240,6 @@ export class RailwayRoomSandbox {
       : await this.sandboxFactory.create(options);
     this.setSandboxID(sandbox.id);
     return sandbox;
-  }
-
-  private async getExisting(): Promise<Sandbox | undefined> {
-    if (this.current?.status === "RUNNING") {
-      return this.current;
-    }
-    const id = this.sandboxID();
-    if (!id || this.configurationError()) {
-      return undefined;
-    }
-    try {
-      return await this.sandboxFactory.connect(id, clientOptions(this.env));
-    } catch (error) {
-      if (error instanceof SandboxNotFoundError) {
-        this.setSandboxID(null);
-        return undefined;
-      }
-      throw error;
-    }
   }
 
   private sandboxID(): string | undefined {

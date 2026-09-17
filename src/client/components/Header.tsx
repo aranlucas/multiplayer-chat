@@ -124,7 +124,6 @@ export function Header({
       <div className="header-context branch-context">
         <GitBranch size={16} aria-hidden />
         <span>{room?.branch ?? DEFAULT_BRANCH}</span>
-        <ChevronDown size={14} aria-hidden />
       </div>
       <button
         className="header-context model-context"

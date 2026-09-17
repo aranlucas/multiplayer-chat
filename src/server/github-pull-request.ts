@@ -1,7 +1,6 @@
 import type { WorkspaceChange } from "../shared/workspace-change";
 
-export interface PullRequestInput {
-  accessToken: string;
+interface PullRequestInput {
   login: string;
   roomID: string;
   repository: string;
@@ -29,7 +28,7 @@ export interface ExistingPullRequest {
   headSHA: string;
 }
 
-export interface DeploymentObservation {
+interface DeploymentObservation {
   status: "waiting" | "building" | "ready" | "failed";
   environmentURL?: string;
   environment?: string;
@@ -56,10 +55,6 @@ export class GitHubPullRequestClient {
     private readonly accessToken: string,
     private readonly fetcher: typeof fetch = fetch,
   ) {}
-
-  async create(input: PullRequestInput): Promise<PullRequestResult> {
-    return this.publish(input);
-  }
 
   async publish(
     input: PullRequestInput,

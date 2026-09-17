@@ -3,7 +3,7 @@ export interface WorkspaceChange {
   content: string | null;
 }
 
-export interface GitChangePath {
+interface GitChangePath {
   path: string;
   deleted: boolean;
 }

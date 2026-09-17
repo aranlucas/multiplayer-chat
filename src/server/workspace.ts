@@ -7,7 +7,7 @@ import {
 } from "../shared/workspace-change";
 import { RailwayRoomSandbox, type RailwaySandboxEnv } from "./railway-sandbox";
 
-export type WorkspaceEnv = RailwaySandboxEnv;
+type WorkspaceEnv = RailwaySandboxEnv;
 
 interface WorkspaceRow {
   [key: string]: string | null;
@@ -18,14 +18,14 @@ interface WorkspaceRow {
   workspace_status: string;
 }
 
-export interface WorkspaceInfo {
+interface WorkspaceInfo {
   repository: string;
   branch: string;
   commitSHA: string;
   directory: string;
 }
 
-export interface PullRequestWorkspace extends WorkspaceInfo {
+interface PullRequestWorkspace extends WorkspaceInfo {
   changes: WorkspaceChange[];
 }
 

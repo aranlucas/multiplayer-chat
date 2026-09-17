@@ -4,7 +4,7 @@ import type { WorkspaceChange } from "../shared/workspace-change";
 import { RailwayRoomSandbox } from "./railway-sandbox";
 import { RepositoryWorkspace } from "./workspace";
 
-export interface EmbeddedTurnRequest {
+interface EmbeddedTurnRequest {
   roomID: string;
   prompt: string;
   delivery: "steer" | "queue";
