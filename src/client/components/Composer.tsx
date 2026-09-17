@@ -1,4 +1,4 @@
-import { ArrowUp, Clock3, CornerDownLeft, Paperclip, Zap } from "lucide-react";
+import { ArrowUp, Clock3, CornerDownLeft, Zap } from "lucide-react";
 import { useState } from "react";
 import type { DeliveryMode } from "../../shared/protocol";
 
@@ -67,14 +67,6 @@ export function Composer({ disabled, text, onTextChange, onSend }: ComposerProps
           maxLength={MAX_LENGTH}
         />
         <div className="composer-tools">
-          <button
-            type="button"
-            aria-label="Attach file"
-            disabled
-            title="Attachments are coming next"
-          >
-            <Paperclip size={17} />
-          </button>
           <span
             id="composer-char-count"
             className={`char-count ${isNearLimit ? "near-limit" : ""} ${isOverLimit ? "over-limit" : ""}`}

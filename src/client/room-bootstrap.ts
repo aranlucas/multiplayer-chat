@@ -7,7 +7,7 @@ export interface RelayBootstrap {
   resumeState?: {
     draft?: string;
     selectedID?: string;
-    mobileTab?: "transcript" | "people" | "queue";
+    mobileTab?: "transcript" | "brief" | "people" | "queue";
   };
 }
 

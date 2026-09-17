@@ -28,7 +28,11 @@ export function PermissionCard({
       {!compact ? (
         <p>{permission.message ?? "This side effect needs maintainer approval."}</p>
       ) : null}
-      {!compact ? <code>$ {permission.action} --env production</code> : null}
+      {!compact
+        ? permission.resources.map((resource, index) => (
+            <code key={`${index}:${resource}`}>{resource}</code>
+          ))
+        : null}
       {!compact ? (
         <div className="permission-meta">
           <span>Requested by OpenCode</span>

@@ -197,7 +197,7 @@ export type ClientMessage =
   | {
       type: "permission.reply";
       requestID: string;
-      reply: "once" | "always" | "reject";
+      reply: "once" | "reject";
     }
   | { type: "agent.pause" }
   | {
@@ -269,7 +269,7 @@ export function parseClientMessage(value: unknown): ClientMessage {
     if (typeof message.requestID !== "string") {
       throw new Error("Missing permission request ID");
     }
-    if (message.reply !== "once" && message.reply !== "always" && message.reply !== "reject") {
+    if (message.reply !== "once" && message.reply !== "reject") {
       throw new Error("Invalid permission reply");
     }
     return {

@@ -150,7 +150,7 @@ interface HandoffParticipant {
 interface HandoffClientState {
   draft?: string;
   selectedID?: string;
-  mobileTab?: "transcript" | "people" | "queue";
+  mobileTab?: "transcript" | "brief" | "people" | "queue";
 }
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -1117,7 +1117,6 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       return;
     }
 
-    const isFirstPrompt = this.countPromptEvents() === 0;
     const event = this.insertEvent({
       id: crypto.randomUUID(),
       kind: "prompt",
@@ -1131,10 +1130,6 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     });
     this.broadcast({ type: "event", event });
     this.send(socket, { type: "ack", requestID: message.requestID });
-
-    if (isFirstPrompt) {
-      // Title will be set by OpenCode's title agent via captureSessionTitle
-    }
 
     const configurationError = liveOpenCodeConfigurationError(this.env);
     if (configurationError) {
@@ -1456,7 +1451,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
   private async replyToPermission(
     requestID: string,
-    reply: "once" | "always" | "reject",
+    reply: "once" | "reject",
     participant: SocketAttachment["participant"],
   ) {
     const permission = this.ctx.storage.sql
@@ -1765,12 +1760,6 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     this.broadcast({ type: "room", room: this.getRoom() });
   }
 
-  private countPromptEvents(): number {
-    return this.ctx.storage.sql
-      .exec<{ count: number }>("SELECT COUNT(*) AS count FROM relay_events WHERE kind = 'prompt'")
-      .one().count;
-  }
-
   private hasEvent(id: string): boolean {
     return (
       this.ctx.storage.sql
@@ -1977,7 +1966,7 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function validateHandoffClientState(
+export function validateHandoffClientState(
   value: HandoffClientState | undefined,
 ): HandoffClientState | undefined {
   if (!value) {
@@ -1987,7 +1976,9 @@ function validateHandoffClientState(
   const selectedID =
     typeof value.selectedID === "string" ? value.selectedID.slice(0, 200) : undefined;
   const mobileTab =
-    value.mobileTab === "people" || value.mobileTab === "queue" ? value.mobileTab : "transcript";
+    value.mobileTab === "brief" || value.mobileTab === "people" || value.mobileTab === "queue"
+      ? value.mobileTab
+      : "transcript";
   return { draft, selectedID, mobileTab };
 }
 

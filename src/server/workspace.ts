@@ -5,7 +5,6 @@ import {
   parseWorkspaceChanges,
   type WorkspaceChange,
 } from "../shared/workspace-change";
-import { replaceExact } from "../shared/exact-edit";
 import { RailwayRoomSandbox, type RailwaySandboxEnv } from "./railway-sandbox";
 
 export type WorkspaceEnv = RailwaySandboxEnv;
@@ -116,36 +115,6 @@ export class RepositoryWorkspace {
     return truncate(result.stdout || "No matches found.");
   }
 
-  async readFile(path: string): Promise<string> {
-    const relativePath = validateRelativePath(path);
-    await this.ensureReady();
-    if (!this.sandbox.configured) {
-      this.ensureRemoteSchema();
-      const content = this.remoteFiles().get(relativePath);
-      if (content === undefined) {
-        throw new Error(`File is not tracked by the selected repository: ${relativePath}`);
-      }
-      return numberLines(content);
-    }
-    const tracked = await this.sandbox.exec(
-      `git ls-files --error-unmatch -- ${shellQuote(relativePath)}`,
-      {
-        cwd: WORKSPACE_DIRECTORY,
-        timeout: 15_000,
-      },
-    );
-    if (!tracked.success) {
-      throw new Error(`File is not tracked by the selected repository: ${relativePath}`);
-    }
-    const file = await this.sandbox.readFile(`${WORKSPACE_DIRECTORY}/${relativePath}`);
-    const numbered = file
-      .split("\n")
-      .slice(0, 1_500)
-      .map((line, index) => `${String(index + 1).padStart(6)} │ ${line}`)
-      .join("\n");
-    return truncate(numbered);
-  }
-
   async diff(): Promise<string> {
     await this.ensureReady();
     if (!this.sandbox.configured) {
@@ -182,46 +151,6 @@ export class RepositoryWorkspace {
       throw new Error(compactFailure("Unable to read the workspace diff", result));
     }
     return truncate(result.stdout || "Working tree is clean.");
-  }
-
-  async editFile(
-    filePath: string,
-    oldString: string,
-    newString: string,
-    replaceAll = false,
-  ): Promise<string> {
-    const path = normalizeWorkspacePath(filePath);
-    if (!oldString || oldString.length > 250_000) {
-      throw new Error("oldString must be between 1 and 250,000 characters");
-    }
-    if (newString.length > 250_000) {
-      throw new Error("newString must not exceed 250,000 characters");
-    }
-    if (oldString === newString) {
-      throw new Error("oldString and newString must be different");
-    }
-    await this.ensureReady();
-    if (this.sandbox.configured) {
-      const file = await this.sandbox
-        .readFile(`${WORKSPACE_DIRECTORY}/${path}`)
-        .catch(() => undefined);
-      if (!file) {
-        throw new Error(`File does not exist: ${path}`);
-      }
-      const content = replaceExact(file, oldString, newString, replaceAll);
-      ensureFileSize(path, content);
-      await this.sandbox.writeFile(`${WORKSPACE_DIRECTORY}/${path}`, content);
-      this.replaceWorkspaceChanges(await this.sandboxChanges());
-    } else {
-      const current = this.remoteFiles().get(path);
-      if (current === undefined) {
-        throw new Error(`File does not exist: ${path}`);
-      }
-      const content = replaceExact(current, oldString, newString, replaceAll);
-      ensureFileSize(path, content);
-      this.storeWorkspaceChange({ path, content });
-    }
-    return this.diff();
   }
 
   async pullRequestWorkspace(): Promise<PullRequestWorkspace & { workspaceRevision: number }> {
@@ -643,16 +572,6 @@ function decodeTarString(bytes: Uint8Array, decoder: TextDecoder): string {
   return decoder.decode(zero >= 0 ? bytes.subarray(0, zero) : bytes);
 }
 
-function numberLines(content: string): string {
-  return truncate(
-    content
-      .split("\n")
-      .slice(0, 1_500)
-      .map((line, index) => `${String(index + 1).padStart(6)} │ ${line}`)
-      .join("\n"),
-  );
-}
-
 function validateRepository(value: string): string {
   const normalized = value
     .trim()
@@ -677,29 +596,6 @@ function validateBranch(value: string): string {
     throw new Error("Branch contains unsupported characters");
   }
   return normalized;
-}
-
-function validateRelativePath(value: string): string {
-  const normalized = value.trim().replace(/^\.\//, "");
-  const segments = normalized.split("/");
-  if (
-    !normalized ||
-    normalized.length > 500 ||
-    normalized.startsWith("/") ||
-    segments.includes("..") ||
-    value.includes("\0")
-  ) {
-    throw new Error("File path must stay within the repository");
-  }
-  return normalized;
-}
-
-function normalizeWorkspacePath(value: string): string {
-  const trimmed = value.trim();
-  const relative = trimmed.startsWith(`${WORKSPACE_DIRECTORY}/`)
-    ? trimmed.slice(WORKSPACE_DIRECTORY.length + 1)
-    : trimmed;
-  return validateRelativePath(relative);
 }
 
 function ensureFileSize(path: string, content: string) {
