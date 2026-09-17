@@ -38,8 +38,7 @@ describe("GitHubPullRequestClient", () => {
       }
       return json({ message: "not found" }, 404);
     });
-    const result = await new GitHubPullRequestClient("token", fetcher).create({
-      accessToken: "token",
+    const result = await new GitHubPullRequestClient("token", fetcher).publish({
       login: "owner",
       roomID: "session-test",
       repository: "owner/repo",
@@ -73,8 +72,7 @@ describe("GitHubPullRequestClient", () => {
   it("does not call GitHub when the room has no changes", async () => {
     const fetcher = vi.fn<typeof fetch>();
     await expect(
-      new GitHubPullRequestClient("token", fetcher).create({
-        accessToken: "token",
+      new GitHubPullRequestClient("token", fetcher).publish({
         login: "owner",
         roomID: "room",
         repository: "owner/repo",
@@ -126,7 +124,6 @@ describe("GitHubPullRequestClient", () => {
     });
     const result = await new GitHubPullRequestClient("token", fetcher).publish(
       {
-        accessToken: "token",
         login: "owner",
         roomID: "room",
         repository: "owner/repo",
