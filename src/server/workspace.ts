@@ -18,7 +18,7 @@ interface WorkspaceRow {
   workspace_status: string;
 }
 
-interface WorkspaceInfo {
+export interface WorkspaceInfo {
   repository: string;
   branch: string;
   commitSHA: string;
