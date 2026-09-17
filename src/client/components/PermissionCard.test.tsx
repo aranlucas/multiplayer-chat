@@ -47,4 +47,10 @@ describe("PermissionCard", () => {
     expect(html).toContain("Approve");
     expect(html).not.toContain("Deny");
   });
+
+  it("applies permission-denied so muted CSS matches denied cards", () => {
+    const html = render(permission({ status: "denied" }));
+    expect(html).toContain("permission-denied");
+    expect(html).not.toContain("permission-rejected");
+  });
 });
