@@ -424,24 +424,6 @@ pre {
   font-size: 10px;
 }
 
-.rail-heading button {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dim);
-  cursor: pointer;
-}
-
-.rail-heading button:hover {
-  color: var(--text);
-  background: var(--panel-soft);
-}
-
 .activity-rail {
   grid-area: activity;
   min-width: 0;
@@ -462,11 +444,6 @@ pre {
   font-size: 10px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-.rail-heading button {
-  width: 28px;
-  height: 28px;
 }
 
 .activity-list {

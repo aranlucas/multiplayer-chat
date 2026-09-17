@@ -121,6 +121,15 @@ describe("Composer character counter", () => {
   });
 });
 
+describe("Composer tools", () => {
+  it("does not render a disabled attachment placeholder", () => {
+    renderComposer();
+    expect(screen.queryByRole("button", { name: /attach file/i })).toBeNull();
+    expect(screen.queryByTitle("Attachments are coming next")).toBeNull();
+    expect(screen.getByRole("button", { name: /send/i })).toBeTruthy();
+  });
+});
+
 describe("Composer delivery mode", () => {
   it("queued Send with nonempty text uses queue delivery", () => {
     const onSend = vi.fn(() => true);

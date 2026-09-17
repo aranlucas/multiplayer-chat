@@ -85,6 +85,17 @@ describe("preview handoff", () => {
     expect(result.current.error).toBeUndefined();
   });
 
+  it("keeps the brief tab in the transferred client state", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockReturnValue(new Promise(() => {}));
+    vi.stubGlobal("fetch", fetcher);
+    renderHook(() => usePreviewHandoff({ ...options, mobileTab: "brief" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+    const init = fetcher.mock.calls[0][1];
+    expect(JSON.parse(typeof init?.body === "string" ? init.body : "null")).toMatchObject({
+      clientState: { mobileTab: "brief" },
+    });
+  });
+
   it("does not transfer again when already on the preview origin", async () => {
     const fetcher = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetcher);

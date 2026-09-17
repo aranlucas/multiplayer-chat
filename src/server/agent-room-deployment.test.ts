@@ -7,7 +7,7 @@ vi.mock("./github-auth", () => ({
   sealGitHubCredential: async () => "sealed",
 }));
 
-import { AgentRoom } from "./agent-room";
+import { AgentRoom, validateHandoffClientState } from "./agent-room";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -120,5 +120,18 @@ describe("concurrent publication", () => {
     const input = { accessToken: "test", login: "maintainer" };
     await expect(room.createPullRequest(input)).rejects.toThrow("GitHub unavailable");
     await expect(room.createPullRequest(input)).resolves.toEqual({ commitSHA: "retry" });
+  });
+});
+
+describe("preview handoff client state", () => {
+  it("keeps the brief tab through redeem instead of collapsing it to transcript", () => {
+    expect(validateHandoffClientState({ draft: "unsent", mobileTab: "brief" })).toEqual({
+      draft: "unsent",
+      selectedID: undefined,
+      mobileTab: "brief",
+    });
+    expect(validateHandoffClientState({ mobileTab: "people" })?.mobileTab).toBe("people");
+    expect(validateHandoffClientState({ mobileTab: "queue" })?.mobileTab).toBe("queue");
+    expect(validateHandoffClientState({ mobileTab: "transcript" })?.mobileTab).toBe("transcript");
   });
 });

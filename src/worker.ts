@@ -131,7 +131,7 @@ app.post("/api/rooms/:room/handoffs", async (context) => {
       clientState?: {
         draft?: string;
         selectedID?: string;
-        mobileTab?: "transcript" | "people" | "queue";
+        mobileTab?: "transcript" | "brief" | "people" | "queue";
       };
     }>();
     if (!input.participant?.id || !input.participant.name) {

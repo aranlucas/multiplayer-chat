@@ -4,7 +4,6 @@ import {
   CircleEllipsis,
   CircleHelp,
   GitPullRequest,
-  ListFilter,
   Terminal,
   UserRound,
 } from "lucide-react";
@@ -22,9 +21,6 @@ export function ActivityRail({ events, selectedID, onSelect }: ActivityRailProps
     <aside className="activity-rail">
       <div className="rail-heading">
         <span>OpenCode session</span>
-        <button type="button" aria-label="Filter events">
-          <ListFilter size={16} />
-        </button>
       </div>
       <div className="activity-list">
         {events.map((event) => {

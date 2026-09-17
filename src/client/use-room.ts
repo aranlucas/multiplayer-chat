@@ -243,7 +243,7 @@ export function useRoom(
           requestID: crypto.randomUUID(),
         });
       },
-      reply(this: void, requestID: string, reply: "once" | "always" | "reject") {
+      reply(this: void, requestID: string, reply: "once" | "reject") {
         return send({ type: "permission.reply", requestID, reply });
       },
       answerQuestion(

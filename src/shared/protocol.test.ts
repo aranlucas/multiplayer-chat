@@ -207,6 +207,27 @@ describe("room protocol", () => {
         delivery: "steer",
       }),
     ).toThrow("Prompt must be between 1 and 8,000 characters");
+    expect(
+      parseClientMessage({
+        type: "permission.reply",
+        requestID: "p1",
+        reply: "once",
+      }),
+    ).toEqual({ type: "permission.reply", requestID: "p1", reply: "once" });
+    expect(
+      parseClientMessage({
+        type: "permission.reply",
+        requestID: "p1",
+        reply: "reject",
+      }),
+    ).toEqual({ type: "permission.reply", requestID: "p1", reply: "reject" });
+    expect(() =>
+      parseClientMessage({
+        type: "permission.reply",
+        requestID: "p1",
+        reply: "always",
+      }),
+    ).toThrow("Invalid permission reply");
     expect(() =>
       parseClientMessage({
         type: "permission.reply",
