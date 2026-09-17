@@ -1,5 +1,5 @@
 import { textValue } from "../../shared/text-value";
-import { Activity, ChevronDown, Circle, Clock3, UsersRound } from "lucide-react";
+import { Activity, Circle, Clock3, UsersRound } from "lucide-react";
 import type {
   Participant,
   PermissionRequest,
@@ -121,7 +121,6 @@ export function CollaborationRail({
         <h2>
           Permission requests{" "}
           <span>{permissions.filter((permission) => permission.status === "pending").length}</span>
-          <ChevronDown size={15} />
         </h2>
         {permissions.slice(0, 2).map((permission) => (
           <PermissionCard
