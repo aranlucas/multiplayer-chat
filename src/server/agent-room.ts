@@ -264,7 +264,6 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         : undefined;
     const result = await new GitHubPullRequestClient(input.accessToken).publish(
       {
-        accessToken: input.accessToken,
         login: input.login,
         roomID: room.id,
         repository: workspace.repository,
