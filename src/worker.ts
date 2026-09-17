@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { Sandbox } from "railway";
 import { safeParticipantName, safeRoomID } from "./shared/protocol";
 import { AgentRoom } from "./server/agent-room";
 import { liveOpenCodeConfigurationError, type WorkerEnv } from "./server/opencode";
@@ -13,44 +12,21 @@ import {
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
-app.get("/api/health", async (context) => {
-  const sandboxExecutor = "railway-sandbox";
-  const sandboxReachable = await railwaySandboxReachable(context.env);
+app.get("/api/health", (context) => {
   return context.json({
     ok: true,
     service: "relay-multiplayer-agent",
     opencodeMode: context.env.OPENCODE_MODE,
     opencodeProvider: context.env.OPENCODE_PROVIDER,
     opencodeConfigurationError: liveOpenCodeConfigurationError(context.env),
-    sandboxExecutor,
-    sandboxReachable,
+    sandboxConfigured: railwaySandboxConfigured(context.env),
     githubOAuthConfigured: githubOAuthConfigured(context.env),
   });
 });
 
-async function railwaySandboxReachable(env: WorkerEnv): Promise<boolean> {
+function railwaySandboxConfigured(env: WorkerEnv): boolean {
   const token = env.RAILWAY_TOKEN ?? env.RAILWAY_API_TOKEN;
-  if (!token || !env.RAILWAY_ENVIRONMENT_ID) {
-    return false;
-  }
-  try {
-    return await Promise.race([
-      Sandbox.list({
-        token,
-        authType: env.RAILWAY_TOKEN ? "project-token" : "bearer",
-        environmentId: env.RAILWAY_ENVIRONMENT_ID,
-        first: 1,
-        fetch: (input, init) => fetch(input, init),
-      }).then(() => true),
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5_000)),
-    ]);
-  } catch (error) {
-    console.error(
-      "Railway sandbox health check failed",
-      error instanceof Error ? error.message : "Unknown Railway error",
-    );
-    return false;
-  }
+  return Boolean(token && env.RAILWAY_ENVIRONMENT_ID);
 }
 
 app.get("/api/auth/github/start", async (context) => {
