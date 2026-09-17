@@ -44,28 +44,61 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
   });
   const { transitioning } = handoff;
   const attemptedPublication = useRef<string | undefined>(undefined);
+  const previousGithubError = useRef<string | undefined>(undefined);
   const pendingPermission = state.permissions.find((permission) => permission.status === "pending");
   const canApprove = identity.role === "maintainer";
+  const authenticated = github.state.authenticated;
+  const creating = github.state.creating;
+  const githubError = github.state.error;
+  const createPullRequest = github.createPullRequest;
+  const agentStatus = state.room?.agentStatus;
+  const autoPublishConfigured = state.room?.autoPublishConfigured;
+  const workspaceRevision = state.room?.workspaceRevision;
+  const publishedWorkspaceRevision = state.room?.publishedWorkspaceRevision;
+  const repository = state.room?.repository;
+  const branch = state.room?.branch;
 
   useEffect(() => {
-    const room = state.room;
+    if (previousGithubError.current && !githubError && !creating) {
+      attemptedPublication.current = undefined;
+    }
+    previousGithubError.current = githubError;
+
     if (
-      !github.state.authenticated ||
-      github.state.creating ||
-      github.state.error ||
-      room?.agentStatus !== "idle" ||
-      room.autoPublishConfigured ||
-      room.workspaceRevision <= room.publishedWorkspaceRevision
+      !authenticated ||
+      creating ||
+      agentStatus !== "idle" ||
+      autoPublishConfigured ||
+      workspaceRevision === undefined ||
+      publishedWorkspaceRevision === undefined ||
+      repository === undefined ||
+      branch === undefined ||
+      workspaceRevision <= publishedWorkspaceRevision
     ) {
       return;
     }
-    const publicationKey = `${roomID}:${room.repository}:${room.branch}:${room.workspaceRevision}`;
+    const publicationKey = `${roomID}:${repository}:${branch}:${workspaceRevision}`;
     if (attemptedPublication.current === publicationKey) {
       return;
     }
+    if (githubError && attemptedPublication.current === undefined) {
+      return;
+    }
     attemptedPublication.current = publicationKey;
-    void github.createPullRequest();
-  }, [github, roomID, state.room]);
+    void createPullRequest();
+  }, [
+    authenticated,
+    creating,
+    githubError,
+    createPullRequest,
+    roomID,
+    agentStatus,
+    autoPublishConfigured,
+    workspaceRevision,
+    publishedWorkspaceRevision,
+    repository,
+    branch,
+  ]);
 
   function reply(id: string, response: "once" | "reject") {
     actions.reply(id, response);
