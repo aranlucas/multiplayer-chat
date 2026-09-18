@@ -23,7 +23,7 @@
     "@opencode-ai/plugin": "0.0.0-dev-18683",
     "@opencode-ai/sdk": "0.0.0-dev-18683",
     "hono": "^4.13.5",
-    "lucide-react": "^1.38.0",
+    "lucide-react": "^1.45.0",
     "railway": "3.11.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
