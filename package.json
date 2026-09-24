@@ -20,7 +20,7 @@
     "cf-typegen": "wrangler types"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "0.0.0-dev-18683",
+    "@opencode-ai/plugin": "1.18.31",
     "@opencode-ai/sdk": "0.0.0-dev-18683",
     "hono": "^4.13.8",
     "lucide-react": "^1.47.0",
