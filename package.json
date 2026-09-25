@@ -39,7 +39,7 @@
     "jsdom": "^30.0.1",
     "oxfmt": "^0.69.0",
     "oxlint": "^1.85.0",
-    "oxlint-tsgolint": "^7.0.2001",
+    "oxlint-tsgolint": "^7.0.2002",
     "terser": "5.51.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
