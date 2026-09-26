@@ -1,6 +1,6 @@
 import { textValue } from "../shared/text-value";
 import { DurableObject } from "cloudflare:workers";
-import { OpenCodeWorkerd } from "@opencode-ai/sdk/workerd";
+import { OpenCodeWorkerd } from "@opencode/sdk/workerd";
 import type { WorkspaceChange } from "../shared/workspace-change";
 import {
   DEFAULT_BRANCH,

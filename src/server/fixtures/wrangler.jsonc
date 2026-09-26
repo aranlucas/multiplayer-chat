@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../node_modules/wrangler/config-schema.json",
+  "name": "relay-sdk-regression",
+  "main": "opencode-worker.ts",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "minify": true,
+  "define": {
+    "__dirname": "\"/\"",
+    "__filename": "\"/index.js\"",
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "HOSTS", "class_name": "OpenCodeTestHost" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OpenCodeTestHost"] }],
+}

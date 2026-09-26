@@ -1,4 +1,4 @@
-import { Plugin } from "@opencode-ai/plugin";
+import { Plugin } from "@opencode/plugin";
 import { MAX_WORKSPACE_FILE_BYTES } from "../shared/workspace-change";
 import { replaceExact } from "../shared/exact-edit";
 import { RailwayRoomSandbox } from "./railway-sandbox";
