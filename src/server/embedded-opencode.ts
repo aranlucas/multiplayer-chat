@@ -1,8 +1,8 @@
-import type { OpenCodeWorkerd } from "@opencode-ai/sdk/workerd";
+import type { OpenCodeWorkerd } from "@opencode/sdk/workerd";
 import type { OpenCodeModelOption } from "../shared/protocol";
 import type { WorkspaceChange } from "../shared/workspace-change";
-import { RailwayRoomSandbox } from "./railway-sandbox";
-import { RepositoryWorkspace } from "./workspace";
+import type { RailwayRoomSandbox } from "./railway-sandbox";
+import type { RepositoryWorkspace } from "./workspace";
 
 interface EmbeddedTurnRequest {
   roomID: string;
@@ -35,8 +35,8 @@ export interface EmbeddedTurnResult {
 export class EmbeddedOpenCodeRunner {
   constructor(
     private readonly host: Promise<OpenCodeWorkerd.Interface>,
-    private readonly workspace: RepositoryWorkspace,
-    private readonly sandbox: RailwayRoomSandbox,
+    private readonly workspace: Pick<RepositoryWorkspace, "ensureReady" | "syncSandboxChanges">,
+    private readonly sandbox: Pick<RailwayRoomSandbox, "killActive">,
   ) {}
 
   async turn(
@@ -174,12 +174,12 @@ export class EmbeddedOpenCodeRunner {
     answer: Record<string, string | string[]>,
   ): Promise<void> {
     const opencode = await this.host;
-    await opencode.form.reply({ sessionID, formID, answer });
+    await opencode.sessions.form.reply({ sessionID, formID, answer });
   }
 
   async cancelForm(sessionID: string, formID: string): Promise<void> {
     const opencode = await this.host;
-    await opencode.form.cancel({ sessionID, formID });
+    await opencode.sessions.form.cancel({ sessionID, formID });
   }
 
   async models(): Promise<OpenCodeModelOption[]> {

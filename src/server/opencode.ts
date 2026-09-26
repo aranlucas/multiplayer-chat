@@ -1,4 +1,4 @@
-import type { OpenCodeWorkerd } from "@opencode-ai/sdk/workerd";
+import type { OpenCodeWorkerd } from "@opencode/sdk/workerd";
 import type { OpenCodeModelOption } from "../shared/protocol";
 import type { GitHubOAuthEnv } from "./github-auth";
 import type { RailwaySandboxEnv } from "./railway-sandbox";

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
-vi.mock("@opencode-ai/sdk/workerd", () => ({ OpenCodeWorkerd: class {} }));
+vi.mock("@opencode/sdk/workerd", () => ({ OpenCodeWorkerd: class {} }));
 
 import app from "./worker";
 import type { WorkerEnv } from "./server/opencode";

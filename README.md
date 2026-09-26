@@ -13,6 +13,11 @@ pnpm dev
 
 Open the local URL printed by Vite. A local reconnect demo is available at `/r/reconnect-loop`.
 
+Relay uses `@opencode/sdk/workerd` and `@opencode/plugin`, following the
+[OpenCode Cloudflare SDK guide](https://opencode.ai/v2/docs/build/sdk/cloudflare/).
+Keep both packages pinned to the same release. Each room retains one host initialized
+with `blockConcurrencyWhile` and backed by the Durable Object's SQLite storage.
+
 ## Verify
 
 ```bash

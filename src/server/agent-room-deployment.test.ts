@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
-vi.mock("@opencode-ai/sdk/workerd", () => ({ OpenCodeWorkerd: class {} }));
+vi.mock("@opencode/sdk/workerd", () => ({ OpenCodeWorkerd: class {} }));
 vi.mock("./github-auth", () => ({
   unsealGitHubCredential: async () => ({ accessToken: "test", login: "maintainer" }),
   sealGitHubCredential: async () => "sealed",
