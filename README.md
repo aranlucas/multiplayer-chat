@@ -65,17 +65,17 @@ It requires `RELAY_CONTROL_ORIGIN` and `RELAY_DEPLOYMENT_WEBHOOK_SECRET` and onl
 
 ## Source map
 
-| Path | Responsibility |
-| --- | --- |
-| `src/client/` | Landing page, room UI, responsive navigation, connection state, GitHub controls, and event presentation. |
-| `src/server/agent-room.ts` | Durable Object room lifecycle, event persistence/broadcast, permissions, planning, workspace revisions, and pull-request publication. |
-| `src/server/embedded-opencode.ts`, `opencode.ts` | OpenCode Workerd host and provider/model configuration. |
-| `src/server/railway-sandbox.ts`, `railway-tools.ts` | Per-room Railway workspace and tool bridge. |
-| `src/server/workspace.ts` | Repository clone, edits, commits, and changed-file tracking. |
-| `src/server/github-auth.ts`, `github-pull-request.ts` | GitHub OAuth session and pull-request publication. |
-| `src/shared/` | Room protocol, exact-edit helpers, text normalization, and workspace-change contracts. |
-| `wrangler.jsonc` | Durable Object, asset, compatibility, and production variable configuration. |
-| `artifacts/` | Local desktop/mobile/native event captures used in this README and design review. |
+| Path                                                  | Responsibility                                                                                                                        |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/client/`                                         | Landing page, room UI, responsive navigation, connection state, GitHub controls, and event presentation.                              |
+| `src/server/agent-room.ts`                            | Durable Object room lifecycle, event persistence/broadcast, permissions, planning, workspace revisions, and pull-request publication. |
+| `src/server/embedded-opencode.ts`, `opencode.ts`      | OpenCode Workerd host and provider/model configuration.                                                                               |
+| `src/server/railway-sandbox.ts`, `railway-tools.ts`   | Per-room Railway workspace and tool bridge.                                                                                           |
+| `src/server/workspace.ts`                             | Repository clone, edits, commits, and changed-file tracking.                                                                          |
+| `src/server/github-auth.ts`, `github-pull-request.ts` | GitHub OAuth session and pull-request publication.                                                                                    |
+| `src/shared/`                                         | Room protocol, exact-edit helpers, text normalization, and workspace-change contracts.                                                |
+| `wrangler.jsonc`                                      | Durable Object, asset, compatibility, and production variable configuration.                                                          |
+| `artifacts/`                                          | Local desktop/mobile/native event captures used in this README and design review.                                                     |
 
 ## Status
 
