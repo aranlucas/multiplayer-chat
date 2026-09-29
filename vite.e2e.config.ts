@@ -7,5 +7,5 @@ export default defineConfig({
     __dirname: JSON.stringify("/"),
     __filename: JSON.stringify("/index.js"),
   },
-  plugins: [react(), cloudflare({ configPath: "./e2e/wrangler.jsonc" })],
+  plugins: [react(), cloudflare()],
 });

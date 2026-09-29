@@ -10,7 +10,7 @@ export default defineConfig({
       process.env.WORKERS_CI_COMMIT_SHA ?? process.env.RELAY_BUILD_SHA ?? "local-preview",
     ),
   },
-  plugins: [react(), cloudflare({ configPath: "./preview/wrangler.jsonc" })],
+  plugins: [react(), cloudflare()],
   build: {
     outDir: "dist-preview",
     minify: "terser",

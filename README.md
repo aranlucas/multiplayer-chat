@@ -47,7 +47,7 @@ pnpm test
 pnpm build
 ```
 
-The same commands are required by CI. `pnpm dev:e2e` starts the browser-oriented Vite/Cloudflare configuration on port 5176; its `e2e/wrangler.jsonc` uses simulation mode. The repository does not currently define a `test:e2e` script.
+The same commands are required by CI. `pnpm dev:e2e` starts the browser-oriented Vite/Cloudflare configuration on port 5176; its `e2e/cloudflare.config.ts` uses simulation mode. The repository does not currently define a `test:e2e` script.
 
 ## Deploy
 
@@ -55,7 +55,7 @@ The same commands are required by CI. `pnpm dev:e2e` starts the browser-oriented
 pnpm deploy
 ```
 
-This builds the Worker and runs `wrangler deploy` with the generated `dist/relay_multiplayer_agent/wrangler.json`. Cloudflare credentials and live-mode secrets must be configured in the target environment. Preview publication is a separate flow:
+This builds the Worker and runs `cf deploy --prebuilt` with the generated `.cloudflare/output` build output. Cloudflare credentials and live-mode secrets must be configured in the target environment. Preview publication is a separate flow:
 
 ```bash
 pnpm deploy:preview
@@ -74,7 +74,7 @@ It requires `RELAY_CONTROL_ORIGIN` and `RELAY_DEPLOYMENT_WEBHOOK_SECRET` and onl
 | `src/server/workspace.ts`                             | Repository clone, edits, commits, and changed-file tracking.                                                                          |
 | `src/server/github-auth.ts`, `github-pull-request.ts` | GitHub OAuth session and pull-request publication.                                                                                    |
 | `src/shared/`                                         | Room protocol, exact-edit helpers, text normalization, and workspace-change contracts.                                                |
-| `wrangler.jsonc`                                      | Durable Object, asset, compatibility, and production variable configuration.                                                          |
+| `cloudflare.config.ts`                                | Durable Object, asset, compatibility, and production variable configuration.                                                          |
 | `artifacts/`                                          | Local desktop/mobile/native event captures used in this README and design review.                                                     |
 
 ## Status

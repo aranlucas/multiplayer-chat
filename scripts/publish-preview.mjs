@@ -20,16 +20,7 @@ if (!controlOrigin || !webhookSecret) {
 const alias = `r-${commitSHA.slice(0, 12).toLowerCase()}`;
 const upload = spawnSync(
   "pnpm",
-  [
-    "exec",
-    "wrangler",
-    "versions",
-    "upload",
-    "--config",
-    "dist-preview/relay_multiplayer_preview/wrangler.json",
-    "--preview-alias",
-    alias,
-  ],
+  ["exec", "cf", "workers", "versions", "create", "--prebuilt", "--preview-alias", alias],
   { encoding: "utf8", stdio: ["inherit", "pipe", "pipe"] },
 );
 const output = `${upload.stdout ?? ""}\n${upload.stderr ?? ""}`;

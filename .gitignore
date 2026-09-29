@@ -11,3 +11,6 @@ worker-configuration.d.ts
 *.tsbuildinfo
 .DS_Store
 coverage
+
+# Cloudflare CLI build output and generated types
+.cloudflare/

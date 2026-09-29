@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:e2e": "vite --config vite.e2e.config.ts --port 5176",
-    "dev:preview": "VITE_RELAY_BUILD=preview VITE_RELAY_ACCENT='#ff5ca8' vite --config vite.preview.config.ts --port 5174",
+    "dev:e2e": "vite --config vite.e2e.config.ts --mode e2e --port 5176",
+    "dev:preview": "VITE_RELAY_BUILD=preview VITE_RELAY_ACCENT='#ff5ca8' vite --config vite.preview.config.ts --mode relay-preview --port 5174",
     "build": "tsc -b && vite build",
-    "build:preview": "tsc -b && VITE_RELAY_BUILD=preview VITE_RELAY_ACCENT='#ff5ca8' vite build --config vite.preview.config.ts",
+    "build:preview": "tsc -b && VITE_RELAY_BUILD=preview VITE_RELAY_ACCENT='#ff5ca8' vite build --config vite.preview.config.ts --mode relay-preview",
     "deploy:preview": "pnpm build:preview && node scripts/publish-preview.mjs",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
@@ -16,7 +16,7 @@
     "format:check": "oxfmt --check .",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run --config vitest.config.ts",
-    "deploy": "pnpm build && wrangler deploy --config dist/relay_multiplayer_agent/wrangler.json",
+    "deploy": "pnpm build && cf deploy --prebuilt",
     "cf-typegen": "wrangler types"
   },
   "dependencies": {
@@ -29,13 +29,14 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.60.2",
+    "@cloudflare/vite-plugin": "^2.0.0-beta.sha-ad79608dd",
     "@cloudflare/workers-types": "^5.20260926.1",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^26.6.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "cf": "1.0.0-beta.5",
     "jsdom": "^30.1.1",
     "oxfmt": "^0.70.0",
     "oxlint": "^1.85.0",
@@ -45,7 +46,7 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
     "vitest": "^5.0.2",
-    "wrangler": "^4.141.0"
+    "wrangler": "^4.143.0"
   },
   "packageManager": "pnpm@12.6.0"
 }
