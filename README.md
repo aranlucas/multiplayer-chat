@@ -80,5 +80,3 @@ It requires `RELAY_CONTROL_ORIGIN` and `RELAY_DEPLOYMENT_WEBHOOK_SECRET` and onl
 ## Status
 
 Relay is an active prototype with a deterministic local simulation path and a live Cloudflare/Railway path. The live path depends on external provider, sandbox, OAuth, and deployment configuration; the repository’s unit tests and local simulation do not prove those external services are available.
-
-See [Cloudflare CLI migration](CF_MIGRATION.md) for cf deployment and compatibility details.
