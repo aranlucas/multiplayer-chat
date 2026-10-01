@@ -13,7 +13,7 @@ importers:
         version: 2.0.18(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
       '@opencode/sdk':
         specifier: 2.0.18
-        version: 2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.0)(zod@3.25.76)
+        version: 2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.0)(zod@3.25.76)
       hono:
         specifier: ^4.13.9
         version: 4.13.9
@@ -34,8 +34,8 @@ importers:
         specifier: ^2.0.0-beta.sha-ad79608dd
         version: 2.0.0-beta.sha-c82c3efb3(@types/node@26.6.3)(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0))
       '@cloudflare/workers-types':
-        specifier: ^5.20260926.1
-        version: 5.20260926.1
+        specifier: ^5.20260928.1
+        version: 5.20260928.1
       '@testing-library/react':
         specifier: ^16.3.3
         version: 16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -83,7 +83,7 @@ importers:
         version: 5.0.2(@opentelemetry/api@1.9.0)(@types/node@26.6.3)(jsdom@30.1.1)(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0))
       wrangler:
         specifier: ^4.143.0
-        version: 4.143.0(@cloudflare/workers-types@5.20260926.1)(@types/node@26.6.3)
+        version: 4.143.0(@cloudflare/workers-types@5.20260928.1)(@types/node@26.6.3)
 
 packages:
 
@@ -411,8 +411,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@cloudflare/workers-types@5.20260926.1':
-    resolution: {integrity: sha512-jLtwSjBFtXucrEIj584vNk/k9OwgW4ij7/nK40hnCw137/0ilqfkTlYIUTWlTEbUX2V/+XVBijzZha9spdQTUw==}
+  '@cloudflare/workers-types@5.20260928.1':
+    resolution: {integrity: sha512-B/El15v5HqZyuyfR7Z0W443iA6Ml4nZjaR8rgHyW612r8reO+1JaDKtNbP3CPdzVIM2egp98by3NlpMm5pKbcg==}
 
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
@@ -4469,7 +4469,7 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20260926.1':
     optional: true
 
-  '@cloudflare/workers-types@5.20260926.1': {}
+  '@cloudflare/workers-types@5.20260928.1': {}
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
@@ -5137,7 +5137,7 @@ snapshots:
       acorn: 8.15.0
       effect: 4.0.0-rc.112
 
-  '@opencode/core@2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.0)':
+  '@opencode/core@2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@ai-sdk/cohere': 3.0.27(zod@4.1.8)
       '@ai-sdk/gateway': 3.0.104(zod@4.1.8)
@@ -5162,7 +5162,7 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       bun-pty: 0.4.8
       diff: 8.0.4
-      drizzle-orm: 1.0.0-rc.5-169397b(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(effect@4.0.0-rc.112)(zod@4.1.8)
+      drizzle-orm: 1.0.0-rc.5-169397b(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(effect@4.0.0-rc.112)(zod@4.1.8)
       effect: 4.0.0-rc.112
       fuzzysort: 3.1.0
       gitlab-ai-provider: 6.18.0(@ai-sdk/provider-utils@4.0.23(zod@4.1.8))(@ai-sdk/provider@3.0.8)(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(graphql@16.14.2)(supports-color@10.2.2)(ws@8.21.0)
@@ -5248,7 +5248,7 @@ snapshots:
       - valibot
       - ws
 
-  '@opencode/core@2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.22.0)':
+  '@opencode/core@2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.22.0)':
     dependencies:
       '@ai-sdk/cohere': 3.0.27(zod@4.1.8)
       '@ai-sdk/gateway': 3.0.104(zod@4.1.8)
@@ -5273,7 +5273,7 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       bun-pty: 0.4.8
       diff: 8.0.4
-      drizzle-orm: 1.0.0-rc.5-169397b(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(effect@4.0.0-rc.112)(zod@4.1.8)
+      drizzle-orm: 1.0.0-rc.5-169397b(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(effect@4.0.0-rc.112)(zod@4.1.8)
       effect: 4.0.0-rc.112
       fuzzysort: 3.1.0
       gitlab-ai-provider: 6.18.0(@ai-sdk/provider-utils@4.0.23(zod@4.1.8))(@ai-sdk/provider@3.0.8)(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(graphql@16.14.2)(supports-color@10.2.2)(ws@8.22.0)
@@ -5407,13 +5407,13 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       effect: 4.0.0-rc.112
 
-  '@opencode/sdk@2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.0)(zod@3.25.76)':
+  '@opencode/sdk@2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.0)(zod@3.25.76)':
     dependencies:
       '@opencode/client': 2.0.18(effect@4.0.0-rc.112)
-      '@opencode/core': 2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.22.0)
+      '@opencode/core': 2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.22.0)
       '@opencode/plugin': 2.0.18(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
       '@opencode/schema': 2.0.18
-      '@opencode/server': 2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.0)(zod@3.25.76)
+      '@opencode/server': 2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.0)(zod@3.25.76)
       '@opencode/util': 2.0.18(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
       effect: 4.0.0-rc.112
     transitivePeerDependencies:
@@ -5486,16 +5486,16 @@ snapshots:
       - ws
       - zod
 
-  '@opencode/server@2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.0)(zod@3.25.76)':
+  '@opencode/server@2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.0)(zod@3.25.76)':
     dependencies:
       '@effect/platform-node': 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.0-rc.112(effect@4.0.0-rc.112)
-      '@opencode/core': 2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.22.0)
+      '@opencode/core': 2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.22.0)
       '@opencode/protocol': 2.0.18
       '@opencode/schema': 2.0.18
-      '@opencode/simulation': 2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)
+      '@opencode/simulation': 2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)
       '@opencode/util': 2.0.18(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
-      drizzle-orm: 1.0.0-rc.5-169397b(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(effect@4.0.0-rc.112)(zod@3.25.76)
+      drizzle-orm: 1.0.0-rc.5-169397b(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(effect@4.0.0-rc.112)(zod@3.25.76)
       effect: 4.0.0-rc.112
     transitivePeerDependencies:
       - '@aws-sdk/client-rds-data'
@@ -5567,10 +5567,10 @@ snapshots:
       - ws
       - zod
 
-  '@opencode/simulation@2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)':
+  '@opencode/simulation@2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)':
     dependencies:
       '@opencode/ai': 2.0.18(supports-color@10.2.2)
-      '@opencode/core': 2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.0)
+      '@opencode/core': 2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.0)
       '@opencode/plugin': 2.0.18(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
       '@opencode/protocol': 2.0.18
       '@opencode/util': 2.0.18(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
@@ -6569,16 +6569,16 @@ snapshots:
       domelementtype: 2.3.0
       domhandler: 5.0.3
 
-  drizzle-orm@1.0.0-rc.5-169397b(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(effect@4.0.0-rc.112)(zod@3.25.76):
+  drizzle-orm@1.0.0-rc.5-169397b(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(effect@4.0.0-rc.112)(zod@3.25.76):
     optionalDependencies:
-      '@cloudflare/workers-types': 5.20260926.1
+      '@cloudflare/workers-types': 5.20260928.1
       '@opentelemetry/api': 1.9.0
       effect: 4.0.0-rc.112
       zod: 3.25.76
 
-  drizzle-orm@1.0.0-rc.5-169397b(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(effect@4.0.0-rc.112)(zod@4.1.8):
+  drizzle-orm@1.0.0-rc.5-169397b(@cloudflare/workers-types@5.20260928.1)(@opentelemetry/api@1.9.0)(effect@4.0.0-rc.112)(zod@4.1.8):
     optionalDependencies:
-      '@cloudflare/workers-types': 5.20260926.1
+      '@cloudflare/workers-types': 5.20260928.1
       '@opentelemetry/api': 1.9.0
       effect: 4.0.0-rc.112
       zod: 4.1.8
@@ -7957,7 +7957,7 @@ snapshots:
       '@cloudflare/workerd-linux-arm64': 1.20260926.1
       '@cloudflare/workerd-windows-64': 1.20260926.1
 
-  wrangler@4.143.0(@cloudflare/workers-types@5.20260926.1)(@types/node@26.6.3):
+  wrangler@4.143.0(@cloudflare/workers-types@5.20260928.1)(@types/node@26.6.3):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.5.0
       '@cloudflare/unenv-preset': 2.16.2(unenv@2.0.0-rc.24)(workerd@1.20260926.1)
@@ -7968,7 +7968,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       workerd: 1.20260926.1
     optionalDependencies:
-      '@cloudflare/workers-types': 5.20260926.1
+      '@cloudflare/workers-types': 5.20260928.1
       fsevents: 2.3.3
     transitivePeerDependencies:
       - '@types/node'
