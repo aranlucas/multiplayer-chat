@@ -22,7 +22,7 @@
   "dependencies": {
     "@opencode/plugin": "2.0.18",
     "@opencode/sdk": "2.0.18",
-    "hono": "^4.13.9",
+    "hono": "^4.13.10",
     "lucide-react": "^1.48.0",
     "railway": "3.11.0",
     "react": "^19.3.0",

@@ -15,8 +15,8 @@ importers:
         specifier: 2.0.18
         version: 2.0.18(@aws-sdk/credential-provider-node@3.972.84)(@cloudflare/workers-types@5.20260926.1)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.12(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.4)(ai@6.0.292(zod@3.25.76))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.0)(zod@3.25.76)
       hono:
-        specifier: ^4.13.9
-        version: 4.13.9
+        specifier: ^4.13.10
+        version: 4.13.10
       lucide-react:
         specifier: ^1.48.0
         version: 1.48.0(react@19.3.0)
@@ -2908,8 +2908,8 @@ packages:
     resolution: {integrity: sha512-+CqsMbHPiSTdtSO14O51eMNlrp9N79gmeqmXeouJOhfucAedHw9noVe/n5uJk3tbKE6a+6ZCQg3RPhVhHByAIw==}
     engines: {node: '>=18'}
 
-  hono@4.13.9:
-    resolution: {integrity: sha512-7dMkQmZoC4E6F7AtaQSPhlWAdnBti+j7rreMZl8QB4jFiEhP9TWbGWUMi8WYzBCgmgulxuvLQupKqo+Co6Omyg==}
+  hono@4.13.10:
+    resolution: {integrity: sha512-dQuLsa5oO+47QVMVMaaD9cIv8ctmVtK1iRvwWngkfloFJMeFeuoUFDswIqZGxmGX3hrRzREgEArjkK9OgsQEhA==}
     engines: {node: '>=16.9.0'}
 
   hosted-git-info@9.0.3:
@@ -6883,7 +6883,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  hono@4.13.9: {}
+  hono@4.13.10: {}
 
   hosted-git-info@9.0.3:
     dependencies:
