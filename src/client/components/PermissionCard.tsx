@@ -35,7 +35,7 @@ export function PermissionCard({
           <span>{formatTime(permission.createdAt)}</span>
         </div>
       ) : null}
-      {!compact && pending ? <small>Needs maintainer approval</small> : null}
+      {pending && (!compact || !canApprove) ? <small>Needs maintainer approval</small> : null}
       {pending ? (
         <div className="permission-actions">
           <button
