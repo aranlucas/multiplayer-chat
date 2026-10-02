@@ -39,13 +39,13 @@ describe("PermissionCard", () => {
     expect(html).not.toContain("--env production");
   });
 
-  it("keeps compact cards to action and reply controls", () => {
+  it("keeps scope details and both reply choices in compact cards", () => {
     const html = render(permission(), true);
     expect(html).toContain("shell");
-    expect(html).not.toContain("Run a mutating shell command");
-    expect(html).not.toContain("src/worker.ts");
-    expect(html).toContain("Approve");
-    expect(html).not.toContain("Deny");
+    expect(html).toContain("Run a mutating shell command");
+    expect(html).toContain("src/worker.ts");
+    expect(html).toContain("Approve once");
+    expect(html).toContain("Deny");
   });
 
   it("applies permission-denied so muted CSS matches denied cards", () => {

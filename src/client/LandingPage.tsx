@@ -307,9 +307,7 @@ function RelayMock() {
           <div className="mock-permission">
             <strong>Allow bash?</strong>
             <code>rm -rf /tmp/cache</code>
-            <button className="mock-allow" type="button">
-              Allow once
-            </button>
+            <span className="mock-allow">Allow once</span>
           </div>
         </aside>
       </div>

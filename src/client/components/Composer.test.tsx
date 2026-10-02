@@ -138,9 +138,13 @@ describe("Composer delivery mode", () => {
       return <Composer text={text} onTextChange={setText} onSend={onSend} />;
     }
     render(<TestWrapper />);
+    expect(screen.getByRole("button", { name: /steer now/i, pressed: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /queue next/i, pressed: false })).toBeTruthy();
     act(() => {
       fireEvent.click(screen.getByRole("button", { name: /queue next/i }));
     });
+    expect(screen.getByRole("button", { name: /queue next/i, pressed: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /steer now/i, pressed: false })).toBeTruthy();
     act(() => {
       fireEvent.click(screen.getByRole("button", { name: /send/i }));
     });

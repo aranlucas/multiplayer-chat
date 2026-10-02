@@ -25,14 +25,10 @@ export function PermissionCard({
         <strong>{permission.action}</strong>
         <span>{permission.status}</span>
       </div>
-      {!compact ? (
-        <p>{permission.message ?? "This side effect needs maintainer approval."}</p>
-      ) : null}
-      {!compact
-        ? permission.resources.map((resource, index) => (
-            <code key={`${index}:${resource}`}>{resource}</code>
-          ))
-        : null}
+      <p>{permission.message ?? "This side effect needs maintainer approval."}</p>
+      {permission.resources.map((resource, index) => (
+        <code key={`${index}:${resource}`}>{resource}</code>
+      ))}
       {!compact ? (
         <div className="permission-meta">
           <span>Requested by OpenCode</span>
@@ -47,18 +43,16 @@ export function PermissionCard({
             onClick={() => onReply(permission.id, "once")}
             disabled={!canApprove}
           >
-            <Check size={16} /> Approve
+            <Check size={16} /> Approve once
           </button>
-          {!compact ? (
-            <button
-              className="deny"
-              type="button"
-              onClick={() => onReply(permission.id, "reject")}
-              disabled={!canApprove}
-            >
-              <X size={16} /> Deny
-            </button>
-          ) : null}
+          <button
+            className="deny"
+            type="button"
+            onClick={() => onReply(permission.id, "reject")}
+            disabled={!canApprove}
+          >
+            <X size={16} /> Deny
+          </button>
         </div>
       ) : null}
     </article>
