@@ -1,4 +1,4 @@
-import { getIdentity, type RoomIdentity } from "./use-room";
+import { getIdentity, rememberIdentity, type RoomIdentity } from "./use-room";
 
 export interface RelayBootstrap {
   roomID: string;
@@ -49,6 +49,7 @@ export async function resolveRelayBootstrap(): Promise<RelayBootstrap> {
   }
 
   rememberIdentity(roomID, result.participant);
+  rememberClientState(roomID, result.clientState);
   window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
   return {
     roomID,
@@ -58,10 +59,24 @@ export async function resolveRelayBootstrap(): Promise<RelayBootstrap> {
   };
 }
 
-function rememberIdentity(roomID: string, identity: RoomIdentity) {
-  const storageKey = `relay:${roomID}:${identity.name}:participant`;
-  window.localStorage.setItem(storageKey, identity.id);
-  window.localStorage.setItem(`relay:${roomID}:identity`, JSON.stringify(identity));
+function rememberClientState(roomID: string, state: RelayBootstrap["resumeState"]) {
+  if (!state) {
+    return;
+  }
+  if (typeof state.draft === "string") {
+    window.sessionStorage.setItem(`relay:${roomID}:draft`, state.draft);
+  }
+  if (typeof state.selectedID === "string") {
+    window.sessionStorage.setItem(`relay:${roomID}:selected`, state.selectedID);
+  }
+  if (
+    state.mobileTab === "transcript" ||
+    state.mobileTab === "brief" ||
+    state.mobileTab === "people" ||
+    state.mobileTab === "queue"
+  ) {
+    window.sessionStorage.setItem(`relay:${roomID}:mobile-tab`, state.mobileTab);
+  }
 }
 
 function safeOrigin(value: string): string {

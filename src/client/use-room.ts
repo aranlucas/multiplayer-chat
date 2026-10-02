@@ -77,29 +77,44 @@ export function getIdentity(roomID: string): RoomIdentity {
       requestedName === "You"
         ? crypto.randomUUID()
         : requestedName.toLowerCase().replace(/[^a-z0-9]/g, "-");
-    window.localStorage.setItem(storageKey, id);
   }
   const identity = { id, name: requestedName, role: requestedRole };
-  window.localStorage.setItem(`relay:${roomID}:identity`, JSON.stringify(identity));
+  rememberIdentity(roomID, identity);
   return identity;
 }
 
+export function rememberIdentity(roomID: string, identity: RoomIdentity) {
+  window.localStorage.setItem(`relay:${roomID}:${identity.name}:participant`, identity.id);
+  const key = `relay:${roomID}:identity`;
+  const value = JSON.stringify(identity);
+  window.sessionStorage.setItem(key, value);
+  window.localStorage.setItem(key, value);
+}
+
 function rememberedIdentity(roomID: string): RoomIdentity | undefined {
-  try {
-    const value = window.localStorage.getItem(`relay:${roomID}:identity`);
-    if (!value) {
-      return undefined;
+  const key = `relay:${roomID}:identity`;
+  for (const storage of [window.sessionStorage, window.localStorage]) {
+    try {
+      const value = storage.getItem(key);
+      if (!value) {
+        continue;
+      }
+      const identity: unknown = JSON.parse(value);
+      if (
+        identity &&
+        typeof identity === "object" &&
+        "id" in identity &&
+        typeof identity.id === "string" &&
+        "name" in identity &&
+        typeof identity.name === "string" &&
+        "role" in identity &&
+        (identity.role === "maintainer" || identity.role === "contributor")
+      ) {
+        return { id: identity.id, name: identity.name, role: identity.role };
+      }
+    } catch {
+      // Try the persistent fallback when tab identity state is malformed.
     }
-    const identity = JSON.parse(value) as Partial<RoomIdentity>;
-    if (
-      typeof identity.id === "string" &&
-      typeof identity.name === "string" &&
-      (identity.role === "maintainer" || identity.role === "contributor")
-    ) {
-      return identity as RoomIdentity;
-    }
-  } catch {
-    // Ignore malformed local identity state.
   }
   return undefined;
 }
