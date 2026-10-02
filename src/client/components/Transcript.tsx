@@ -45,7 +45,9 @@ export function Transcript({
   useEffect(() => {
     if (selectedID) {
       selectedRef.current?.scrollIntoView({
-        behavior: "smooth",
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "instant"
+          : "smooth",
         block: "center",
       });
     }
@@ -55,6 +57,12 @@ export function Transcript({
     <section className="transcript" aria-label="Agent session transcript">
       <div className="transcript-scroll">
         <div className="transcript-inner">
+          {events.length === 0 ? (
+            <div className="transcript-empty">
+              <h2>Start a shared conversation</h2>
+              <p>Send a prompt below. Agent updates and teammates’ messages will appear here.</p>
+            </div>
+          ) : null}
           {events.map((event) => (
             <TranscriptEvent
               event={event}

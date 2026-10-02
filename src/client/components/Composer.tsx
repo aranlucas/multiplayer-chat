@@ -37,6 +37,7 @@ export function Composer({ disabled, text, onTextChange, onSend }: ComposerProps
         <button
           className={delivery === "steer" ? "is-active" : ""}
           type="button"
+          aria-pressed={delivery === "steer"}
           onClick={() => setDelivery("steer")}
         >
           <Zap size={15} /> Steer now
@@ -44,6 +45,7 @@ export function Composer({ disabled, text, onTextChange, onSend }: ComposerProps
         <button
           className={delivery === "queue" ? "is-active" : ""}
           type="button"
+          aria-pressed={delivery === "queue"}
           onClick={() => setDelivery("queue")}
         >
           <Clock3 size={15} /> Queue next

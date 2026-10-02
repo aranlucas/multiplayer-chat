@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RoomInfo } from "../shared/protocol";
 import type { RelayBootstrap } from "./room-bootstrap";
 import type { RoomState } from "./use-room";
 import { App } from "./App";
+import { draftStorageKey } from "./draft-storage";
 
 const harness = vi.hoisted(() => {
   const createPullRequest = vi.fn(async (): Promise<string | undefined> => undefined);
@@ -112,11 +113,13 @@ beforeEach(() => {
   harness.github.state.creating = false;
   harness.github.state.error = undefined;
   harness.roomState.room = unpublishedRoom();
+  harness.actions.prompt.mockReset().mockReturnValue(true);
 });
 
 afterEach(() => {
   cleanup();
   sessionStorage.clear();
+  vi.restoreAllMocks();
 });
 
 describe("GitHub auto-publish effect", () => {
@@ -159,5 +162,71 @@ describe("GitHub auto-publish effect", () => {
     harness.github.state.error = "Unable to read the GitHub connection";
     renderApp();
     expect(harness.createPullRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("Unsent room drafts", () => {
+  const key = draftStorageKey(bootstrap.controlOrigin, bootstrap.roomID, bootstrap.identity.id);
+
+  it("restores typed text after remount and clears storage after an accepted send", () => {
+    const first = renderApp();
+    fireEvent.change(screen.getByRole("textbox", { name: "Ask or steer the agent" }), {
+      target: { value: "Synthetic unsent draft" },
+    });
+    first.unmount();
+    renderApp();
+    expect(screen.getByRole("textbox", { name: "Ask or steer the agent" })).toHaveProperty(
+      "value",
+      "Synthetic unsent draft",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(harness.actions.prompt).toHaveBeenCalledWith("Synthetic unsent draft", "steer");
+    expect(sessionStorage.getItem(key)).toBeNull();
+  });
+
+  it("retains the draft when the room rejects a send", () => {
+    harness.actions.prompt.mockReturnValue(false);
+    renderApp();
+    fireEvent.change(screen.getByRole("textbox", { name: "Ask or steer the agent" }), {
+      target: { value: "Keep on rejected send" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(sessionStorage.getItem(key)).toBe("Keep on rejected send");
+  });
+
+  it("isolates stored drafts by control origin, room and participant", () => {
+    sessionStorage.setItem(key, "Private synthetic draft");
+    for (const other of [
+      { ...bootstrap, roomID: "room-2" },
+      { ...bootstrap, controlOrigin: "https://other.example" },
+      { ...bootstrap, identity: { ...bootstrap.identity, id: "person-2" } },
+    ]) {
+      const view = render(<App bootstrap={other} />);
+      expect(screen.getByRole("textbox", { name: "Ask or steer the agent" })).toHaveProperty(
+        "value",
+        "",
+      );
+      view.unmount();
+    }
+    expect(sessionStorage.getItem(key)).toBe("Private synthetic draft");
+  });
+
+  it("keeps typing in memory and explains recovery when draft storage fails", () => {
+    const original = Storage.prototype.setItem.bind(sessionStorage);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation((name, value) => {
+      if (name.startsWith("relay:draft:")) {
+        throw new DOMException("Quota exhausted", "QuotaExceededError");
+      }
+      original(name, value);
+    });
+    renderApp();
+    fireEvent.change(screen.getByRole("textbox", { name: "Ask or steer the agent" }), {
+      target: { value: "Still typing" },
+    });
+    expect(screen.getByRole("textbox", { name: "Ask or steer the agent" })).toHaveProperty(
+      "value",
+      "Still typing",
+    );
+    expect(screen.getByRole("status").textContent).toContain("copy it before reloading");
   });
 });

@@ -275,7 +275,11 @@ export function Header({
                             : "Agent ready"}
         </span>
       </div>
-      <div className="header-avatars" aria-label={`${online.length} participants online`}>
+      <div
+        className="header-avatars"
+        role="group"
+        aria-label={`${online.length} participants online`}
+      >
         {online.slice(0, 4).map((participant) => (
           <span
             className="avatar avatar-small"
@@ -287,13 +291,25 @@ export function Header({
           </span>
         ))}
       </div>
-      <button className="header-button new-thread-button" type="button" onClick={onNewThread}>
+      <button
+        className="header-button new-thread-button"
+        type="button"
+        aria-label="New thread"
+        onClick={onNewThread}
+      >
         <MessageSquarePlus size={16} />
         <span>New thread</span>
       </button>
       <button
         className="header-button pr-button"
         type="button"
+        aria-label={
+          pullRequestURL
+            ? "View pull request"
+            : githubLogin
+              ? "Create pull request"
+              : "Connect GitHub"
+        }
         onClick={onPullRequest}
         disabled={
           (!githubConfigured && !pullRequestURL) ||
@@ -313,6 +329,7 @@ export function Header({
       <button
         className="header-button"
         type="button"
+        aria-label={copied ? "Room link copied" : "Share room"}
         onClick={() => {
           void share();
         }}

@@ -11,6 +11,7 @@ import { Header } from "./components/Header";
 import { MobileTabs, type MobileTab } from "./components/MobileTabs";
 import { Transcript } from "./components/Transcript";
 import { ImplementationBrief } from "./components/ImplementationBrief";
+import { draftStorageKey, readDraft, writeDraft } from "./draft-storage";
 
 export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
   const { roomID, identity, controlOrigin } = bootstrap;
@@ -29,10 +30,19 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
     const stored = window.sessionStorage.getItem(`relay:${roomID}:mobile-tab`);
     return stored === "brief" || stored === "people" || stored === "queue" ? stored : "transcript";
   });
-  const [draft, setDraft] = useState(
-    () =>
-      bootstrap.resumeState?.draft ?? window.sessionStorage.getItem(`relay:${roomID}:draft`) ?? "",
-  );
+  const draftKey = draftStorageKey(controlOrigin, roomID, identity.id);
+  const [draft, setDraft] = useState(() => bootstrap.resumeState?.draft ?? readDraft(draftKey));
+  const [draftStorageFailed, setDraftStorageFailed] = useState(false);
+  useEffect(() => {
+    if (bootstrap.resumeState?.draft !== undefined) {
+      writeDraft(draftKey, bootstrap.resumeState.draft);
+    }
+  }, [draftKey, bootstrap.resumeState?.draft]);
+
+  function changeDraft(text: string) {
+    setDraft(text);
+    setDraftStorageFailed(!writeDraft(draftKey, text));
+  }
   const handoff = usePreviewHandoff({
     roomID,
     controlOrigin,
@@ -118,6 +128,9 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#room-content">
+        Skip to conversation
+      </a>
       <Header
         room={state.room}
         models={state.models}
@@ -137,6 +150,10 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
         onConfigureModel={actions.configureModel}
         onRenameRoom={actions.renameRoom}
       />
+      <p className="mobile-workspace-context">
+        <span>{state.room?.repository ?? "Loading repository…"}</span>
+        <code>{state.room?.branch}</code>
+      </p>
       <MobileTabs
         active={mobileTab}
         participants={state.participants.length}
@@ -145,7 +162,7 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
         onChange={setMobileTab}
       />
       <ActivityRail events={state.events} selectedID={selectedID} onSelect={setSelectedID} />
-      <main className={`main-column mobile-tab-${mobileTab}`}>
+      <main id="room-content" tabIndex={-1} className={`main-column mobile-tab-${mobileTab}`}>
         {mobileTab === "brief" ? (
           <ImplementationBrief
             brief={state.brief}
@@ -178,10 +195,16 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
             onQuestionCancel={actions.dismissQuestion}
           />
         )}
+        {draftStorageFailed ? (
+          <p className="draft-storage-warning" role="status">
+            Browser storage is unavailable. Your draft stays here while this tab is open; copy it
+            before reloading.
+          </p>
+        ) : null}
         <Composer
           disabled={state.connection !== "connected" || transitioning}
           text={draft}
-          onTextChange={setDraft}
+          onTextChange={changeDraft}
           onSend={actions.prompt}
         />
       </main>
@@ -203,7 +226,9 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
         onResolveReview={actions.resolveBriefReview}
       />
       {state.error || github.state.error ? (
-        <div className="error-toast">{state.error ?? github.state.error}</div>
+        <div role="alert" className="error-toast">
+          {state.error ?? github.state.error}
+        </div>
       ) : null}
       {handoff.error ? (
         <div role="alert" className="error-toast">

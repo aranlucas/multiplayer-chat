@@ -24,6 +24,7 @@ export function MobileTabs({ active, participants, queued, decisions, onChange }
           className={active === tab.id ? "is-active" : ""}
           key={tab.id}
           type="button"
+          aria-pressed={active === tab.id}
           onClick={() => onChange(tab.id)}
         >
           {tab.label} {tab.count !== undefined ? <span>{tab.count}</span> : null}

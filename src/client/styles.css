@@ -14,7 +14,7 @@
   --border-soft: #20262a;
   --text: #f4f7f5;
   --muted: #929ba3;
-  --dim: #69737b;
+  --dim: #89969f;
   --lime: #95e853;
   --lime-soft: rgba(149, 232, 83, 0.12);
   --amber: #eba62c;
@@ -54,10 +54,67 @@ button {
   color: inherit;
 }
 
-button:focus-visible,
-textarea:focus-visible {
+:root :is(button, input, select, textarea, a):focus-visible,
+.composer textarea:focus-visible {
   outline: 2px solid var(--lime);
   outline-offset: 2px;
+}
+
+.composer textarea:focus-visible {
+  outline-offset: -3px;
+}
+
+::selection {
+  background: var(--lime);
+  color: var(--bg);
+}
+
+input,
+textarea {
+  caret-color: var(--lime);
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 110;
+  top: 8px;
+  left: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--lime);
+  color: var(--bg);
+  transform: translateY(-160%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.transcript-empty {
+  max-width: 42ch;
+  margin: 36px auto;
+  color: var(--muted);
+}
+
+.transcript-empty h2 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.transcript-empty p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.draft-storage-warning {
+  margin: 8px 20px 0;
+  color: var(--amber);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 code,
@@ -1148,7 +1205,7 @@ pre {
 }
 
 .composer textarea::placeholder {
-  color: #657078;
+  color: var(--dim);
 }
 
 .composer-tools {
@@ -1157,7 +1214,7 @@ pre {
   gap: 9px;
   min-height: 36px;
   padding: 2px 7px 7px 9px;
-  color: #657078;
+  color: var(--dim);
 }
 
 .composer-tools span {
@@ -1839,7 +1896,6 @@ pre {
 }
 
 .permission-card.permission-denied {
-  opacity: 0.62;
   border-color: var(--border);
   background: #111518;
 }
@@ -1876,21 +1932,20 @@ pre {
   display: block;
   margin: 0 9px 9px;
   padding: 8px;
-  overflow: hidden;
+  overflow-wrap: anywhere;
   border: 1px solid rgba(235, 166, 44, 0.18);
   border-radius: 5px;
   background: rgba(5, 7, 8, 0.48);
   color: #d8c8a8;
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 11px;
+  white-space: pre-wrap;
 }
 
 .permission-meta {
   display: flex;
   justify-content: space-between;
   padding: 0 10px 8px;
-  color: #807866;
+  color: #b8aa90;
   font-size: 8px;
 }
 
@@ -1939,9 +1994,7 @@ pre {
 }
 
 .permission-card.is-compact {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: block;
   margin: 8px 0 0 74px;
   padding: 8px;
 }
@@ -1953,12 +2006,16 @@ pre {
 
 .permission-card.is-compact .permission-actions {
   flex: 0 0 auto;
-  padding: 0;
-  border: 0;
+  margin-top: 8px;
 }
 
 .permission-card.is-compact .permission-actions button {
   min-width: 75px;
+  height: 44px;
+}
+
+.mobile-workspace-context {
+  display: none;
 }
 
 .recent-row {
@@ -2051,8 +2108,9 @@ pre {
 
   .app-shell {
     grid-template:
-      "header" 52px
-      "tabs" 43px
+      "header" 60px
+      "context" 28px
+      "tabs" 44px
       "main" minmax(0, 1fr) /
       1fr;
     height: 100dvh;
@@ -2084,8 +2142,9 @@ pre {
   }
 
   .header-button {
-    min-width: 34px;
-    width: 34px;
+    min-width: 44px;
+    width: 44px;
+    height: 44px;
     padding: 0;
   }
 
@@ -2106,6 +2165,33 @@ pre {
     background: #0b0f11;
   }
 
+  .mobile-workspace-context {
+    grid-area: context;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+    margin: 0;
+    padding-inline: 12px;
+    color: var(--muted);
+    font-size: 10px;
+  }
+
+  .mobile-workspace-context span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-workspace-context code {
+    flex: 0 0 auto;
+    max-width: 35%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .mobile-tabs button {
     position: relative;
     border: 0;
@@ -2114,6 +2200,15 @@ pre {
     font-size: 10px;
     font-weight: 600;
     cursor: pointer;
+  }
+
+  .delivery-switch button {
+    height: 44px;
+  }
+
+  .composer-tools .send-button {
+    width: 44px;
+    height: 44px;
   }
 
   .mobile-tabs button.is-active {
@@ -2298,8 +2393,27 @@ pre {
 }
 
 @media (max-width: 430px) {
+  .app-shell {
+    grid-template-rows: 108px 28px 44px minmax(0, 1fr);
+  }
+
   .app-header {
-    gap: 3px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) repeat(3, 44px);
+    gap: 4px;
+    padding-block: 8px;
+  }
+
+  .header-spacer {
+    display: none;
+  }
+
+  .model-context {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: none;
+    height: 44px;
   }
 
   .brand span {
@@ -2324,13 +2438,15 @@ pre {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  .transition-pulse,
+  .agent-state.is-running .status-dot,
+  .spin {
+    animation: none;
+  }
+
+  .composer,
+  .char-count {
+    transition: none;
   }
 }
 
