@@ -48,6 +48,16 @@ describe("PermissionCard", () => {
     expect(html).toContain("Deny");
   });
 
+  it("explains maintainer authority beside disabled compact contributor controls", () => {
+    const html = renderToStaticMarkup(
+      <PermissionCard permission={permission()} canApprove={false} compact onReply={() => {}} />,
+    );
+    expect(html).toContain("Needs maintainer approval");
+    expect(html).toContain("Run a mutating shell command");
+    expect(html).toContain("src/worker.ts");
+    expect(html.match(/disabled=""/g)).toHaveLength(2);
+  });
+
   it("applies permission-denied so muted CSS matches denied cards", () => {
     const html = render(permission({ status: "denied" }));
     expect(html).toContain("permission-denied");
