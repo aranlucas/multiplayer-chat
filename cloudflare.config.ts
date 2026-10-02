@@ -43,7 +43,7 @@ const productionConfig = defineConfig({
 });
 
 export default defineConfig((ctx) => {
-  if (ctx.mode === "relay-preview") {
+  if (ctx.isPreview || ctx.mode === "relay-preview") {
     return {
       ...previewConfig,
       worker: { ...previewConfig.worker, entrypoint: "src/preview-worker.ts" },

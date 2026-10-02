@@ -2,10 +2,9 @@ import { bindings, defineConfig } from "cf/config";
 
 export default defineConfig({
   worker: {
-    name: "relay-multiplayer-preview",
+    name: "relay-multiplayer-agent",
     compatibilityDate: "2026-08-25",
     entrypoint: "../src/preview-worker.ts",
-    previewUrls: true,
     assets: {
       notFoundHandling: "single-page-application",
       runWorkerFirst: ["/__relay/*"],

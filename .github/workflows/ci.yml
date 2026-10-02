@@ -43,3 +43,7 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+      - name: Build native Worker Preview
+        run: pnpm build:preview
+      - name: Verify Preview build output
+        run: node scripts/check-preview-build.mjs

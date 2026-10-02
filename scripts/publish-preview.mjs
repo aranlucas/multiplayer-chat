@@ -9,18 +9,17 @@ const roomID = roomFromBranch(branch);
 if (!branch || !commitSHA) {
   throw new Error("Preview publishing requires a branch and exact commit SHA");
 }
-if (!roomID) {
-  process.stdout.write(`Skipping room preview for non-Relay branch ${branch}.\n`);
+if (branch === "main") {
+  process.stdout.write("Skipping Preview publication for the production branch.\n");
   process.exit(0);
 }
-if (!controlOrigin || !webhookSecret) {
+if (roomID && (!controlOrigin || !webhookSecret)) {
   throw new Error("RELAY_CONTROL_ORIGIN and RELAY_DEPLOYMENT_WEBHOOK_SECRET are required");
 }
 
-const alias = `r-${commitSHA.slice(0, 12).toLowerCase()}`;
 const upload = spawnSync(
   "pnpm",
-  ["exec", "cf", "workers", "versions", "create", "--prebuilt", "--preview-alias", alias],
+  ["exec", "cf", "previews", "deploy", branch, "--prebuilt", "--mode", "relay-preview"],
   { encoding: "utf8", stdio: ["inherit", "pipe", "pipe"] },
 );
 const output = `${upload.stdout ?? ""}\n${upload.stderr ?? ""}`;
@@ -33,20 +32,53 @@ if (upload.status !== 0) {
   process.exit(upload.status ?? 1);
 }
 
-const previewURL = output.match(/https:\/\/[^\s]+\.workers\.dev\/?/i)?.[0] ?? undefined;
-if (!previewURL) {
+try {
+  const deployment = readDeployment(upload.stdout ?? "");
+  await waitUntilReady(deployment.previewURL, commitSHA);
+  await report({ status: "ready", ...deployment });
+} catch (error) {
   await report({
     status: "failed",
-    failure: "Cloudflare did not return a preview URL",
+    failure: error instanceof Error ? error.message : "Preview publication failed",
   });
-  throw new Error("Cloudflare did not return a preview URL");
+  throw error;
 }
 
-await waitUntilReady(previewURL, commitSHA);
-await report({ status: "ready", previewURL, deploymentID: alias });
+/** @param {string} stdout */
+function readDeployment(stdout) {
+  const result = /** @type {unknown} */ (JSON.parse(stdout));
+  if (
+    !result ||
+    typeof result !== "object" ||
+    !("type" in result) ||
+    result.type !== "preview" ||
+    !("version" in result) ||
+    result.version !== 1 ||
+    !("deployment_id" in result) ||
+    typeof result.deployment_id !== "string" ||
+    !result.deployment_id ||
+    !("deployment_urls" in result) ||
+    !Array.isArray(result.deployment_urls)
+  ) {
+    throw new Error("Cloudflare did not return a native Preview deployment");
+  }
+  const previewURL = result.deployment_urls.find((value) => typeof value === "string");
+  if (!previewURL) {
+    throw new Error("Cloudflare did not return an immutable deployment URL");
+  }
+  const url = new URL(previewURL);
+  const local = url.hostname === "127.0.0.1" || url.hostname === "localhost";
+  if (url.protocol !== "https:" && !(local && url.protocol === "http:")) {
+    throw new Error("Preview deployment URL must use HTTPS unless it is local");
+  }
+  return { previewURL: url.toString(), deploymentID: result.deployment_id };
+}
 
 /** @param {{ status: string; failure?: string; previewURL?: string; deploymentID?: string }} input */
 async function report(input) {
+  if (!roomID) {
+    return;
+  }
   const response = await fetch(new URL("/api/deployments", controlOrigin), {
     method: "POST",
     headers: {
@@ -70,7 +102,9 @@ async function report(input) {
 /** @param {string} targetURL @param {string} expectedSHA */
 async function waitUntilReady(targetURL, expectedSHA) {
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const response = await fetch(new URL("/__relay/ready", targetURL)).catch(() => undefined);
+    const response = await fetch(new URL("/__relay/ready", targetURL), {
+      signal: AbortSignal.timeout(8_000),
+    }).catch(() => undefined);
     const result =
       /** @type {{ ready?: boolean; commitSHA?: string; roomProtocol?: number } | undefined} */ (
         await response?.json().catch(() => undefined)
@@ -85,12 +119,7 @@ async function waitUntilReady(targetURL, expectedSHA) {
     }
     await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
-  await report({
-    status: "failed",
-    previewURL: targetURL,
-    failure: "Preview did not become healthy with the published commit",
-  });
-  throw new Error("Preview readiness check timed out");
+  throw new Error("Preview did not become healthy with the published commit");
 }
 
 /** @param {string | undefined} value */

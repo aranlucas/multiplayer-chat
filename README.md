@@ -51,7 +51,7 @@ pnpm test
 pnpm build
 ```
 
-The same commands are required by CI. `pnpm dev:e2e` starts the browser-oriented Vite/Cloudflare configuration on port 5176; its `e2e/cloudflare.config.ts` uses simulation mode. The repository does not currently define a `test:e2e` script.
+The same commands are required by CI. Tests include the Preview publisher's CLI and HTTP integration checks. CI also runs `pnpm build:preview` and `node scripts/check-preview-build.mjs` to verify native Preview output targets the main Worker and retains the room service. `pnpm dev:e2e` starts the browser-oriented Vite/Cloudflare configuration on port 5176; its `e2e/cloudflare.config.ts` uses simulation mode. The repository does not currently define a `test:e2e` script.
 
 ## Deploy
 
@@ -59,13 +59,26 @@ The same commands are required by CI. `pnpm dev:e2e` starts the browser-oriented
 pnpm deploy
 ```
 
-This builds the Worker and runs `cf deploy --prebuilt` with the generated `.cloudflare/output` build output. Cloudflare credentials and live-mode secrets must be configured in the target environment. Preview publication is a separate flow:
+This builds the Worker and runs `cf deploy --prebuilt` with the generated `.cloudflare/output` build output. Cloudflare credentials and live-mode secrets must be configured in the target environment. Branch publication uses native [Worker Previews](https://developers.cloudflare.com/workers/previews/) under the same `relay-multiplayer-agent` Worker:
 
 ```bash
 pnpm deploy:preview
 ```
 
-It requires `RELAY_CONTROL_ORIGIN` and `RELAY_DEPLOYMENT_WEBHOOK_SECRET` and only publishes branches that map to a Relay room.
+The build sets `CLOUDFLARE_PREVIEW_BUILD=true`; the publisher runs `cf previews deploy --prebuilt --mode relay-preview` for the CI branch. Provide `WORKERS_CI_BRANCH` and `WORKERS_CI_COMMIT_SHA` (or `GITHUB_HEAD_REF` and `GITHUB_SHA`). The production branch is skipped. Every branch gets a native Preview, and branches named `relay/<room>--<suffix>` also report their deployment to that room.
+
+Room callbacks require `RELAY_CONTROL_ORIGIN` and the secret `RELAY_DEPLOYMENT_WEBHOOK_SECRET`, matching the production Worker's callback secret. The publisher reads Cloudflare's structured deployment result, verifies the immutable deployment URL against the exact commit and room protocol, then reports that URL and the deployment ID. It does not use the mutable branch URL for room revisions.
+
+Previews serve the UI and readiness endpoint, and participants continue connecting to the existing production room service. They do not bind an isolated `AGENT_ROOMS` namespace, so a handoff retains the room's participants, transcript, and unsent draft. Preview URLs are public unless Cloudflare Access is configured.
+
+Configure Workers Builds on `relay-multiplayer-agent` as follows:
+
+| Target              | Build command            | Deploy command                     |
+| ------------------- | ------------------------ | ---------------------------------- |
+| Production (`main`) | `pnpm run build`         | `pnpm exec cf deploy --prebuilt`   |
+| Previews (enabled)  | `pnpm run build:preview` | `node scripts/publish-preview.mjs` |
+
+Set the room callback variables in the Previews build settings. The separate `relay-multiplayer-preview` Worker and its production-branch build are no longer used for new publications. Existing version URLs can remain available for historical revisions while its redundant build connection is retired.
 
 Production configuration enables [Workers Issues](https://developers.cloudflare.com/workers/observability/issues/) and [Workers traces](https://developers.cloudflare.com/workers/observability/traces/) at a 10% sampling rate, with URL query strings redacted. These settings take effect on the next deployment. Automatic RPC spans connect API calls to room Durable Objects; traces use the Workers observability event quota and pricing. The [October 2026 Cloudflare review](docs/cloudflare-announcement-review.md) explains the adopted features and the larger migration candidates.
 
