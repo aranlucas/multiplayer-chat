@@ -9,6 +9,7 @@ import { it, onTestFinished } from "vitest";
 
 interface PublisherOptions {
   branch?: string;
+  webhookSecret?: string;
   readySHA?: string;
   cliResult?: { deployment_urls?: string[] };
   stdout?: string;
@@ -100,7 +101,7 @@ async function runPublisher(options: PublisherOptions = {}) {
     WORKERS_CI_BRANCH: options.branch ?? "relay/test-room--123abc",
     WORKERS_CI_COMMIT_SHA: commitSHA,
     RELAY_CONTROL_ORIGIN: origin,
-    RELAY_DEPLOYMENT_WEBHOOK_SECRET: "test-webhook",
+    RELAY_DEPLOYMENT_WEBHOOK_SECRET: options.webhookSecret ?? "test-webhook",
   };
   const result = await new Promise<ChildResult>((resolve, reject) => {
     const child = spawn(process.execPath, ["--import", timerFixture, publisher], { env });
@@ -162,6 +163,14 @@ it("does not deploy the production branch through the preview publisher", async 
   assert.equal(result.code, 0, result.stderr);
   assert.equal(result.command, undefined);
   assert.deepEqual(result.requests, []);
+});
+
+it("refuses a room Preview before deployment when callback credentials are missing", async () => {
+  const result = await runPublisher({ webhookSecret: "" });
+  assert.notEqual(result.code, 0);
+  assert.equal(result.command, undefined);
+  assert.deepEqual(result.requests, []);
+  assert.ok(result.stderr.includes("RELAY_DEPLOYMENT_WEBHOOK_SECRET are required"));
 });
 
 it("refuses a mutable branch URL when no deployment URL was returned", async () => {
