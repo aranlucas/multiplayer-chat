@@ -100,6 +100,105 @@ describe("hasLiveOpenCode", () => {
     ).toEqual({ name: "NVIDIA Nemotron 3 Ultra (free)" });
   });
 
+  it("routes OpenRouter through an authenticated gateway without changing the model or key", () => {
+    const gatewayEnv = env({
+      OPENCODE_PROVIDER: "openrouter",
+      OPENCODE_MODEL: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+      OPENROUTER_API_KEY: "openrouter-test-key",
+      CLOUDFLARE_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+      CLOUDFLARE_AI_GATEWAY_ID: " relay ",
+      CLOUDFLARE_AI_GATEWAY_TOKEN: " gateway-run-token ",
+    });
+
+    expect(hasLiveOpenCode(gatewayEnv)).toBe(true);
+    expect(openCodeConfiguration(gatewayEnv).providers?.openrouter).toMatchObject({
+      settings: {
+        apiKey: "openrouter-test-key",
+        baseURL:
+          "https://gateway.ai.cloudflare.com/v1/0123456789abcdef0123456789abcdef/relay/openrouter",
+      },
+      headers: {
+        "cf-aig-authorization": "Bearer gateway-run-token",
+        "cf-aig-collect-log": "true",
+        "cf-aig-collect-log-payload": "false",
+        "cf-aig-skip-cache": "true",
+        "cf-aig-no-wholesale": "true",
+        "cf-aig-metadata": '{"application":"relay"}',
+      },
+      models: {
+        "nvidia/nemotron-3-ultra-550b-a55b:free": { name: "NVIDIA Nemotron 3 Ultra (free)" },
+      },
+    });
+  });
+
+  it("allows an unauthenticated gateway and explicit payload logging", () => {
+    const config = openCodeConfiguration(
+      env({
+        OPENCODE_PROVIDER: "openrouter",
+        OPENCODE_MODEL: "openrouter/openai/gpt-4.1",
+        OPENROUTER_API_KEY: "openrouter-test-key",
+        CLOUDFLARE_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+        CLOUDFLARE_AI_GATEWAY_ID: "relay-Team_1",
+        CLOUDFLARE_AI_GATEWAY_LOG_PAYLOADS: "true",
+      }),
+    );
+
+    expect(config.providers?.openrouter?.headers?.["cf-aig-authorization"]).toBeUndefined();
+    expect(config.providers?.openrouter?.headers?.["cf-aig-collect-log-payload"]).toBe("true");
+    expect(config.providers?.openrouter?.settings?.baseURL).toBe(
+      "https://gateway.ai.cloudflare.com/v1/0123456789abcdef0123456789abcdef/relay-Team_1/openrouter",
+    );
+  });
+
+  it.each([
+    { CLOUDFLARE_ACCOUNT_ID: undefined },
+    { CLOUDFLARE_ACCOUNT_ID: "../another-account" },
+    { CLOUDFLARE_AI_GATEWAY_ID: "relay/other-provider" },
+    { CLOUDFLARE_AI_GATEWAY_ID: "relay?override=true" },
+    { CLOUDFLARE_AI_GATEWAY_ID: "r".repeat(65) },
+    { CLOUDFLARE_AI_GATEWAY_TOKEN: "token\r\ninjected: value" },
+    { CLOUDFLARE_AI_GATEWAY_LOG_PAYLOADS: "yes" },
+    { OPENCODE_PROVIDER: "opencode-zen" as const },
+    { OPENCODE_PROVIDER: "cloudflare-workers-ai" as const },
+    { OPENCODE_MODEL: "opencode/mimo-v2.5-free" },
+  ])(
+    "rejects invalid gateway options instead of silently using a direct provider: %j",
+    (invalid) => {
+      const gatewayEnv = env({
+        OPENCODE_PROVIDER: "openrouter",
+        OPENCODE_MODEL: "openrouter/openai/gpt-4.1",
+        OPENROUTER_API_KEY: "openrouter-test-key",
+        CLOUDFLARE_API_TOKEN: "workers-ai-token",
+        CLOUDFLARE_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+        CLOUDFLARE_AI_GATEWAY_ID: "relay",
+        ...invalid,
+      });
+
+      expect(hasLiveOpenCode(gatewayEnv)).toBe(false);
+      const error = liveOpenCodeConfigurationError(gatewayEnv);
+      expect(error).toBeTruthy();
+      expect(() => openCodeConfiguration(gatewayEnv)).toThrow(error);
+    },
+  );
+
+  it("requires a gateway ID when a gateway token is set", () => {
+    const gatewayEnv = env({ CLOUDFLARE_AI_GATEWAY_TOKEN: "gateway-run-token" });
+    expect(hasLiveOpenCode(gatewayEnv)).toBe(false);
+    expect(() => openCodeConfiguration(gatewayEnv)).toThrow("Set CLOUDFLARE_AI_GATEWAY_ID");
+  });
+
+  it("still requires the OpenRouter key when gateway routing is enabled", () => {
+    expect(
+      liveOpenCodeConfigurationError(
+        env({
+          OPENCODE_PROVIDER: "openrouter",
+          CLOUDFLARE_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+          CLOUDFLARE_AI_GATEWAY_ID: "relay",
+        }),
+      ),
+    ).toBe("The OpenRouter API key is not configured.");
+  });
+
   it("disables code mode when workspace tools are direct-only", () => {
     expect(openCodeConfiguration(env({})).permissions).toEqual([
       { action: "*", resource: "*", effect: "allow" },

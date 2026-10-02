@@ -41,6 +41,22 @@ describe("installed OpenCode Workerd SDK", () => {
     }
   }, 20_000);
 
+  it("sends concurrent model requests to AI Gateway with distinct provider and gateway credentials", async () => {
+    const requests = await Promise.all([run("/gateway"), run("/gateway")]);
+    for (const request of requests) {
+      expect(request).toMatchObject({
+        url: "https://gateway.ai.cloudflare.com/v1/0123456789abcdef0123456789abcdef/relay/openrouter/chat/completions",
+        headers: {
+          authorization: "Bearer openrouter-test-key",
+          "cf-aig-authorization": "Bearer gateway-run-token",
+          "cf-aig-collect-log-payload": "false",
+          "cf-aig-skip-cache": "true",
+          "cf-aig-no-wholesale": "true",
+        },
+      });
+    }
+  }, 20_000);
+
   it("persists an answer through the runner's session form API", async () => {
     expect(await run("/answer")).toMatchObject({
       state: { status: "answered", answer: { target: "production" } },
