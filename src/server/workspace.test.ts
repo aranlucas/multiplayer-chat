@@ -1,7 +1,9 @@
 /// <reference types="node" />
 import { describe, expect, it, vi } from "vitest";
 import { replaceExact } from "../shared/exact-edit";
-import type { RailwayRoomSandbox } from "./railway-sandbox";
+import { RailwayRoomSandbox } from "./railway-sandbox";
+import { sqliteStorage } from "./fixtures/sqlite-storage";
+import { deferred } from "./fixtures/deferred";
 import { RepositoryWorkspace } from "./workspace";
 
 describe("replaceExact", () => {
@@ -158,6 +160,48 @@ describe("published workspace association", () => {
           .prepare("SELECT pull_request_url AS url, pull_request_branch AS branch FROM relay_room")
           .get(),
       ).toEqual({ url: "intact", branch: "relay/feature" });
+    } finally {
+      database.close();
+    }
+  });
+});
+
+describe("RepositoryWorkspace checkpoint ownership", () => {
+  it("does not overwrite newer edits if ownership changes during a sandbox read", async () => {
+    const database = sqliteStorage();
+    database.sql
+      .exec(`CREATE TABLE relay_room (singleton INTEGER PRIMARY KEY, room_id TEXT, repository TEXT, branch TEXT, commit_sha TEXT, workspace_status TEXT);
+      INSERT INTO relay_room VALUES (1, 'room-1', 'owner/repo', 'main', 'base', 'ready');`);
+    const storage = { sql: database.sql } as DurableObjectStorage;
+    const sandbox = new RailwayRoomSandbox(storage, {});
+    vi.spyOn(sandbox, "configured", "get").mockReturnValue(true);
+    vi.spyOn(sandbox, "exec").mockImplementation(async (command) => ({
+      success: true,
+      exitCode: 0,
+      stderr: "",
+      truncated: false,
+      timedOut: false,
+      stdout: command.startsWith("git diff") ? "M\0feature.ts\0" : "",
+    }));
+    const file = deferred<string>();
+    const reading = deferred<void>();
+    vi.spyOn(sandbox, "readFile").mockImplementation(() => {
+      reading.resolve();
+      return file.promise;
+    });
+    const workspace = new RepositoryWorkspace(storage, {}, sandbox);
+    let current = true;
+    try {
+      const checkpoint = workspace.syncSandboxChanges(() => current);
+      await reading.promise;
+      current = false;
+      workspace.syncNativeAgentChanges([{ path: "feature.ts", content: "newer edits" }]);
+      file.resolve("stale edits");
+      expect(await checkpoint).toEqual([{ path: "feature.ts", content: "stale edits" }]);
+      expect(
+        database.sql.exec<{ content: string }>("SELECT content FROM relay_workspace_changes").one()
+          .content,
+      ).toBe("newer edits");
     } finally {
       database.close();
     }

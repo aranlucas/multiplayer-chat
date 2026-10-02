@@ -176,12 +176,14 @@ export class RepositoryWorkspace {
     this.replaceWorkspaceChanges(changes);
   }
 
-  async syncSandboxChanges(): Promise<WorkspaceChange[]> {
+  async syncSandboxChanges(isCurrent: () => boolean = () => true): Promise<WorkspaceChange[]> {
     if (!this.sandbox.configured) {
       return this.workspaceChanges();
     }
     const changes = await this.sandboxChanges();
-    this.replaceWorkspaceChanges(changes);
+    if (isCurrent()) {
+      this.replaceWorkspaceChanges(changes);
+    }
     return changes;
   }
 

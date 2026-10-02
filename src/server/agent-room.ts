@@ -21,7 +21,7 @@ import {
   type ServerMessage,
   type TimelineEvent,
 } from "../shared/protocol";
-import { completedTurnStatus } from "./agent-turn";
+import { InactiveAgentTurnError, TurnCoordinator, type AgentTurn } from "./agent-turn";
 import { sessionTitleFromEvent } from "./session-title";
 import {
   configuredOpenCodeModels,
@@ -159,6 +159,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
   private readonly workspace: RepositoryWorkspace;
   private readonly sandbox: RailwayRoomSandbox;
   private readonly runner?: EmbeddedOpenCodeRunner;
+  private readonly turns: TurnCoordinator;
 
   private get roomID(): string {
     return this.ctx.id.name ?? this.getRoom().id;
@@ -166,6 +167,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
   constructor(ctx: DurableObjectState, env: WorkerEnv) {
     super(ctx, env);
+    this.turns = new TurnCoordinator(ctx.storage.sql, () => {
+      this.broadcast({ type: "room", room: this.getRoom() });
+    });
     this.sandbox = new RailwayRoomSandbox(ctx.storage, env);
     this.workspace = new RepositoryWorkspace(ctx.storage, env, this.sandbox);
     if (env.OPENCODE_MODE === "live") {
@@ -962,10 +966,10 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
 
     if (message.type === "agent.pause") {
       const room = this.getRoom();
+      this.turns.pause();
       if (room.opencodeSessionID) {
         await this.runner?.interrupt(room.opencodeSessionID).catch(() => undefined);
       }
-      this.setRoomStatus("paused");
       return;
     }
 
@@ -1151,12 +1155,15 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       if (message.delivery === "queue" && this.getRoom().agentStatus === "running") {
         return;
       }
-      const generation = this.beginAgentTurn();
+      const turn = this.turns.start();
       try {
         if (message.delivery === "queue") {
           this.consumeQueuedPrompt(event.id);
         }
         const emitEvent = (payload: Record<string, unknown>) => {
+          if (!turn.isRunning()) {
+            return;
+          }
           const simulated = this.insertEvent({
             id: crypto.randomUUID(),
             kind: "opencode",
@@ -1171,7 +1178,7 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
           emitEvent,
         });
         await drainSimulatedQueue({
-          nextQueuedPrompt: () => this.getQueue()[0],
+          nextQueuedPrompt: () => (turn.isRunning() ? this.getQueue()[0] : undefined),
           consumeQueuedPrompt: (eventID) => {
             this.consumeQueuedPrompt(eventID);
           },
@@ -1182,28 +1189,33 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
               emitEvent,
             }),
         });
-        this.completeAgentTurn(generation, "idle");
+        turn.complete("idle");
       } catch (error) {
-        this.completeAgentTurn(generation, "error");
+        if (!turn.isCurrent()) {
+          return;
+        }
+        turn.complete("error");
         throw error;
       }
       return;
     }
 
-    const generation = this.beginAgentTurn();
+    const turn = this.turns.start();
     try {
       const result = await this.runNativeOpenCodeTurn(
         message.text,
         message.delivery,
         message.delivery === "queue" ? event.id : undefined,
-        generation,
+        turn,
       );
-      this.completeAgentTurn(
-        generation,
+      turn.complete(
         result === "succeeded" ? "idle" : result === "interrupted" ? "paused" : "error",
       );
     } catch (error) {
-      this.completeAgentTurn(generation, "error");
+      if (!turn.isCurrent() || error instanceof InactiveAgentTurnError) {
+        return;
+      }
+      turn.complete("error");
       const failed = this.insertEvent({
         id: crypto.randomUUID(),
         kind: "system",
@@ -1222,10 +1234,13 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     prompt: string,
     delivery: "steer" | "queue",
     queuedPromptID: string | undefined,
-    generation: number,
+    turn: AgentTurn,
   ): Promise<"succeeded" | "failed" | "interrupted"> {
     const room = this.getRoom();
     const workspace = await this.workspace.nativeAgentWorkspace();
+    if (!turn.isRunning()) {
+      return "interrupted";
+    }
     if (!this.runner) {
       throw new Error("Embedded OpenCode is not running");
     }
@@ -1241,21 +1256,30 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
           model: room.model,
           sessionID: room.opencodeSessionID,
           after: this.openCodeCursor(),
+          isCurrent: turn.isCurrent,
+          isRunning: turn.isRunning,
         },
         (event) => {
-          if (!queueConsumed && queuedPromptID) {
+          // Admission belongs to this prompt even if a newer turn now owns the room.
+          if (event.type === "accepted" && !queueConsumed && queuedPromptID) {
             queueConsumed = true;
             this.consumeQueuedPrompt(queuedPromptID);
-            this.setAgentTurnStatus(generation, "running");
+          }
+          if (!turn.isCurrent()) {
+            return;
           }
           if (event.type === "changes") {
             checkpointedChanges = event.changes;
+          }
+          if (!turn.isRunning()) {
+            return;
           }
           this.handleNativeRunnerEvent(event);
         },
       );
     } catch (error) {
       if (
+        turn.isCurrent() &&
         checkpointedChanges &&
         JSON.stringify(workspace.changes) !== JSON.stringify(checkpointedChanges)
       ) {
@@ -1266,6 +1290,9 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
       }
       throw error;
     }
+    if (!turn.isCurrent()) {
+      return result.status;
+    }
     this.ctx.storage.sql.exec(
       "UPDATE relay_room SET opencode_session_id = ?, opencode_event_cursor = ? WHERE singleton = 1",
       result.sessionID,
@@ -1273,12 +1300,12 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
     );
     this.workspace.syncNativeAgentChanges(result.changes);
     const workspaceChanged = JSON.stringify(workspace.changes) !== JSON.stringify(result.changes);
-    if (result.status === "succeeded" && workspaceChanged) {
+    if (workspaceChanged) {
       this.ctx.storage.sql.exec(
         "UPDATE relay_room SET workspace_revision = workspace_revision + 1 WHERE singleton = 1",
       );
     }
-    if (result.status === "succeeded") {
+    if (turn.isRunning() && result.status === "succeeded") {
       await this.publishSavedPullRequest();
     }
     return result.status;
@@ -1786,42 +1813,6 @@ export class AgentRoom extends DurableObject<WorkerEnv> {
         actor: JSON.parse(row.actor_json) as NonNullable<TimelineEvent["actor"]>,
         createdAt: row.created_at,
       }));
-  }
-
-  private beginAgentTurn(): number {
-    this.ctx.storage.sql.exec(
-      "UPDATE relay_room SET agent_turn_generation = agent_turn_generation + 1, agent_status = 'running' WHERE singleton = 1",
-    );
-    const generation = this.ctx.storage.sql
-      .exec<{ agent_turn_generation: number }>(
-        "SELECT agent_turn_generation FROM relay_room WHERE singleton = 1",
-      )
-      .one().agent_turn_generation;
-    this.broadcast({ type: "room", room: this.getRoom() });
-    return generation;
-  }
-
-  private completeAgentTurn(generation: number, status: RoomInfo["agentStatus"]) {
-    const currentGeneration = this.ctx.storage.sql
-      .exec<{ agent_turn_generation: number }>(
-        "SELECT agent_turn_generation FROM relay_room WHERE singleton = 1",
-      )
-      .one().agent_turn_generation;
-    const completedStatus = completedTurnStatus(currentGeneration, generation, status);
-    if (completedStatus) {
-      this.setRoomStatus(completedStatus);
-    }
-  }
-
-  private setAgentTurnStatus(generation: number, status: RoomInfo["agentStatus"]) {
-    const currentGeneration = this.ctx.storage.sql
-      .exec<{ agent_turn_generation: number }>(
-        "SELECT agent_turn_generation FROM relay_room WHERE singleton = 1",
-      )
-      .one().agent_turn_generation;
-    if (currentGeneration === generation) {
-      this.setRoomStatus(status);
-    }
   }
 
   private snapshot(): RoomSnapshot {
