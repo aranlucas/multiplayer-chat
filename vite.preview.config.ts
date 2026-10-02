@@ -12,7 +12,6 @@ export default defineConfig({
   },
   plugins: [react(), cloudflare()],
   build: {
-    outDir: "dist-preview",
     minify: "terser",
     terserOptions: {
       compress: { passes: 2 },
