@@ -2,8 +2,13 @@ import type { OpenCodeWorkerd } from "@opencode/sdk/workerd";
 import type { OpenCodeModelOption } from "../shared/protocol";
 import type { GitHubOAuthEnv } from "./github-auth";
 import type { RailwaySandboxEnv } from "./railway-sandbox";
+import {
+  aiGatewayConfigurationError,
+  openRouterGatewayConfiguration,
+  type AIGatewayEnv,
+} from "./ai-gateway";
 
-export interface WorkerEnv extends GitHubOAuthEnv, RailwaySandboxEnv {
+export interface WorkerEnv extends GitHubOAuthEnv, RailwaySandboxEnv, AIGatewayEnv {
   AGENT_ROOMS: DurableObjectNamespace;
   ASSETS: Fetcher;
   OPENCODE_MODE: "simulation" | "live";
@@ -22,7 +27,21 @@ const MUSE_SPARK_MODEL_NAME = "Muse Spark 1.2 Contributor Free";
 const OPENROUTER_NEMOTRON_MODEL = "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free";
 const OPENROUTER_NEMOTRON_MODEL_NAME = "NVIDIA Nemotron 3 Ultra (free)";
 
-export function openCodeModelAllowlist(env: WorkerEnv): string[] {
+type OpenCodeConfigurationEnv = Pick<
+  WorkerEnv,
+  | "OPENCODE_PROVIDER"
+  | "OPENCODE_MODEL"
+  | "OPENCODE_MODEL_ALLOWLIST"
+  | "OPENCODE_ZEN_API_KEY"
+  | "OPENROUTER_API_KEY"
+  | "CLOUDFLARE_API_TOKEN"
+  | "CLOUDFLARE_ACCOUNT_ID"
+  | "CLOUDFLARE_AI_GATEWAY_ID"
+  | "CLOUDFLARE_AI_GATEWAY_TOKEN"
+  | "CLOUDFLARE_AI_GATEWAY_LOG_PAYLOADS"
+>;
+
+export function openCodeModelAllowlist(env: Pick<WorkerEnv, "OPENCODE_MODEL_ALLOWLIST">): string[] {
   return (env.OPENCODE_MODEL_ALLOWLIST ?? "")
     .split(",")
     .map((model) => model.trim())
@@ -70,10 +89,13 @@ export function liveOpenCodeConfigurationError(env: WorkerEnv): string | undefin
   if (env.OPENCODE_PROVIDER === "cloudflare-workers-ai" && !env.CLOUDFLARE_API_TOKEN) {
     return "The Cloudflare API token is not configured.";
   }
-  return undefined;
+  return aiGatewayConfigurationError(env);
 }
 
-export function openCodeConfiguration(env: WorkerEnv): OpenCodeWorkerd.Configuration {
+export function openCodeConfiguration(
+  env: OpenCodeConfigurationEnv,
+): OpenCodeWorkerd.Configuration {
+  const gateway = openRouterGatewayConfiguration(env);
   const [modelProvider] = env.OPENCODE_MODEL.split("/", 1);
   type ProviderConfiguration = NonNullable<OpenCodeWorkerd.Configuration["providers"]>[string];
   const providers: Record<string, ProviderConfiguration> = {};
@@ -84,7 +106,8 @@ export function openCodeConfiguration(env: WorkerEnv): OpenCodeWorkerd.Configura
   }
   if (env.OPENCODE_PROVIDER === "openrouter" && env.OPENROUTER_API_KEY) {
     providers[modelProvider] = {
-      settings: { apiKey: env.OPENROUTER_API_KEY },
+      settings: { apiKey: env.OPENROUTER_API_KEY, ...gateway?.settings },
+      ...(gateway?.headers ? { headers: gateway.headers } : {}),
     };
   }
   if (env.OPENCODE_PROVIDER === "cloudflare-workers-ai" && env.CLOUDFLARE_API_TOKEN) {

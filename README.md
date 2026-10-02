@@ -37,6 +37,10 @@ The Vite + Cloudflare plugin starts the local Worker and UI. The example variabl
 
 To use the live OpenCode path, set `OPENCODE_MODE=live` and provide the matching provider key (`OPENROUTER_API_KEY`, `OPENCODE_ZEN_API_KEY`, or `CLOUDFLARE_API_TOKEN`), a Railway token/API token, and `RAILWAY_ENVIRONMENT_ID`. `OPENCODE_MODEL` and `OPENCODE_MODEL_ALLOWLIST` select the permitted model IDs. GitHub OAuth is only needed for pull-request publication.
 
+OpenRouter can optionally run through [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/usage/providers/openrouter/). Set `CLOUDFLARE_AI_GATEWAY_ID` to an existing gateway slug and `CLOUDFLARE_ACCOUNT_ID` to its account ID; keep `OPENROUTER_API_KEY` and the `openrouter/` model IDs. For an authenticated gateway, also provide `CLOUDFLARE_AI_GATEWAY_TOKEN` as a secret with gateway Run permission. The example variables document these options. Invalid gateway configuration is reported by `/api/health` and rejected at runner initialization.
+
+Gateway requests log usage metadata, skip response caching, and require provider credentials rather than falling back to Unified Billing. Prompt and response bodies are excluded from gateway logs by default. Set `CLOUDFLARE_AI_GATEWAY_LOG_PAYLOADS=true` to opt into payload logging. This integration tags traffic as `application=relay`; it does not attribute inference to individual participants. Content classification and task analysis may require payload logging and further gateway settings.
+
 ## Verify
 
 ```bash
@@ -62,6 +66,8 @@ pnpm deploy:preview
 ```
 
 It requires `RELAY_CONTROL_ORIGIN` and `RELAY_DEPLOYMENT_WEBHOOK_SECRET` and only publishes branches that map to a Relay room.
+
+Production configuration enables [Workers Issues](https://developers.cloudflare.com/workers/observability/issues/) and [Workers traces](https://developers.cloudflare.com/workers/observability/traces/) at a 10% sampling rate, with URL query strings redacted. These settings take effect on the next deployment. Automatic RPC spans connect API calls to room Durable Objects; traces use the Workers observability event quota and pricing. The [October 2026 Cloudflare review](docs/cloudflare-announcement-review.md) explains the adopted features and the larger migration candidates.
 
 ## Source map
 

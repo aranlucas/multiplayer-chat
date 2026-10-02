@@ -15,6 +15,9 @@ const productionConfig = defineConfig({
     entrypoint: "src/worker.ts",
     observability: {
       enabled: true,
+      redactQueryString: true,
+      issues: { enabled: true },
+      traces: { enabled: true, headSamplingRate: 0.1 },
     },
     assets: {
       notFoundHandling: "single-page-application",

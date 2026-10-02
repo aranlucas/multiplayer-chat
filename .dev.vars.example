@@ -6,6 +6,15 @@ OPENCODE_MODEL=openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
 OPENCODE_MODEL_ALLOWLIST=openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
 OPENROUTER_API_KEY=
 
+# Optional: route OpenRouter through an existing Cloudflare AI Gateway.
+# Keep the OpenRouter key above; Relay requires provider credentials and disables
+# response caching. Metrics are logged, but prompt/response bodies are not.
+# CLOUDFLARE_ACCOUNT_ID=<32-character account ID>
+# CLOUDFLARE_AI_GATEWAY_ID=<gateway-slug>
+# CLOUDFLARE_AI_GATEWAY_TOKEN=<Run token for an authenticated gateway>
+# Set to true only if you want payload logging and content-based User Insights.
+# CLOUDFLARE_AI_GATEWAY_LOG_PAYLOADS=false
+
 # Railway project token and environment used for per-room sandboxes.
 RAILWAY_TOKEN=
 RAILWAY_ENVIRONMENT_ID=
