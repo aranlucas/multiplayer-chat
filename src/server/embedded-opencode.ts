@@ -1,3 +1,4 @@
+import { InactiveAgentTurnError } from "./agent-turn";
 import type { OpenCodeWorkerd } from "@opencode/sdk/workerd";
 import type { OpenCodeModelOption } from "../shared/protocol";
 import type { WorkspaceChange } from "../shared/workspace-change";
@@ -12,11 +13,14 @@ interface EmbeddedTurnRequest {
   sessionID?: string;
   after?: string;
   timeoutMs?: number;
+  isCurrent?: () => boolean;
+  isRunning?: () => boolean;
 }
 
 export type NativeRunnerEvent =
   | { type: "status"; message: string }
   | { type: "session"; sessionID: string }
+  | { type: "accepted" }
   | { type: "opencode"; cursor?: string; event: Record<string, unknown> }
   | { type: "changes"; changes: WorkspaceChange[] }
   | {
@@ -45,13 +49,22 @@ export class EmbeddedOpenCodeRunner {
   ): Promise<EmbeddedTurnResult> {
     const startedAt = Date.now();
     const opencode = await this.host;
+    if (request.isRunning?.() === false) {
+      throw new InactiveAgentTurnError();
+    }
     await this.workspace.ensureReady();
+    if (request.isRunning?.() === false) {
+      throw new InactiveAgentTurnError();
+    }
     await onEvent?.({
       type: "status",
       message: "OpenCode is running in the room Durable Object",
     });
 
     const session = await this.resolveSession(opencode, request.sessionID, request.model);
+    if (request.isRunning?.() === false) {
+      throw new InactiveAgentTurnError();
+    }
     await onEvent?.({ type: "session", sessionID: session.id });
 
     const controller = new AbortController();
@@ -93,7 +106,9 @@ export class EmbeddedOpenCodeRunner {
           const providerError = deferredProviderFailure(record);
           if (providerError) {
             deferredProviderError = providerError;
-            await opencode.sessions.interrupt({ sessionID: session.id });
+            if (request.isCurrent?.() !== false) {
+              await opencode.sessions.interrupt({ sessionID: session.id });
+            }
           }
         }
       } catch (error) {
@@ -108,6 +123,9 @@ export class EmbeddedOpenCodeRunner {
     // Use one deadline for the entire request, and stop the session if it expires.
     let executionError: unknown;
     try {
+      if (request.isRunning?.() === false) {
+        throw new InactiveAgentTurnError();
+      }
       await opencode.sessions.prompt(
         {
           sessionID: session.id,
@@ -116,6 +134,7 @@ export class EmbeddedOpenCodeRunner {
         },
         { signal: executionSignal },
       );
+      await onEvent?.({ type: "accepted" });
       await opencode.sessions.wait({ sessionID: session.id }, { signal: executionSignal });
     } catch (error) {
       executionError = deadline.aborted
@@ -124,7 +143,7 @@ export class EmbeddedOpenCodeRunner {
             { cause: error },
           )
         : error;
-      if (executionSignal.aborted) {
+      if (executionSignal.aborted && request.isCurrent?.() !== false) {
         await this.interrupt(session.id);
       }
     } finally {
@@ -134,7 +153,7 @@ export class EmbeddedOpenCodeRunner {
     const turnError = deferredProviderError ?? eventError ?? executionError;
     let changes: WorkspaceChange[];
     try {
-      changes = await this.workspace.syncSandboxChanges();
+      changes = await this.workspace.syncSandboxChanges(request.isCurrent);
     } catch (checkpointError) {
       if (!turnError) {
         throw checkpointError;
