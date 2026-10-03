@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { jsonValueSchema } from "../shared/json-value";
 import type { WorkspaceChange } from "../shared/workspace-change";
 
 interface PullRequestInput {
@@ -48,6 +50,32 @@ interface GitCommitResponse {
   tree: { sha: string };
 }
 
+const repositorySchema = z.object({
+  name: z.string(),
+  full_name: z.string(),
+  permissions: z.object({ push: z.boolean().optional() }).optional(),
+  parent: z.object({ full_name: z.string() }).optional(),
+});
+
+const shaSchema = z.object({ sha: z.string() });
+
+const commitSchema = shaSchema.extend({ tree: shaSchema });
+
+const refSchema = z.object({ object: shaSchema });
+
+const pullSchema = z.object({ number: z.number(), html_url: z.string() });
+
+const deploymentsSchema = z.array(z.object({ id: z.number(), environment: z.string().optional() }));
+
+const statusesSchema = z.array(
+  z.object({
+    id: z.number(),
+    state: z.string(),
+    environment_url: z.string().optional(),
+    description: z.string().optional(),
+  }),
+);
+
 const API_VERSION = "2026-03-10";
 
 export class GitHubPullRequestClient {
@@ -63,22 +91,27 @@ export class GitHubPullRequestClient {
     if (!input.changes.length) {
       throw new Error("There are no shared workspace changes to put in a pull request");
     }
-    const baseRepository = await this.request<RepositoryResponse>(`/repos/${input.repository}`);
+
+    const baseRepository = await this.request(repositorySchema, `/repos/${input.repository}`);
+
     const writeRepository =
       existing?.writeRepository ??
       (baseRepository.permissions?.push
         ? baseRepository.full_name
         : await this.ensureFork(input.login, baseRepository));
+
     const baseCommit = await this.waitForCommit(writeRepository, input.baseCommitSHA);
+
     const blobs = await Promise.all(
       input.changes.map(async (change) => {
         if (change.content === null) {
           return { path: change.path, sha: null };
         }
+
         return {
           path: change.path,
           sha: (
-            await this.request<{ sha: string }>(`/repos/${writeRepository}/git/blobs`, {
+            await this.request(shaSchema, `/repos/${writeRepository}/git/blobs`, {
               method: "POST",
               body: JSON.stringify({
                 content: change.content,
@@ -89,7 +122,8 @@ export class GitHubPullRequestClient {
         };
       }),
     );
-    const tree = await this.request<{ sha: string }>(`/repos/${writeRepository}/git/trees`, {
+
+    const tree = await this.request(shaSchema, `/repos/${writeRepository}/git/trees`, {
       method: "POST",
       body: JSON.stringify({
         base_tree: baseCommit.tree.sha,
@@ -101,19 +135,25 @@ export class GitHubPullRequestClient {
         })),
       }),
     });
+
     let parentSHA = input.baseCommitSHA;
+
     if (existing) {
-      const remote = await this.request<{ object: { sha: string } }>(
+      const remote = await this.request(
+        refSchema,
         `/repos/${writeRepository}/git/ref/heads/${refPath(existing.branch)}`,
       );
+
       if (remote.object.sha !== existing.headSHA) {
         throw new Error(
           `Pull request branch moved from ${existing.headSHA.slice(0, 12)} to ${remote.object.sha.slice(0, 12)}; refresh the room before publishing`,
         );
       }
+
       parentSHA = remote.object.sha;
     }
-    const commit = await this.request<{ sha: string }>(`/repos/${writeRepository}/git/commits`, {
+
+    const commit = await this.request(shaSchema, `/repos/${writeRepository}/git/commits`, {
       method: "POST",
       body: JSON.stringify({
         message: input.title,
@@ -121,33 +161,38 @@ export class GitHubPullRequestClient {
         parents: [parentSHA],
       }),
     });
+
     const branch = existing?.branch ?? branchName(input.roomID);
+
     if (existing) {
-      await this.request(`/repos/${writeRepository}/git/refs/heads/${refPath(branch)}`, {
-        method: "PATCH",
-        body: JSON.stringify({ sha: commit.sha, force: false }),
-      });
+      await this.request(
+        jsonValueSchema,
+        `/repos/${writeRepository}/git/refs/heads/${refPath(branch)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ sha: commit.sha, force: false }),
+        },
+      );
     } else {
-      await this.request(`/repos/${writeRepository}/git/refs`, {
+      await this.request(jsonValueSchema, `/repos/${writeRepository}/git/refs`, {
         method: "POST",
         body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
       });
     }
+
     const pull = existing
       ? { number: existing.number, html_url: existing.url }
-      : await this.request<{ number: number; html_url: string }>(
-          `/repos/${input.repository}/pulls`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              title: input.title,
-              body: input.body,
-              base: input.baseBranch,
-              head:
-                writeRepository === baseRepository.full_name ? branch : `${input.login}:${branch}`,
-            }),
-          },
-        );
+      : await this.request(pullSchema, `/repos/${input.repository}/pulls`, {
+          method: "POST",
+          body: JSON.stringify({
+            title: input.title,
+            body: input.body,
+            base: input.baseBranch,
+            head:
+              writeRepository === baseRepository.full_name ? branch : `${input.login}:${branch}`,
+          }),
+        });
+
     return {
       number: pull.number,
       url: pull.html_url,
@@ -159,26 +204,27 @@ export class GitHubPullRequestClient {
   }
 
   async findDeployment(repository: string, commitSHA: string): Promise<DeploymentObservation> {
-    const deployments = await this.request<Array<{ id: number; environment?: string }>>(
+    const deployments = await this.request(
+      deploymentsSchema,
       `/repos/${repository}/deployments?sha=${encodeURIComponent(commitSHA)}&per_page=20`,
     );
+
     if (!deployments.length) {
       return { status: "waiting" };
     }
 
     for (const deployment of deployments) {
-      const statuses = await this.request<
-        Array<{
-          id: number;
-          state: string;
-          environment_url?: string;
-          description?: string;
-        }>
-      >(`/repos/${repository}/deployments/${deployment.id}/statuses?per_page=20`);
+      const statuses = await this.request(
+        statusesSchema,
+        `/repos/${repository}/deployments/${deployment.id}/statuses?per_page=20`,
+      );
+
       const latest = statuses[0];
+
       if (!latest) {
         continue;
       }
+
       if (latest.state === "success" && latest.environment_url) {
         return {
           status: "ready",
@@ -187,6 +233,7 @@ export class GitHubPullRequestClient {
           deploymentID: String(deployment.id),
         };
       }
+
       if (latest.state === "failure" || latest.state === "error" || latest.state === "inactive") {
         return {
           status: "failed",
@@ -195,55 +242,67 @@ export class GitHubPullRequestClient {
           failure: latest.description || `Deployment ${latest.state}`,
         };
       }
+
       return {
         status: "building",
         environment: deployment.environment,
         deploymentID: String(deployment.id),
       };
     }
+
     return { status: "waiting" };
   }
 
   private async ensureFork(login: string, base: RepositoryResponse): Promise<string> {
     const forkName = `${login}/${base.name}`;
-    const existing = await this.request<RepositoryResponse>(`/repos/${forkName}`, {}, true);
+    const existing = await this.request(repositorySchema, `/repos/${forkName}`, {}, true);
+
     if (existing) {
       if (existing.full_name !== forkName || existing.parent?.full_name !== base.full_name) {
         throw new Error(
           `GitHub repository ${forkName} exists but is not a fork of ${base.full_name}`,
         );
       }
+
       return forkName;
     }
-    await this.request(`/repos/${base.full_name}/forks`, {
+
+    await this.request(jsonValueSchema, `/repos/${base.full_name}/forks`, {
       method: "POST",
       body: JSON.stringify({ default_branch_only: false }),
     });
+
     return forkName;
   }
 
   private async waitForCommit(repository: string, sha: string): Promise<GitCommitResponse> {
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      const commit = await this.request<GitCommitResponse>(
+      const commit = await this.request(
+        commitSchema,
         `/repos/${repository}/git/commits/${sha}`,
         {},
         true,
       );
+
       if (commit) {
         return commit;
       }
+
       await new Promise((resolve) => setTimeout(resolve, Math.min(250 * 2 ** attempt, 2_000)));
     }
+
     throw new Error(`GitHub fork did not make commit ${sha.slice(0, 12)} available in time`);
   }
 
-  private async request<T = unknown>(path: string, init?: RequestInit): Promise<T>;
-  private async request<T = unknown>(
+  private async request<T>(schema: z.ZodType<T>, path: string, init?: RequestInit): Promise<T>;
+  private async request<T>(
+    schema: z.ZodType<T>,
     path: string,
     init: RequestInit,
     allowNotFound: true,
   ): Promise<T | undefined>;
-  private async request<T = unknown>(
+  private async request<T>(
+    schema: z.ZodType<T>,
     path: string,
     init: RequestInit = {},
     allowNotFound = false,
@@ -255,25 +314,28 @@ export class GitHubPullRequestClient {
       "User-Agent": "relay-multiplayer-agent",
       "X-GitHub-Api-Version": API_VERSION,
     });
+
     new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+
     const response = await this.fetcher.call(globalThis, `https://api.github.com${path}`, {
       ...init,
       headers,
     });
+
     if (allowNotFound && response.status === 404) {
       return undefined;
     }
-    const value: Record<string, unknown> = await response
-      .json<Record<string, unknown>>()
-      .catch(() => ({}));
+
+    const value: unknown = await response.json().catch(() => ({}));
+
     if (!response.ok) {
       throw new Error(
-        typeof value.message === "string"
-          ? value.message
-          : `GitHub API request failed (${response.status})`,
+        z.object({ message: z.string() }).safeParse(value).data?.message ??
+          `GitHub API request failed (${response.status})`,
       );
     }
-    return value as T;
+
+    return schema.parse(value);
   }
 }
 
@@ -283,6 +345,7 @@ function branchName(roomID: string): string {
     .replace(/[^a-z0-9-]/g, "-")
     .replace(/-+/g, "-")
     .slice(0, 64);
+
   return `relay/${room || "session"}--${Date.now().toString(36)}`;
 }
 

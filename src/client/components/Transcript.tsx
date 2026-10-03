@@ -182,9 +182,11 @@ function ToolEvent({
   const display = displayEvent(event);
   const [expanded, setExpanded] = useState(display.type === "tool" && Boolean(display.output));
   const [copied, setCopied] = useState(false);
+
   if (display.type !== "tool") {
     return null;
   }
+
   const successful = display.status === "completed";
   const command = display.command;
   const copyable = successful && Boolean(command);
@@ -193,6 +195,7 @@ function ToolEvent({
     if (!command) {
       return;
     }
+
     try {
       await copyText(command);
       setCopied(true);
@@ -251,6 +254,7 @@ function ToolEvent({
 async function copyText(value: string) {
   try {
     await navigator.clipboard.writeText(value);
+
     return;
   } catch {
     const textarea = document.createElement("textarea");
@@ -262,6 +266,7 @@ async function copyText(value: string) {
     textarea.select();
     const copied = document.execCommand("copy");
     textarea.remove();
+
     if (!copied) {
       throw new Error("Clipboard copy was rejected");
     }

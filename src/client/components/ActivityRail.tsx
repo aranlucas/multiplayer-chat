@@ -26,6 +26,7 @@ export function ActivityRail({ events, selectedID, onSelect }: ActivityRailProps
         {events.map((event) => {
           const display = displayEvent(event);
           const selected = event.id === selectedID;
+
           return (
             <button
               className={`activity-row ${selected ? "is-selected" : ""}`}

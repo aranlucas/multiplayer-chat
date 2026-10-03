@@ -1,16 +1,22 @@
+import { z } from "zod";
+import { parseJsonRecord, type JsonRecord, type JsonValue } from "../shared/json-value";
 import { describe, expect, it, vi } from "vitest";
 import { GitHubPullRequestClient } from "./github-pull-request";
 
 describe("GitHubPullRequestClient", () => {
   it("creates blobs, a commit-pinned branch, and a pull request", async () => {
-    const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
+    const requests: Array<{ url: string; body?: JsonRecord }> = [];
     let blob = 0;
+
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       const url = input instanceof Request ? input.url : String(input);
+
       const body = init?.body
-        ? (JSON.parse(typeof init.body === "string" ? init.body : "") as Record<string, unknown>)
+        ? parseJsonRecord(JSON.parse(z.string().parse(init.body)))
         : undefined;
+
       requests.push({ url, body });
+
       if (url.endsWith("/repos/owner/repo")) {
         return json({
           name: "repo",
@@ -18,26 +24,34 @@ describe("GitHubPullRequestClient", () => {
           permissions: { push: true },
         });
       }
+
       if (url.includes("/git/commits/") && init?.method !== "POST") {
         return json({ sha: "a".repeat(40), tree: { sha: "base-tree" } });
       }
+
       if (url.endsWith("/git/blobs")) {
         return json({ sha: `blob-${++blob}` }, 201);
       }
+
       if (url.endsWith("/git/trees")) {
         return json({ sha: "new-tree" }, 201);
       }
+
       if (url.endsWith("/git/commits")) {
         return json({ sha: "new-commit" }, 201);
       }
+
       if (url.endsWith("/git/refs")) {
         return json({ ref: "refs/heads/relay/test" }, 201);
       }
+
       if (url.endsWith("/pulls")) {
         return json({ number: 42, html_url: "https://github.com/owner/repo/pull/42" }, 201);
       }
+
       return json({ message: "not found" }, 404);
     });
+
     const result = await new GitHubPullRequestClient("token", fetcher).publish({
       login: "owner",
       roomID: "session-test",
@@ -66,7 +80,7 @@ describe("GitHubPullRequestClient", () => {
     });
     const pull = requests.find((request) => request.url.endsWith("/pulls"))?.body;
     expect(pull).toMatchObject({ title: "Relay update", base: "main" });
-    expect(String(pull?.head)).toMatch(/^relay\/session-test--/);
+    expect(z.string().parse(pull?.head)).toMatch(/^relay\/session-test--/);
   });
 
   it("does not call GitHub when the room has no changes", async () => {
@@ -88,13 +102,15 @@ describe("GitHubPullRequestClient", () => {
 
   it("publishes later revisions to the same pull request branch", async () => {
     const requests: Array<{ url: string; method?: string; body?: unknown }> = [];
+
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       const url = input instanceof Request ? input.url : String(input);
       requests.push({
         url,
         method: init?.method,
-        body: init?.body ? JSON.parse(typeof init.body === "string" ? init.body : "") : undefined,
+        body: init?.body ? parseJsonRecord(JSON.parse(z.string().parse(init.body))) : undefined,
       });
+
       if (url.endsWith("/repos/owner/repo")) {
         return json({
           full_name: "owner/repo",
@@ -102,26 +118,34 @@ describe("GitHubPullRequestClient", () => {
           permissions: { push: true },
         });
       }
+
       if (url.endsWith("/git/commits/" + "a".repeat(40))) {
         return json({ sha: "a".repeat(40), tree: { sha: "base-tree" } });
       }
+
       if (url.includes("/git/ref/heads/relay/existing")) {
         return json({ object: { sha: "old-head" } });
       }
+
       if (url.endsWith("/git/blobs")) {
         return json({ sha: "blob" }, 201);
       }
+
       if (url.endsWith("/git/trees")) {
         return json({ sha: "tree" }, 201);
       }
+
       if (url.endsWith("/git/commits")) {
         return json({ sha: "new-head" }, 201);
       }
+
       if (url.includes("/git/refs/heads/relay/existing")) {
         return json({}, 200);
       }
+
       return json({ message: "not found" }, 404);
     });
+
     const result = await new GitHubPullRequestClient("token", fetcher).publish(
       {
         login: "owner",
@@ -157,9 +181,11 @@ describe("GitHubPullRequestClient", () => {
   it("discovers the ready preview URL for an exact commit", async () => {
     const fetcher = vi.fn<typeof fetch>(async (input) => {
       const url = input instanceof Request ? input.url : String(input);
+
       if (url.includes("/deployments?sha=abc")) {
         return json([{ id: 7, environment: "preview" }]);
       }
+
       if (url.endsWith("/deployments/7/statuses?per_page=20")) {
         return json([
           {
@@ -169,6 +195,7 @@ describe("GitHubPullRequestClient", () => {
           },
         ]);
       }
+
       return json({ message: "not found" }, 404);
     });
 
@@ -183,7 +210,7 @@ describe("GitHubPullRequestClient", () => {
   });
 });
 
-function json(value: unknown, status = 200) {
+function json(value: JsonValue, status = 200) {
   return new Response(JSON.stringify(value), {
     status,
     headers: { "Content-Type": "application/json" },

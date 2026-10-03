@@ -1,15 +1,49 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { validateHandoffClientState, type RoomContext } from "./agent-room-core";
+import { roomContext, TestRoom, simulationEnv } from "./fixtures/room";
+import { deferred } from "./fixtures/deferred";
+import { sealGitHubCredential } from "./github-auth";
+import type { PullRequestResult } from "./github-pull-request";
 
-vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
-vi.mock("@opencode/sdk/workerd", () => ({ OpenCodeWorkerd: class {} }));
-vi.mock("./github-auth", () => ({
-  unsealGitHubCredential: async () => ({ accessToken: "test", login: "maintainer" }),
-  sealGitHubCredential: async () => "sealed",
-}));
+const databases: ReturnType<typeof roomContext>["database"][] = [];
 
-import { AgentRoom, validateHandoffClientState } from "./agent-room";
+afterEach(() => {
+  vi.unstubAllGlobals();
 
-afterEach(() => vi.unstubAllGlobals());
+  for (const database of databases.splice(0)) {
+    database.close();
+  }
+});
+
+function fixture() {
+  const value = roomContext();
+  databases.push(value.database);
+
+  return value;
+}
+
+function publication(commitSHA: string): PullRequestResult {
+  return {
+    number: 1,
+    url: "https://github.com/owner/repo/pull/1",
+    branch: "relay/test",
+    repository: "owner/repo",
+    writeRepository: "owner/repo",
+    commitSHA,
+  };
+}
+
+class PublishingRoom extends TestRoom {
+  constructor(
+    context: RoomContext,
+    private readonly publish: () => Promise<PullRequestResult>,
+  ) {
+    super(context, { ...simulationEnv, GITHUB_SESSION_SECRET: "local-test-key" });
+  }
+  protected override publishPullRequest() {
+    return this.publish();
+  }
+}
 
 describe("deployment readiness", () => {
   it.each([
@@ -18,22 +52,21 @@ describe("deployment readiness", () => {
   ] as const)(
     "recovers a saved preview only for its published SHA (%s)",
     async (commitSHA, expectedCalls) => {
-      const revision = {
+      const { context, database } = fixture();
+      const room = new TestRoom(context);
+      room.seed("room-1");
+      room.revision({
+        workspaceRevision: 1,
         commitSHA: "abc",
         status: "waiting",
         previewURL: "https://preview.example",
-        createdAt: Date.now(),
-      };
+      });
+      database.sql.exec("UPDATE relay_room SET pull_request_head_sha = 'abc'");
       vi.stubGlobal(
         "fetch",
         vi.fn().mockResolvedValue(Response.json({ ready: true, commitSHA, roomProtocol: 1 })),
       );
-      const recordDeployment = vi.fn();
-      const room = Object.assign(Object.create(AgentRoom.prototype) as object, {
-        getRoomOrNull: () => ({ pullRequestHeadSHA: "abc", latestRevision: revision }),
-        githubCredential: () => undefined,
-        recordDeployment,
-      }) as unknown as AgentRoom;
+      const recordDeployment = vi.spyOn(room, "recordDeployment");
       await room.alarm();
       expect(recordDeployment).toHaveBeenCalledTimes(expectedCalls);
       expect(recordDeployment.mock.calls).toEqual(
@@ -46,80 +79,87 @@ describe("deployment readiness", () => {
   it.each(["waiting", "building", "failed"] as const)(
     "does not let a stale %s observation overwrite a ready callback",
     async (status) => {
-      const ready = {
-        id: "revision",
+      const { context } = fixture();
+      const room = new TestRoom(context);
+      room.seed("room-1");
+
+      const ready = room.revision({
+        workspaceRevision: 1,
         commitSHA: "abc",
         status: "ready",
         previewURL: "https://preview.example",
-      };
-      const exec = vi.fn();
-      const room = Object.assign(Object.create(AgentRoom.prototype) as object, {
-        revisionForCommit: () => ready,
-        ctx: { storage: { sql: { exec } } },
-      }) as unknown as AgentRoom;
-      expect(await room.recordDeployment({ commitSHA: "abc", status })).toBe(ready);
-      expect(exec).not.toHaveBeenCalled();
+      });
+
+      expect(await room.recordDeployment({ commitSHA: "abc", status })).toEqual(ready);
+      expect(room.info().latestRevision).toEqual(ready);
     },
   );
 });
 
 describe("concurrent publication", () => {
   it("publishes changes that arrive while the previous snapshot is being published", async () => {
-    const state = { workspaceRevision: 1, publishedWorkspaceRevision: 0 };
-    const createPullRequest = vi
+    const { context, database } = fixture();
+
+    const publish = vi
       .fn()
       .mockImplementationOnce(async () => {
-        state.workspaceRevision = 2;
-        state.publishedWorkspaceRevision = 1;
-        return { commitSHA: "first" };
+        database.sql.exec(
+          "UPDATE relay_room SET workspace_revision = 2, published_workspace_revision = 1",
+        );
+
+        return publication("first");
       })
       .mockImplementationOnce(async () => {
-        state.publishedWorkspaceRevision = 2;
-        return { commitSHA: "second" };
+        database.sql.exec("UPDATE relay_room SET published_workspace_revision = 2");
+
+        return publication("second");
       });
-    const room = Object.assign(Object.create(AgentRoom.prototype) as object, {
-      getRoom: () => state,
-      githubCredential: () => "sealed",
-      createPullRequest,
-    }) as unknown as AgentRoom;
-    expect(await room.publishSavedPullRequest()).toEqual({ commitSHA: "second" });
-    expect(createPullRequest).toHaveBeenCalledTimes(2);
+
+    const room = new PublishingRoom(context, publish);
+    room.seed("room-1");
+
+    const sealed = await sealGitHubCredential(
+      { accessToken: "synthetic", login: "maintainer" },
+      { GITHUB_SESSION_SECRET: "local-test-key" },
+    );
+
+    database.sql.exec(
+      "UPDATE relay_room SET workspace_revision = 1, github_credential = ?",
+      sealed,
+    );
+    expect(await room.publishSavedPullRequest()).toEqual(publication("second"));
+    expect(publish).toHaveBeenCalledTimes(2);
   });
   it("shares one GitHub publication between finishing turns and permits the next revision", async () => {
-    let finish!: (value: { commitSHA: string }) => void;
-    const publishPullRequest = vi.fn(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
-    );
-    const room = Object.assign(Object.create(AgentRoom.prototype) as object, {
-      publishPullRequest,
-    }) as unknown as AgentRoom;
-    const input = { accessToken: "test", login: "maintainer" };
+    const { context } = fixture();
+    let completion = deferred<PullRequestResult>();
+    const publish = vi.fn(() => completion.promise);
+    const room = new PublishingRoom(context, publish);
+    const input = { accessToken: "synthetic", login: "maintainer" };
     const first = room.createPullRequest(input);
     const second = room.createPullRequest(input);
-    expect(publishPullRequest).toHaveBeenCalledTimes(1);
-    finish({ commitSHA: "one" });
-    expect(await first).toEqual({ commitSHA: "one" });
-    expect(await second).toEqual({ commitSHA: "one" });
+    expect(publish).toHaveBeenCalledTimes(1);
+    completion.resolve(publication("one"));
+    expect(await first).toEqual(publication("one"));
+    expect(await second).toEqual(publication("one"));
+    completion = deferred<PullRequestResult>();
     const next = room.createPullRequest(input);
-    expect(publishPullRequest).toHaveBeenCalledTimes(2);
-    finish({ commitSHA: "two" });
-    expect(await next).toEqual({ commitSHA: "two" });
+    expect(publish).toHaveBeenCalledTimes(2);
+    completion.resolve(publication("two"));
+    expect(await next).toEqual(publication("two"));
   });
-
   it("releases a failed publication so a later attempt can retry", async () => {
-    const publishPullRequest = vi
+    const { context } = fixture();
+
+    const publish = vi
       .fn()
       .mockRejectedValueOnce(new Error("GitHub unavailable"))
-      .mockResolvedValue({ commitSHA: "retry" });
-    const room = Object.assign(Object.create(AgentRoom.prototype) as object, {
-      publishPullRequest,
-    }) as unknown as AgentRoom;
-    const input = { accessToken: "test", login: "maintainer" };
+      .mockResolvedValue(publication("retry"));
+
+    const room = new PublishingRoom(context, publish);
+    const input = { accessToken: "synthetic", login: "maintainer" };
     await expect(room.createPullRequest(input)).rejects.toThrow("GitHub unavailable");
-    await expect(room.createPullRequest(input)).resolves.toEqual({ commitSHA: "retry" });
+    await expect(room.createPullRequest(input)).resolves.toEqual(publication("retry"));
   });
 });
 
@@ -130,8 +170,9 @@ describe("preview handoff client state", () => {
       selectedID: undefined,
       mobileTab: "brief",
     });
-    expect(validateHandoffClientState({ mobileTab: "people" })?.mobileTab).toBe("people");
-    expect(validateHandoffClientState({ mobileTab: "queue" })?.mobileTab).toBe("queue");
-    expect(validateHandoffClientState({ mobileTab: "transcript" })?.mobileTab).toBe("transcript");
+
+    for (const mobileTab of ["people", "queue", "transcript"] as const) {
+      expect(validateHandoffClientState({ mobileTab })?.mobileTab).toBe(mobileTab);
+    }
   });
 });

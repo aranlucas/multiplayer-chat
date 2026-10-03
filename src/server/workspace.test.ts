@@ -26,42 +26,22 @@ describe("replaceExact", () => {
 describe("RepositoryWorkspace.ensureReady", () => {
   it("does not replace the repository when a Railway probe fails", async () => {
     const transportError = new Error("Railway GraphQL request failed with HTTP 503");
-    const sandbox = {
-      configured: true,
-      exec: vi.fn().mockRejectedValue(transportError),
-    };
-    const room = {
-      room_id: "room-1",
-      repository: "aranlucas/multiplayer-chat",
-      branch: "main",
-      commit_sha: "abc123",
-      workspace_status: "ready",
-    };
-    const storage = {
-      sql: {
-        exec: vi.fn((query: string) => ({
-          one: () => {
-            if (query.startsWith("SELECT * FROM relay_room")) {
-              return room;
-            }
-            throw new Error(`Unexpected query: ${query}`);
-          },
-        })),
-      },
-    };
-    const workspace = new RepositoryWorkspace(
-      storage as unknown as DurableObjectStorage,
-      {},
-      sandbox as unknown as RailwayRoomSandbox,
-    );
+
+    const database = sqliteStorage();
+    database.sql
+      .exec(`CREATE TABLE relay_room (singleton INTEGER PRIMARY KEY, room_id TEXT, repository TEXT, branch TEXT, commit_sha TEXT, workspace_status TEXT, workspace_error TEXT);
+      INSERT INTO relay_room VALUES (1, 'room-1', 'aranlucas/multiplayer-chat', 'main', 'abc123', 'ready', NULL);`);
+    const storage = { sql: database.sql };
+    const sandbox = new RailwayRoomSandbox(storage, {});
+    vi.spyOn(sandbox, "configured", "get").mockReturnValue(true);
+    const exec = vi.spyOn(sandbox, "exec").mockRejectedValue(transportError);
+    const workspace = new RepositoryWorkspace(storage, {}, sandbox);
 
     await expect(workspace.ensureReady()).rejects.toBe(transportError);
 
-    expect(sandbox.exec).toHaveBeenCalledOnce();
-    expect(sandbox.exec).not.toHaveBeenCalledWith(
-      expect.stringContaining("rm -rf"),
-      expect.anything(),
-    );
+    expect(exec).toHaveBeenCalledOnce();
+    expect(exec).not.toHaveBeenCalledWith(expect.stringContaining("rm -rf"), expect.anything());
+    database.close();
   });
 });
 
@@ -72,17 +52,11 @@ describe("published workspace association", () => {
     const database = new DatabaseSync(":memory:");
     database.exec(`CREATE TABLE relay_room (singleton INTEGER PRIMARY KEY, pull_request_url TEXT, pull_request_branch TEXT, pull_request_number INTEGER, pull_request_head_sha TEXT);
       INSERT INTO relay_room VALUES (1, 'https://github.com/owner/repo/pull/30', 'relay/feature', 30, 'published');`);
-    const sql = {
-      exec(query: string, ...values: (string | number | null)[]) {
-        if (query.includes("CREATE TABLE")) {
-          database.exec(query);
-          return { toArray: () => [] };
-        }
-        const rows = database.prepare(query).all(...values);
-        return { toArray: () => rows, one: () => rows[0] };
-      },
-    } as unknown as DurableObjectStorage["sql"];
-    const workspace = new RepositoryWorkspace({ sql } as DurableObjectStorage, {});
+
+    const { sql } = sqliteStorage(database);
+
+    const workspace = new RepositoryWorkspace({ sql }, {});
+
     try {
       for (const changes of [
         [{ path: "feature.ts", content: "first" }],
@@ -99,6 +73,7 @@ describe("published workspace association", () => {
             .get(),
         ).toEqual({ url: "https://github.com/owner/repo/pull/30", branch: "relay/feature" });
       }
+
       database.exec(
         "ALTER TABLE relay_room ADD COLUMN workspace_revision INTEGER NOT NULL DEFAULT 1",
       );
@@ -141,9 +116,9 @@ describe("published workspace association", () => {
       2,
       JSON.stringify({ type: "pull_request", commitSHA: "other", url: "wrong", branch: "wrong" }),
     );
-    const sql = {
-      exec: (query: string) => database.exec(query),
-    } as unknown as DurableObjectStorage["sql"];
+
+    const { sql } = sqliteStorage(database);
+
     try {
       restorePullRequestAssociation(sql);
       expect(
@@ -172,7 +147,7 @@ describe("RepositoryWorkspace checkpoint ownership", () => {
     database.sql
       .exec(`CREATE TABLE relay_room (singleton INTEGER PRIMARY KEY, room_id TEXT, repository TEXT, branch TEXT, commit_sha TEXT, workspace_status TEXT);
       INSERT INTO relay_room VALUES (1, 'room-1', 'owner/repo', 'main', 'base', 'ready');`);
-    const storage = { sql: database.sql } as DurableObjectStorage;
+    const storage = { sql: database.sql };
     const sandbox = new RailwayRoomSandbox(storage, {});
     vi.spyOn(sandbox, "configured", "get").mockReturnValue(true);
     vi.spyOn(sandbox, "exec").mockImplementation(async (command) => ({
@@ -187,10 +162,12 @@ describe("RepositoryWorkspace checkpoint ownership", () => {
     const reading = deferred<void>();
     vi.spyOn(sandbox, "readFile").mockImplementation(() => {
       reading.resolve();
+
       return file.promise;
     });
     const workspace = new RepositoryWorkspace(storage, {}, sandbox);
     let current = true;
+
     try {
       const checkpoint = workspace.syncSandboxChanges(() => current);
       await reading.promise;

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { z } from "zod";
 import { StrictMode } from "react";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +16,7 @@ const revision: RoomRevision = {
   createdAt: 1,
   updatedAt: 1,
 };
+
 const options = {
   roomID: "room-1",
   controlOrigin: "https://control.example",
@@ -34,21 +36,25 @@ afterEach(() => {
 describe("preview handoff", () => {
   it("survives room updates and preserves the draft with one request in Strict Mode", async () => {
     let resolveResponse!: (value: Response) => void;
+
     const response = new Promise<Response>((resolve) => {
       resolveResponse = resolve;
     });
+
     const fetcher = vi.fn<typeof fetch>().mockReturnValue(response);
     vi.stubGlobal("fetch", fetcher);
+
     const { result, rerender } = renderHook(usePreviewHandoff, {
       initialProps: options,
       wrapper: StrictMode,
     });
+
     await waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
     rerender({ ...options, revision: { ...revision, activatedAt: 2 } });
     const init = fetcher.mock.calls[0][1];
     expect(init?.signal?.aborted).toBe(false);
     expect(result.current.transitioning).toBe(true);
-    expect(JSON.parse(typeof init?.body === "string" ? init.body : "null")).toEqual({
+    expect(JSON.parse(z.string().parse(init?.body))).toEqual({
       participant: options.identity,
       currentOrigin: window.location.origin,
       clientState: {
@@ -76,6 +82,7 @@ describe("preview handoff", () => {
       .fn<typeof fetch>()
       .mockRejectedValueOnce(new Error("Network unavailable"))
       .mockReturnValue(new Promise(() => {}));
+
     vi.stubGlobal("fetch", fetcher);
     const { result } = renderHook(() => usePreviewHandoff(options));
     await waitFor(() => expect(result.current.error).toBe("Network unavailable"));
@@ -91,7 +98,7 @@ describe("preview handoff", () => {
     renderHook(() => usePreviewHandoff({ ...options, mobileTab: "brief" }));
     await waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
     const init = fetcher.mock.calls[0][1];
-    expect(JSON.parse(typeof init?.body === "string" ? init.body : "null")).toMatchObject({
+    expect(JSON.parse(z.string().parse(init?.body))).toMatchObject({
       clientState: { mobileTab: "brief" },
     });
   });

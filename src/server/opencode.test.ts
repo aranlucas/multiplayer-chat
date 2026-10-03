@@ -5,11 +5,12 @@ import {
   liveOpenCodeConfigurationError,
   openCodeConfiguration,
   openCodeModelAllowlist,
-  type WorkerEnv,
+  type RoomEnv,
 } from "./opencode";
 
-function env(overrides: Partial<WorkerEnv>): WorkerEnv {
+function env(overrides: Partial<RoomEnv>): RoomEnv {
   return {
+    CLOUDFLARE_ACCOUNT_ID: "local-test",
     OPENCODE_MODE: "live",
     OPENCODE_PROVIDER: "opencode-zen",
     OPENCODE_MODEL: "opencode/mimo-v2.5-free",
@@ -17,7 +18,7 @@ function env(overrides: Partial<WorkerEnv>): WorkerEnv {
     RAILWAY_ENVIRONMENT_ID: "railway-environment",
     RAILWAY_TOKEN: "railway-project-token",
     ...overrides,
-  } as WorkerEnv;
+  };
 }
 
 describe("hasLiveOpenCode", () => {

@@ -1,0 +1,2266 @@
+import { z } from "zod";
+import type { RoomStorage } from "./storage";
+import {
+  jsonRecord,
+  jsonRecordSchema,
+  type JsonRecord,
+  type JsonValue,
+} from "../shared/json-value";
+import { textValue } from "../shared/text-value";
+import type { OpenCodeWorkerd } from "@opencode/sdk/workerd";
+import type { WorkspaceChange } from "../shared/workspace-change";
+import {
+  actorSchema,
+  DEFAULT_BRANCH,
+  DEFAULT_REPOSITORY,
+  PARTICIPANT_COLORS,
+  parseClientMessage,
+  queuedPrompts,
+  type BriefReviewComment,
+  type ClientMessage,
+  type Participant,
+  type ImplementationBrief,
+  type PermissionRequest,
+  type QueuedPrompt,
+  type RoomInfo,
+  type RoomDecision,
+  type RoomRevision,
+  type RoomSnapshot,
+  type ServerMessage,
+  type TimelineEvent,
+} from "../shared/protocol";
+import { InactiveAgentTurnError, TurnCoordinator, type AgentTurn } from "./agent-turn";
+import { sessionTitleFromEvent } from "./session-title";
+import {
+  configuredOpenCodeModels,
+  hasLiveOpenCode,
+  liveOpenCodeConfigurationError,
+  openCodeModelAllowlist,
+  type RoomEnv,
+} from "./opencode";
+import {
+  EmbeddedOpenCodeRunner,
+  openCodeHost,
+  type EmbeddedTurnResult,
+  type NativeRunnerEvent,
+} from "./embedded-opencode";
+import { drainSimulatedQueue, runSimulatedTurn } from "./simulation-runner";
+import { RepositoryWorkspace, restorePullRequestAssociation } from "./workspace";
+import { RailwayRoomSandbox } from "./railway-sandbox";
+import {
+  GitHubPullRequestClient,
+  type ExistingPullRequest,
+  type PullRequestResult,
+} from "./github-pull-request";
+import { sealGitHubCredential, unsealGitHubCredential } from "./github-auth";
+
+const socketAttachmentSchema = z.object({ participant: actorSchema });
+
+const handoffClientStateSchema = z.object({
+  draft: z.string().optional().catch(undefined),
+  selectedID: z.string().optional().catch(undefined),
+  mobileTab: z.enum(["transcript", "brief", "people", "queue"]).optional().catch(undefined),
+});
+
+interface SocketAttachment {
+  participant: Pick<Participant, "id" | "name" | "role" | "color">;
+}
+
+interface EventRow {
+  [key: string]: string | number | null;
+  seq: number;
+  id: string;
+  kind: TimelineEvent["kind"];
+  created_at: number;
+  actor_json: string | null;
+  payload_json: string;
+  queue_status: "pending" | "consumed" | null;
+}
+
+interface ParticipantRow {
+  [key: string]: string | number | null;
+  id: string;
+  name: string;
+  role: Participant["role"];
+  color: string;
+  last_seen: number;
+}
+
+interface PermissionRow {
+  [key: string]: string | number | null;
+  id: string;
+  session_id: string;
+  action: string;
+  resources_json: string;
+  message: string | null;
+  status: PermissionRequest["status"];
+  created_at: number;
+}
+
+interface BriefRow {
+  [key: string]: string | number | null;
+  objective: string;
+  constraints_json: string;
+  validation_json: string;
+  updated_at: number | null;
+  updated_by_json: string | null;
+  revision: number;
+  review_status: ImplementationBrief["review"]["status"];
+  review_round: number;
+  review_started_at: number | null;
+  review_started_by_json: string | null;
+  review_resolved_at: number | null;
+  review_resolved_by_json: string | null;
+}
+
+interface BriefReviewCommentRow {
+  [key: string]: string | number | null;
+  id: string;
+  review_round: number;
+  text: string;
+  actor_json: string;
+  created_at: number;
+}
+
+interface DecisionRow {
+  [key: string]: string | number | null;
+  id: string;
+  text: string;
+  rationale: string | null;
+  source_event_id: string | null;
+  actor_json: string;
+  created_at: number;
+}
+
+interface RevisionRow {
+  [key: string]: string | number | null;
+  id: string;
+  sequence: number;
+  workspace_revision: number;
+  commit_sha: string;
+  status: RoomRevision["status"];
+  preview_url: string | null;
+  provider: string | null;
+  deployment_id: string | null;
+  failure: string | null;
+  created_at: number;
+  updated_at: number;
+  activated_at: number | null;
+}
+
+interface HandoffRow {
+  [key: string]: string | number | null;
+  token_hash: string;
+  target_origin: string;
+  participant_json: string;
+  expires_at: number;
+  used_at: number | null;
+}
+
+interface HandoffParticipant {
+  id: string;
+  name: string;
+  role: Participant["role"];
+}
+
+interface HandoffClientState {
+  draft?: string;
+  selectedID?: string;
+  mobileTab?: "transcript" | "brief" | "people" | "queue";
+}
+
+export type RoomSocket = Pick<
+  WebSocket,
+  "send" | "close" | "serializeAttachment" | "deserializeAttachment"
+>;
+
+export interface RoomContext {
+  id: { name?: string };
+  storage: RoomStorage & Pick<DurableObjectStorage, "setAlarm">;
+  getWebSockets(): RoomSocket[];
+  acceptWebSocket(socket: WebSocket): void;
+  waitUntil(promise: Promise<void>): void;
+  blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T>;
+}
+
+export interface RoomDependencies {
+  createHost?: (
+    sandbox: RailwayRoomSandbox,
+    workspace: RepositoryWorkspace,
+  ) => Promise<OpenCodeWorkerd.Interface>;
+  runner?: Pick<
+    EmbeddedOpenCodeRunner,
+    "turn" | "interrupt" | "models" | "replyToForm" | "cancelForm"
+  >;
+}
+
+export class AgentRoomCore {
+  protected pullRequestPublication?: Promise<PullRequestResult>;
+  protected readonly workspace: RepositoryWorkspace;
+  protected readonly sandbox: RailwayRoomSandbox;
+  protected readonly runner?: RoomDependencies["runner"];
+  protected readonly turns: TurnCoordinator;
+
+  protected get roomID(): string {
+    return this.ctx.id.name ?? this.getRoom().id;
+  }
+
+  constructor(
+    protected readonly ctx: RoomContext,
+    protected readonly env: RoomEnv,
+    dependencies: RoomDependencies = {},
+  ) {
+    this.turns = new TurnCoordinator(ctx.storage.sql, () => {
+      this.broadcast({ type: "room", room: this.getRoom() });
+    });
+    this.sandbox = new RailwayRoomSandbox(ctx.storage, env);
+    this.workspace = new RepositoryWorkspace(ctx.storage, env, this.sandbox);
+
+    if (dependencies.runner) {
+      this.runner = dependencies.runner;
+      this.migrate();
+    } else if (env.OPENCODE_MODE === "live") {
+      const hiddenRelayTables = this.hideRelayTablesForOpenCodeBootstrap();
+
+      const host = ctx.blockConcurrencyWhile(async () => {
+        try {
+          if (!dependencies.createHost) {
+            throw new Error("Live OpenCode host is not configured");
+          }
+
+          const opencode = await dependencies.createHost(this.sandbox, this.workspace);
+          this.restoreRelayTables(hiddenRelayTables);
+          this.migrate();
+
+          return opencode;
+        } catch (error) {
+          this.restoreRelayTables(hiddenRelayTables);
+          this.migrate();
+          throw error;
+        }
+      });
+
+      this.runner = new EmbeddedOpenCodeRunner(
+        host.then(openCodeHost),
+        this.workspace,
+        this.sandbox,
+      );
+    } else {
+      this.migrate();
+    }
+  }
+
+  async initialize(roomID: string): Promise<void> {
+    this.ensureRoom(this.ctx.id.name ?? roomID);
+
+    if (this.getRoom().workspaceStatus !== "ready") {
+      this.ctx.waitUntil(
+        this.workspace
+          .ensureReady()
+          .then(() => {
+            this.broadcast({ type: "room", room: this.getRoom() });
+          })
+          .catch((error) => {
+            console.warn("Repository workspace initialization deferred", error);
+            this.broadcast({ type: "room", room: this.getRoom() });
+          }),
+      );
+    }
+  }
+
+  async createPullRequest(input: {
+    accessToken: string;
+    login: string;
+    title?: string;
+    body?: string;
+  }): Promise<PullRequestResult> {
+    if (!this.pullRequestPublication) {
+      this.pullRequestPublication = this.publishPullRequest(input).finally(() => {
+        this.pullRequestPublication = undefined;
+      });
+    }
+
+    return this.pullRequestPublication;
+  }
+
+  protected async publishPullRequest(input: {
+    accessToken: string;
+    login: string;
+    title?: string;
+    body?: string;
+  }): Promise<PullRequestResult> {
+    const workspace = await this.workspace.pullRequestWorkspace();
+    const room = this.getRoom();
+    const title = cleanPullRequestText(input.title, `Relay: ${room.title}`, 160);
+
+    const body = cleanPullRequestText(
+      input.body,
+      [
+        "Created from a collaborative Relay coding-agent session.",
+        "",
+        `Base commit: \`${workspace.commitSHA}\``,
+        `Room: \`${room.id}\``,
+        `Changed files: ${workspace.changes.map((change) => `\`${change.path}\``).join(", ")}`,
+      ].join("\n"),
+      20_000,
+    );
+
+    const existing: ExistingPullRequest | undefined =
+      room.pullRequestURL &&
+      room.pullRequestNumber &&
+      room.pullRequestBranch &&
+      room.pullRequestRepository &&
+      room.pullRequestHeadSHA
+        ? {
+            number: room.pullRequestNumber,
+            url: room.pullRequestURL,
+            branch: room.pullRequestBranch,
+            writeRepository: room.pullRequestRepository,
+            headSHA: room.pullRequestHeadSHA,
+          }
+        : undefined;
+
+    const result = await new GitHubPullRequestClient(input.accessToken).publish(
+      {
+        login: input.login,
+        roomID: room.id,
+        repository: workspace.repository,
+        baseBranch: workspace.branch,
+        baseCommitSHA: workspace.commitSHA,
+        changes: workspace.changes,
+        title,
+        body,
+      },
+      existing,
+    );
+
+    const sealedCredential = await sealGitHubCredential(
+      { accessToken: input.accessToken, login: input.login },
+      this.env,
+    );
+
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_room SET pull_request_url = ?, pull_request_number = ?, pull_request_branch = ?, pull_request_repository = ?, pull_request_head_sha = ?, github_credential = ?, published_workspace_revision = ? WHERE singleton = 1",
+      result.url,
+      result.number,
+      result.branch,
+      result.writeRepository,
+      result.commitSHA,
+      sealedCredential,
+      workspace.workspaceRevision,
+    );
+
+    const revision = this.insertRevision({
+      workspaceRevision: workspace.workspaceRevision,
+      commitSHA: result.commitSHA,
+      status: "waiting",
+      provider: "github",
+    });
+
+    const event = this.insertEvent({
+      id: crypto.randomUUID(),
+      kind: "system",
+      createdAt: Date.now(),
+      payload: {
+        type: "pull_request",
+        text: existing
+          ? `@${input.login} published revision ${revision.sequence} to pull request #${result.number}`
+          : `@${input.login} created pull request #${result.number}`,
+        url: result.url,
+        branch: result.branch,
+        commitSHA: result.commitSHA,
+        revision: revision.sequence,
+      },
+    });
+
+    this.broadcast({ type: "room", room: this.getRoom() });
+    this.broadcast({ type: "event", event });
+    await this.ctx.storage.setAlarm(Date.now() + 2_000);
+
+    return result;
+  }
+
+  async publishSavedPullRequest(): Promise<PullRequestResult | undefined> {
+    let result: PullRequestResult | undefined;
+
+    for (;;) {
+      const room = this.getRoom();
+
+      if (room.workspaceRevision <= room.publishedWorkspaceRevision) {
+        return result;
+      }
+
+      const credential = this.githubCredential();
+
+      if (!credential) {
+        return result;
+      }
+
+      result = await this.createPullRequest(await unsealGitHubCredential(credential, this.env));
+    }
+  }
+
+  async recordDeployment(input: {
+    commitSHA: string;
+    status: RoomRevision["status"];
+    previewURL?: string;
+    provider?: string;
+    deploymentID?: string;
+    failure?: string;
+  }): Promise<RoomRevision> {
+    const revision = this.revisionForCommit(input.commitSHA);
+
+    if (!revision) {
+      throw new Error("Deployment does not match a published room revision");
+    }
+
+    // A poll started before the readiness callback can finish after it.
+    if (revision.status === "ready" && input.status !== "ready") {
+      return revision;
+    }
+
+    const previewURL = input.previewURL ? validatePreviewURL(input.previewURL) : undefined;
+
+    if (input.status === "ready" && !previewURL) {
+      throw new Error("A ready deployment requires a preview URL");
+    }
+
+    const now = Date.now();
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_revisions SET status = ?, preview_url = COALESCE(?, preview_url), provider = COALESCE(?, provider), deployment_id = COALESCE(?, deployment_id), failure = ?, updated_at = ? WHERE id = ?",
+      input.status,
+      previewURL ?? null,
+      input.provider ?? null,
+      input.deploymentID ?? null,
+      input.failure ?? null,
+      now,
+      revision.id,
+    );
+    const updated = this.revisionByID(revision.id);
+
+    if (!updated) {
+      throw new Error("Saved room revision is missing");
+    }
+
+    if (input.status === "ready" || input.status === "failed") {
+      const event = this.insertEvent({
+        id: `deployment:${updated.id}:${input.status}`,
+        kind: "system",
+        createdAt: now,
+        payload: {
+          type: "deployment",
+          status: input.status,
+          text:
+            input.status === "ready"
+              ? `Revision ${updated.sequence} preview is ready`
+              : `Revision ${updated.sequence} preview failed`,
+          url: updated.previewURL,
+          failure: updated.failure,
+          revision: updated.sequence,
+          commitSHA: updated.commitSHA,
+        },
+      });
+
+      this.broadcast({ type: "event", event });
+    }
+
+    this.broadcast({ type: "room", room: this.getRoom() });
+
+    return updated;
+  }
+
+  async createLocalPreview(input: {
+    previewURL: string;
+    commitSHA?: string;
+  }): Promise<RoomRevision> {
+    const room = this.getRoom();
+    const workspaceRevision = room.workspaceRevision + 1;
+
+    const commitSHA =
+      input.commitSHA ??
+      `local-${workspaceRevision}-${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_room SET workspace_revision = ?, published_workspace_revision = ? WHERE singleton = 1",
+      workspaceRevision,
+      workspaceRevision,
+    );
+
+    const revision = this.insertRevision({
+      workspaceRevision,
+      commitSHA,
+      status: "ready",
+      previewURL: validatePreviewURL(input.previewURL),
+      provider: "local",
+    });
+
+    const event = this.insertEvent({
+      id: `deployment:${revision.id}:ready`,
+      kind: "system",
+      createdAt: revision.createdAt,
+      payload: {
+        type: "deployment",
+        status: "ready",
+        text: `Revision ${revision.sequence} preview is ready`,
+        url: revision.previewURL,
+        revision: revision.sequence,
+        commitSHA: revision.commitSHA,
+      },
+    });
+
+    this.broadcast({ type: "event", event });
+    this.broadcast({ type: "room", room: this.getRoom() });
+
+    return revision;
+  }
+
+  async createHandoff(input: {
+    participant: HandoffParticipant;
+    clientState?: HandoffClientState;
+    currentOrigin: string;
+    controlOrigin: string;
+  }): Promise<{ url: string; expiresAt: number }> {
+    const revision = this.latestRevision();
+
+    if (!revision?.previewURL || revision.status !== "ready") {
+      throw new Error("The latest room preview is not ready");
+    }
+
+    const target = new URL(revision.previewURL);
+    const currentOrigin = new URL(input.currentOrigin).origin;
+    const controlOrigin = new URL(input.controlOrigin).origin;
+
+    if (target.origin === currentOrigin) {
+      throw new Error("The room is already on the latest preview");
+    }
+
+    const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", "");
+    const tokenHash = await sha256(token);
+    const expiresAt = Date.now() + 60_000;
+    this.ctx.storage.sql.exec(
+      "INSERT INTO relay_handoffs (token_hash, revision_id, target_origin, participant_json, expires_at) VALUES (?, ?, ?, ?, ?)",
+      tokenHash,
+      revision.id,
+      target.origin,
+      JSON.stringify({
+        participant: input.participant,
+        clientState: validateHandoffClientState(input.clientState),
+      }),
+      expiresAt,
+    );
+    target.pathname = `/r/${encodeURIComponent(this.roomID)}`;
+    target.searchParams.set("control", controlOrigin);
+    target.hash = `handoff=${token}`;
+
+    return { url: target.toString(), expiresAt };
+  }
+
+  async redeemHandoff(input: { token: string; targetOrigin: string }): Promise<{
+    participant: HandoffParticipant;
+    clientState?: HandoffClientState;
+    roomID: string;
+  }> {
+    if (!/^[a-f0-9]{64}$/i.test(input.token)) {
+      throw new Error("Invalid room handoff ticket");
+    }
+
+    const tokenHash = await sha256(input.token);
+
+    const rows = this.ctx.storage.sql
+      .exec<HandoffRow>("SELECT * FROM relay_handoffs WHERE token_hash = ?", tokenHash)
+      .toArray();
+
+    const handoff = rows[0];
+
+    if (!handoff || handoff.used_at || handoff.expires_at <= Date.now()) {
+      throw new Error("Room handoff ticket is expired or already used");
+    }
+
+    if (new URL(input.targetOrigin).origin !== handoff.target_origin) {
+      throw new Error("Room handoff ticket was issued for another preview");
+    }
+
+    const now = Date.now();
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_handoffs SET used_at = ? WHERE token_hash = ? AND used_at IS NULL",
+      now,
+      tokenHash,
+    );
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_revisions SET activated_at = COALESCE(activated_at, ?) WHERE id = (SELECT revision_id FROM relay_handoffs WHERE token_hash = ?)",
+      now,
+      tokenHash,
+    );
+    this.broadcast({ type: "room", room: this.getRoom() });
+
+    const stored = z
+      .object({
+        participant: actorSchema.omit({ color: true }),
+        clientState: handoffClientStateSchema.optional(),
+      })
+      .parse(JSON.parse(handoff.participant_json));
+
+    return {
+      participant: stored.participant,
+      clientState: stored.clientState,
+      roomID: this.roomID,
+    };
+  }
+
+  async activateRevision(input: {
+    revisionID: string;
+    currentOrigin: string;
+  }): Promise<RoomRevision> {
+    const revision = this.revisionByID(input.revisionID);
+
+    if (!revision?.previewURL || revision.status !== "ready") {
+      throw new Error("Room revision is not ready");
+    }
+
+    if (new URL(revision.previewURL).origin !== new URL(input.currentOrigin).origin) {
+      throw new Error("Room revision belongs to another preview origin");
+    }
+
+    const now = Date.now();
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_revisions SET activated_at = COALESCE(activated_at, ?) WHERE id = ?",
+      now,
+      revision.id,
+    );
+    const updated = this.revisionByID(revision.id);
+
+    if (!updated) {
+      throw new Error("Saved room revision is missing");
+    }
+
+    this.broadcast({ type: "room", room: this.getRoom() });
+
+    return updated;
+  }
+
+  async alarm(): Promise<void> {
+    const room = this.getRoomOrNull();
+
+    if (!room?.pullRequestHeadSHA) {
+      return;
+    }
+
+    const revision = room.latestRevision;
+
+    if (
+      !revision ||
+      revision.commitSHA !== room.pullRequestHeadSHA ||
+      revision.status === "ready" ||
+      revision.status === "failed"
+    ) {
+      return;
+    }
+
+    // Recover previews whose successful callback was overwritten by an older poll.
+    if (revision.previewURL) {
+      const ready = await verifyReadyPreview(revision.previewURL, revision.commitSHA).then(
+        () => true,
+        () => false,
+      );
+
+      if (ready) {
+        await this.recordDeployment({
+          commitSHA: revision.commitSHA,
+          status: "ready",
+          previewURL: revision.previewURL,
+          provider: revision.provider,
+          deploymentID: revision.deploymentID,
+        });
+
+        return;
+      }
+    }
+
+    if (Date.now() - revision.createdAt > 15 * 60_000) {
+      await this.recordDeployment({
+        commitSHA: revision.commitSHA,
+        status: "failed",
+        provider: revision.provider,
+        failure: "Preview deployment was not ready within 15 minutes",
+      });
+
+      return;
+    }
+
+    const credential = this.githubCredential();
+
+    if (!credential) {
+      return;
+    }
+
+    const session = await unsealGitHubCredential(credential, this.env);
+
+    const observation = await new GitHubPullRequestClient(session.accessToken).findDeployment(
+      room.repository,
+      room.pullRequestHeadSHA,
+    );
+
+    if (observation.status === "ready" && observation.environmentURL) {
+      await verifyReadyPreview(observation.environmentURL, room.pullRequestHeadSHA);
+    }
+
+    await this.recordDeployment({
+      commitSHA: room.pullRequestHeadSHA,
+      status: observation.status,
+      previewURL: observation.environmentURL,
+      provider: "github",
+      deploymentID: observation.deploymentID,
+      failure: observation.failure,
+    });
+
+    if (observation.status === "waiting" || observation.status === "building") {
+      await this.ctx.storage.setAlarm(Date.now() + 5_000);
+    }
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return Response.json(this.snapshot());
+    }
+
+    const url = new URL(request.url);
+    const name = url.searchParams.get("name") ?? "Guest";
+    const id = url.searchParams.get("participant") ?? crypto.randomUUID();
+    const requestedRole = url.searchParams.get("role");
+    const role = requestedRole === "contributor" ? "contributor" : "maintainer";
+    const colorIndex = Math.abs(hashCode(id)) % PARTICIPANT_COLORS.length;
+
+    const participant = {
+      id,
+      name,
+      role,
+      color: PARTICIPANT_COLORS[colorIndex],
+    } as const;
+
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    this.ctx.acceptWebSocket(server);
+    server.serializeAttachment({ participant } satisfies SocketAttachment);
+    this.upsertParticipant(participant);
+    server.send(JSON.stringify(this.snapshot()));
+    this.broadcastPresence();
+
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async webSocketMessage(socket: RoomSocket, raw: string | ArrayBuffer): Promise<void> {
+    const attachment = socketAttachmentSchema.nullable().parse(socket.deserializeAttachment());
+
+    if (!attachment) {
+      return;
+    }
+
+    try {
+      const text = raw instanceof ArrayBuffer ? new TextDecoder().decode(raw) : raw;
+      const message = parseClientMessage(JSON.parse(text));
+      await this.handleClientMessage(socket, attachment.participant, message);
+    } catch (error) {
+      this.send(socket, {
+        type: "error",
+        message: error instanceof Error ? error.message : "Invalid message",
+      });
+    }
+  }
+
+  async webSocketClose(socket: RoomSocket): Promise<void> {
+    const attachment = socketAttachmentSchema.nullable().parse(socket.deserializeAttachment());
+
+    if (attachment) {
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_participants SET last_seen = ? WHERE id = ?",
+        Date.now(),
+        attachment.participant.id,
+      );
+    }
+
+    this.broadcastPresence();
+  }
+
+  async webSocketError(socket: RoomSocket): Promise<void> {
+    await this.webSocketClose(socket);
+  }
+
+  protected migrate() {
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS relay_room (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        room_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        repository TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        agent_status TEXT NOT NULL,
+        opencode_model TEXT,
+        opencode_session_id TEXT,
+        opencode_event_cursor TEXT,
+        commit_sha TEXT,
+        workspace_status TEXT NOT NULL DEFAULT 'cloning',
+        workspace_error TEXT
+      );
+      CREATE TABLE IF NOT EXISTS relay_events (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT NOT NULL UNIQUE,
+        kind TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        actor_json TEXT,
+        payload_json TEXT NOT NULL,
+        queue_status TEXT
+      );
+      CREATE TABLE IF NOT EXISTS relay_participants (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        color TEXT NOT NULL,
+        last_seen INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS relay_permissions (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        resources_json TEXT NOT NULL,
+        message TEXT,
+        status TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS relay_revisions (
+        id TEXT PRIMARY KEY,
+        sequence INTEGER NOT NULL UNIQUE,
+        workspace_revision INTEGER NOT NULL,
+        commit_sha TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL,
+        preview_url TEXT,
+        provider TEXT,
+        deployment_id TEXT,
+        failure TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        activated_at INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS relay_handoffs (
+        token_hash TEXT PRIMARY KEY,
+        revision_id TEXT NOT NULL,
+        target_origin TEXT NOT NULL,
+        participant_json TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS relay_brief (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        objective TEXT NOT NULL DEFAULT '',
+        constraints_json TEXT NOT NULL DEFAULT '[]',
+        validation_json TEXT NOT NULL DEFAULT '[]',
+        updated_at INTEGER,
+        updated_by_json TEXT
+      );
+      CREATE TABLE IF NOT EXISTS relay_decisions (
+        id TEXT PRIMARY KEY,
+        text TEXT NOT NULL,
+        rationale TEXT,
+        source_event_id TEXT,
+        actor_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS relay_brief_review_comments (
+        id TEXT PRIMARY KEY,
+        review_round INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        actor_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS relay_events_created_idx ON relay_events(created_at);
+      CREATE INDEX IF NOT EXISTS relay_handoffs_expiry_idx ON relay_handoffs(expires_at);
+      CREATE INDEX IF NOT EXISTS relay_decisions_created_idx ON relay_decisions(created_at);
+      CREATE INDEX IF NOT EXISTS relay_brief_review_comments_created_idx ON relay_brief_review_comments(created_at);
+    `);
+    this.ctx.storage.sql.exec("INSERT OR IGNORE INTO relay_brief (singleton) VALUES (1)");
+    this.ensureColumn("relay_room", "commit_sha", "TEXT");
+    this.ensureColumn("relay_room", "workspace_status", "TEXT NOT NULL DEFAULT 'cloning'");
+    this.ensureColumn("relay_room", "workspace_error", "TEXT");
+    this.ensureColumn("relay_room", "railway_sandbox_id", "TEXT");
+    this.ensureColumn("relay_room", "opencode_event_cursor", "TEXT");
+    this.ensureColumn("relay_room", "opencode_model", "TEXT");
+    this.ensureColumn("relay_room", "agent_turn_generation", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("relay_events", "queue_status", "TEXT");
+    this.ctx.storage.sql.exec(
+      "CREATE INDEX IF NOT EXISTS relay_events_queue_idx ON relay_events(queue_status, seq)",
+    );
+    this.ensureColumn("relay_room", "pull_request_url", "TEXT");
+    this.ensureColumn("relay_room", "pull_request_branch", "TEXT");
+    this.ensureColumn("relay_room", "pull_request_number", "INTEGER");
+    this.ensureColumn("relay_room", "pull_request_repository", "TEXT");
+    this.ensureColumn("relay_room", "pull_request_head_sha", "TEXT");
+    this.ensureColumn("relay_room", "github_credential", "TEXT");
+    this.ensureColumn("relay_room", "title_auto", "INTEGER NOT NULL DEFAULT 1");
+    this.ensureColumn("relay_room", "workspace_revision", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("relay_room", "published_workspace_revision", "INTEGER NOT NULL DEFAULT 0");
+    restorePullRequestAssociation(this.ctx.storage.sql);
+    this.ensureColumn("relay_brief", "revision", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("relay_brief", "review_status", "TEXT NOT NULL DEFAULT 'draft'");
+    this.ensureColumn("relay_brief", "review_round", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("relay_brief", "review_started_at", "INTEGER");
+    this.ensureColumn("relay_brief", "review_started_by_json", "TEXT");
+    this.ensureColumn("relay_brief", "review_resolved_at", "INTEGER");
+    this.ensureColumn("relay_brief", "review_resolved_by_json", "TEXT");
+    this.ctx.storage.sql.exec("DELETE FROM relay_events WHERE id LIKE 'seed-%'");
+    this.ctx.storage.sql.exec("DELETE FROM relay_permissions WHERE id = 'demo-deploy'");
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_room SET branch = 'master', commit_sha = NULL, workspace_status = 'cloning', workspace_error = NULL WHERE repository = 'cloudflare/workers-chat-demo' AND branch IN ('fix/session-reconnect', 'main')",
+    );
+  }
+
+  protected hideRelayTablesForOpenCodeBootstrap(): string[] {
+    const tables = this.ctx.storage.sql
+      .exec<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND (name LIKE 'relay_%' OR name LIKE '_opencode_bootstrap_relay_%')",
+      )
+      .toArray()
+      .map((row) => row.name);
+
+    const hasOpenCodeSchema = this.ctx.storage.sql
+      .exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('session', 'session_v2')",
+      )
+      .one().count;
+
+    const hidden = tables.filter((name) => name.startsWith("_opencode_bootstrap_"));
+
+    if (hasOpenCodeSchema) {
+      this.restoreRelayTables(hidden);
+
+      return [];
+    }
+
+    for (const name of tables) {
+      if (name.startsWith("_opencode_bootstrap_")) {
+        continue;
+      }
+
+      this.ctx.storage.sql.exec(`ALTER TABLE ${name} RENAME TO _opencode_bootstrap_${name}`);
+      hidden.push(`_opencode_bootstrap_${name}`);
+    }
+
+    return hidden;
+  }
+
+  protected restoreRelayTables(tables: string[]) {
+    for (const hidden of tables) {
+      const visible = hidden.replace(/^_opencode_bootstrap_/, "");
+
+      const exists = this.ctx.storage.sql
+        .exec<{ count: number }>(
+          "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = ?",
+          hidden,
+        )
+        .one().count;
+
+      if (exists) {
+        this.ctx.storage.sql.exec(`ALTER TABLE ${hidden} RENAME TO ${visible}`);
+      }
+    }
+  }
+
+  protected ensureColumn(table: string, column: string, definition: string) {
+    const columns = this.ctx.storage.sql
+      .exec<{ name: string }>(`PRAGMA table_info(${table})`)
+      .toArray();
+
+    if (!columns.some((candidate) => candidate.name === column)) {
+      this.ctx.storage.sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  }
+
+  protected ensureRoom(roomID: string) {
+    const existing = this.ctx.storage.sql
+      .exec<{ count: number }>("SELECT COUNT(*) AS count FROM relay_room")
+      .one();
+
+    if (existing.count) {
+      return;
+    }
+
+    this.ctx.storage.sql.exec(
+      "INSERT INTO relay_room (singleton, room_id, title, repository, branch, agent_status, workspace_status) VALUES (1, ?, ?, ?, ?, ?, ?)",
+      roomID,
+      "Investigate reconnect loop",
+      DEFAULT_REPOSITORY,
+      DEFAULT_BRANCH,
+      "idle",
+      "cloning",
+    );
+  }
+
+  protected async handleClientMessage(
+    socket: RoomSocket,
+    participant: SocketAttachment["participant"],
+    message: ClientMessage,
+  ) {
+    if (message.type === "ping") {
+      this.send(socket, { type: "ack" });
+
+      return;
+    }
+
+    if (message.type === "permission.reply") {
+      if (participant.role !== "maintainer") {
+        throw new Error("Only maintainers can resolve side effects");
+      }
+
+      await this.replyToPermission(message.requestID, message.reply, participant);
+      this.send(socket, { type: "ack", requestID: message.requestID });
+
+      return;
+    }
+
+    if (message.type === "question.reply" || message.type === "question.cancel") {
+      const sessionID = this.getRoom().opencodeSessionID;
+
+      if (!this.runner || !sessionID || message.sessionID !== sessionID) {
+        throw new Error("This question is no longer active");
+      }
+
+      if (message.type === "question.reply") {
+        await this.runner.replyToForm(message.sessionID, message.formID, message.answer);
+      } else {
+        await this.runner.cancelForm(message.sessionID, message.formID);
+      }
+
+      this.send(socket, { type: "ack", requestID: message.requestID });
+
+      return;
+    }
+
+    if (message.type === "room.configure") {
+      if (participant.role !== "maintainer") {
+        throw new Error("Only maintainers can change the repository");
+      }
+
+      const info = await this.workspace.configure(message.repository, message.branch);
+
+      const event = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: Date.now(),
+        actor: participant,
+        payload: {
+          type: "repository",
+          text: `Workspace changed to ${info.repository}@${info.branch}`,
+          commitSHA: info.commitSHA,
+        },
+      });
+
+      this.broadcast({ type: "room", room: this.getRoom() });
+      this.broadcast({ type: "event", event });
+      this.send(socket, { type: "ack", requestID: message.requestID });
+
+      return;
+    }
+
+    if (message.type === "room.rename") {
+      if (participant.role !== "maintainer") {
+        throw new Error("Only maintainers can rename the room");
+      }
+
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_room SET title = ?, title_auto = 0 WHERE singleton = 1",
+        message.title,
+      );
+      this.broadcast({ type: "room", room: this.getRoom() });
+      this.send(socket, { type: "ack", requestID: message.requestID });
+
+      return;
+    }
+
+    if (message.type === "room.model.configure") {
+      if (participant.role !== "maintainer") {
+        throw new Error("Only maintainers can change the model");
+      }
+
+      const room = this.getRoom();
+
+      if (room.agentStatus === "running") {
+        throw new Error("Pause the agent before changing the model");
+      }
+
+      const models = await this.availableOpenCodeModels();
+      const selected = models.find((model) => model.id === message.model);
+
+      if (!selected) {
+        throw new Error("That model is not available from OpenCode");
+      }
+
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_room SET opencode_model = ? WHERE singleton = 1",
+        selected.id,
+      );
+
+      const event = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: Date.now(),
+        actor: participant,
+        payload: {
+          type: "model",
+          text: `OpenCode model changed to ${selected.name}`,
+          model: selected.id,
+        },
+      });
+
+      this.broadcast({ type: "room", room: this.getRoom() });
+      this.broadcast({ type: "event", event });
+      this.send(socket, { type: "ack", requestID: message.requestID });
+
+      return;
+    }
+
+    if (message.type === "agent.pause") {
+      const room = this.getRoom();
+      this.turns.pause();
+
+      if (room.opencodeSessionID) {
+        await this.runner?.interrupt(room.opencodeSessionID).catch(() => undefined);
+      }
+
+      return;
+    }
+
+    if (message.type === "brief.update") {
+      if (participant.role !== "maintainer") {
+        throw new Error("Only maintainers can edit the implementation brief");
+      }
+
+      const previousStatus = this.getBrief().review.status;
+      const now = Date.now();
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_brief SET objective = ?, constraints_json = ?, validation_json = ?, updated_at = ?, updated_by_json = ?, revision = revision + 1, review_status = 'draft', review_started_at = NULL, review_started_by_json = NULL, review_resolved_at = NULL, review_resolved_by_json = NULL WHERE singleton = 1",
+        message.objective,
+        JSON.stringify(message.constraints),
+        JSON.stringify(message.validation),
+        now,
+        JSON.stringify(participant),
+      );
+
+      const event = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: now,
+        actor: participant,
+        payload: {
+          type: "brief_review",
+          action: "updated",
+          text:
+            previousStatus === "draft"
+              ? `${participant.name} updated the implementation brief`
+              : `${participant.name} updated the implementation brief and returned it to draft`,
+        },
+      });
+
+      this.broadcastPlanning();
+      this.broadcast({ type: "event", event });
+      this.send(socket, { type: "ack", requestID: message.requestID });
+
+      return;
+    }
+
+    if (message.type === "decision.create") {
+      if (participant.role !== "maintainer") {
+        throw new Error("Only maintainers can record decisions");
+      }
+
+      if (message.sourceEventID && !this.hasEvent(message.sourceEventID)) {
+        throw new Error("The linked timeline event no longer exists");
+      }
+
+      this.ctx.storage.sql.exec(
+        "INSERT INTO relay_decisions (id, text, rationale, source_event_id, actor_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        crypto.randomUUID(),
+        message.text,
+        message.rationale ?? null,
+        message.sourceEventID ?? null,
+        JSON.stringify(participant),
+        Date.now(),
+      );
+      this.broadcastPlanning();
+      this.send(socket, { type: "ack", requestID: message.requestID });
+
+      return;
+    }
+
+    if (message.type === "brief.review.start") {
+      const brief = this.getBrief();
+
+      if (!brief.objective) {
+        throw new Error("Add an objective before starting review");
+      }
+
+      if (brief.review.status === "in_review") {
+        throw new Error("The implementation brief is already in review");
+      }
+
+      if (brief.review.status !== "draft") {
+        throw new Error("Edit the implementation brief before starting another review");
+      }
+
+      const now = Date.now();
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_brief SET review_status = 'in_review', review_round = review_round + 1, review_started_at = ?, review_started_by_json = ?, review_resolved_at = NULL, review_resolved_by_json = NULL WHERE singleton = 1",
+        now,
+        JSON.stringify(participant),
+      );
+
+      const event = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: now,
+        actor: participant,
+        payload: {
+          type: "brief_review",
+          action: "started",
+          text: `${participant.name} requested review of the implementation brief`,
+        },
+      });
+
+      this.broadcastPlanning();
+      this.broadcast({ type: "event", event });
+      this.send(socket, { type: "ack", requestID: message.requestID });
+
+      return;
+    }
+
+    if (message.type === "brief.review.comment") {
+      const brief = this.getBrief();
+
+      if (brief.review.status !== "in_review") {
+        throw new Error("Start a review before leaving feedback");
+      }
+
+      const now = Date.now();
+      this.insertBriefReviewComment(brief.review.round, message.text, participant, now);
+
+      const event = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: now,
+        actor: participant,
+        payload: {
+          type: "brief_review",
+          action: "commented",
+          text: `${participant.name} left feedback on the implementation brief`,
+        },
+      });
+
+      this.broadcastPlanning();
+      this.broadcast({ type: "event", event });
+      this.send(socket, { type: "ack", requestID: message.requestID });
+
+      return;
+    }
+
+    if (message.type === "brief.review.resolve") {
+      const brief = this.getBrief();
+
+      if (brief.review.status !== "in_review") {
+        throw new Error("The implementation brief is not in review");
+      }
+
+      const now = Date.now();
+
+      if (message.comment) {
+        this.insertBriefReviewComment(brief.review.round, message.comment, participant, now);
+      }
+
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_brief SET review_status = ?, review_resolved_at = ?, review_resolved_by_json = ? WHERE singleton = 1",
+        message.outcome,
+        now,
+        JSON.stringify(participant),
+      );
+      const approved = message.outcome === "approved";
+
+      const event = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: now,
+        actor: participant,
+        payload: {
+          type: "brief_review",
+          action: message.outcome,
+          text: approved
+            ? `${participant.name} approved the implementation brief`
+            : `${participant.name} requested changes to the implementation brief`,
+        },
+      });
+
+      this.broadcastPlanning();
+      this.broadcast({ type: "event", event });
+      this.send(socket, { type: "ack", requestID: message.requestID });
+
+      return;
+    }
+
+    const promptPayload: JsonRecord = { text: message.text, delivery: message.delivery };
+
+    if (message.delivery === "queue") {
+      promptPayload.queueStatus = "pending";
+    }
+
+    const event = this.insertEvent({
+      id: crypto.randomUUID(),
+      kind: "prompt",
+      createdAt: Date.now(),
+      actor: participant,
+      payload: promptPayload,
+    });
+
+    this.broadcast({ type: "event", event });
+    this.send(socket, { type: "ack", requestID: message.requestID });
+
+    const configurationError = liveOpenCodeConfigurationError(this.env);
+
+    if (configurationError) {
+      this.setRoomStatus("error");
+
+      const unavailable = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "opencode",
+        createdAt: Date.now(),
+        payload: {
+          type: "text",
+          text: `Agent unavailable: ${configurationError}`,
+        },
+      });
+
+      this.broadcast({ type: "event", event: unavailable });
+
+      return;
+    }
+
+    if (!hasLiveOpenCode(this.env)) {
+      if (message.delivery === "queue" && this.getRoom().agentStatus === "running") {
+        return;
+      }
+
+      const turn = this.turns.start();
+
+      try {
+        if (message.delivery === "queue") {
+          this.consumeQueuedPrompt(event.id);
+        }
+
+        const emitEvent = (payload: JsonRecord) => {
+          if (!turn.isRunning()) {
+            return;
+          }
+
+          const simulated = this.insertEvent({
+            id: crypto.randomUUID(),
+            kind: "opencode",
+            createdAt: Date.now(),
+            payload,
+          });
+
+          this.broadcast({ type: "event", event: simulated });
+        };
+
+        await runSimulatedTurn({
+          prompt: message.text,
+          workspace: this.workspace,
+          emitEvent,
+        });
+        await drainSimulatedQueue({
+          nextQueuedPrompt: () => (turn.isRunning() ? this.getQueue()[0] : undefined),
+          consumeQueuedPrompt: (eventID) => {
+            this.consumeQueuedPrompt(eventID);
+          },
+          runTurn: (text) =>
+            runSimulatedTurn({
+              prompt: text,
+              workspace: this.workspace,
+              emitEvent,
+            }),
+        });
+        turn.complete("idle");
+      } catch (error) {
+        if (!turn.isCurrent()) {
+          return;
+        }
+
+        turn.complete("error");
+        throw error;
+      }
+
+      return;
+    }
+
+    const turn = this.turns.start();
+
+    try {
+      const result = await this.runNativeOpenCodeTurn(
+        message.text,
+        message.delivery,
+        message.delivery === "queue" ? event.id : undefined,
+        turn,
+      );
+
+      turn.complete(
+        result === "succeeded" ? "idle" : result === "interrupted" ? "paused" : "error",
+      );
+    } catch (error) {
+      if (!turn.isCurrent() || error instanceof InactiveAgentTurnError) {
+        return;
+      }
+
+      turn.complete("error");
+
+      const failed = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: Date.now(),
+        payload: {
+          type: "runner_error",
+          text: `Agent turn failed: ${error instanceof Error ? error.message : "Unknown runner error"}`,
+        },
+      });
+
+      this.broadcast({ type: "event", event: failed });
+      throw error;
+    }
+  }
+
+  protected async runNativeOpenCodeTurn(
+    prompt: string,
+    delivery: "steer" | "queue",
+    queuedPromptID: string | undefined,
+    turn: AgentTurn,
+  ): Promise<"succeeded" | "failed" | "interrupted"> {
+    const room = this.getRoom();
+    const workspace = await this.workspace.nativeAgentWorkspace();
+
+    if (!turn.isRunning()) {
+      return "interrupted";
+    }
+
+    if (!this.runner) {
+      throw new Error("Embedded OpenCode is not running");
+    }
+
+    let queueConsumed = false;
+    let checkpointedChanges: WorkspaceChange[] | undefined;
+    let result: EmbeddedTurnResult;
+
+    try {
+      result = await this.runner.turn(
+        {
+          roomID: room.id,
+          prompt,
+          delivery,
+          model: room.model,
+          sessionID: room.opencodeSessionID,
+          after: this.openCodeCursor(),
+          isCurrent: turn.isCurrent,
+          isRunning: turn.isRunning,
+        },
+        (event) => {
+          // Admission belongs to this prompt even if a newer turn now owns the room.
+          if (event.type === "accepted" && !queueConsumed && queuedPromptID) {
+            queueConsumed = true;
+            this.consumeQueuedPrompt(queuedPromptID);
+          }
+
+          if (!turn.isCurrent()) {
+            return;
+          }
+
+          if (event.type === "changes") {
+            checkpointedChanges = event.changes;
+          }
+
+          if (!turn.isRunning()) {
+            return;
+          }
+
+          this.handleNativeRunnerEvent(event);
+        },
+      );
+    } catch (error) {
+      if (
+        turn.isCurrent() &&
+        checkpointedChanges &&
+        JSON.stringify(workspace.changes) !== JSON.stringify(checkpointedChanges)
+      ) {
+        this.workspace.syncNativeAgentChanges(checkpointedChanges);
+        this.ctx.storage.sql.exec(
+          "UPDATE relay_room SET workspace_revision = workspace_revision + 1 WHERE singleton = 1",
+        );
+      }
+
+      throw error;
+    }
+
+    if (!turn.isCurrent()) {
+      return result.status;
+    }
+
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_room SET opencode_session_id = ?, opencode_event_cursor = ? WHERE singleton = 1",
+      result.sessionID,
+      result.cursor ?? null,
+    );
+    this.workspace.syncNativeAgentChanges(result.changes);
+    const workspaceChanged = JSON.stringify(workspace.changes) !== JSON.stringify(result.changes);
+
+    if (workspaceChanged) {
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_room SET workspace_revision = workspace_revision + 1 WHERE singleton = 1",
+      );
+    }
+
+    if (turn.isRunning() && result.status === "succeeded") {
+      await this.publishSavedPullRequest();
+    }
+
+    return result.status;
+  }
+
+  protected handleNativeRunnerEvent(event: NativeRunnerEvent) {
+    if (event.type === "status") {
+      const status = this.insertEvent({
+        id: crypto.randomUUID(),
+        kind: "system",
+        createdAt: Date.now(),
+        payload: { type: "runner_status", text: event.message },
+      });
+
+      this.broadcast({ type: "event", event: status });
+
+      return;
+    }
+
+    if (event.type === "session") {
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_room SET opencode_session_id = ? WHERE singleton = 1",
+        event.sessionID,
+      );
+
+      return;
+    }
+
+    if (event.type !== "opencode") {
+      return;
+    }
+
+    if (event.cursor) {
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_room SET opencode_event_cursor = ? WHERE singleton = 1",
+        event.cursor,
+      );
+    }
+
+    const eventRecord = normalizeNativeEvent(unwrapNativeEvent(event.event));
+
+    const eventIdentity = z
+      .object({
+        id: z.string().optional().catch(undefined),
+        created: z.number().optional().catch(undefined),
+      })
+      .parse(eventRecord);
+
+    const data = asRecord(eventRecord.data);
+    this.captureOpenCodePermission(eventRecord, data);
+    this.captureSessionTitle(eventRecord);
+
+    const timelineEvent = this.insertEvent({
+      id:
+        eventIdentity.id !== undefined
+          ? eventIdentity.id
+          : event.cursor
+            ? `opencode:${this.roomID}:${event.cursor}`
+            : crypto.randomUUID(),
+      kind: "opencode",
+      createdAt: eventIdentity.created ?? Date.now(),
+      payload: { type: "raw", event: eventRecord },
+    });
+
+    this.broadcast({ type: "event", event: timelineEvent });
+  }
+
+  protected openCodeCursor(): string | undefined {
+    return (
+      this.ctx.storage.sql
+        .exec<{ opencode_event_cursor: string | null }>(
+          "SELECT opencode_event_cursor FROM relay_room WHERE singleton = 1",
+        )
+        .one().opencode_event_cursor ?? undefined
+    );
+  }
+
+  protected captureSessionTitle(eventRecord: JsonRecord) {
+    const title = sessionTitleFromEvent(eventRecord);
+
+    if (!title) {
+      return;
+    }
+
+    const room = this.getRoomOrNull();
+
+    if (!room || !room.titleAuto) {
+      return;
+    }
+
+    if (room.title === title) {
+      return;
+    }
+
+    this.setRoomTitle(title);
+
+    const event = this.insertEvent({
+      id: crypto.randomUUID(),
+      kind: "system",
+      createdAt: Date.now(),
+      payload: {
+        type: "session_title",
+        text: `OpenCode titled the session “${title}”`,
+        title,
+      },
+    });
+
+    this.broadcast({ type: "event", event });
+  }
+
+  protected captureOpenCodePermission(event: JsonRecord, data: JsonRecord) {
+    const permission = z
+      .object({
+        id: z.string().optional().catch(undefined),
+        requestID: z.string().optional().catch(undefined),
+        message: z.string().nullable().catch(null),
+      })
+      .parse(data);
+
+    if (event.type === "permission.asked" && permission.id !== undefined) {
+      this.ctx.storage.sql.exec(
+        "INSERT OR REPLACE INTO relay_permissions (id, session_id, action, resources_json, message, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        permission.id,
+        textValue(data.sessionID ?? ""),
+        textValue(data.action ?? "Side effect"),
+        JSON.stringify(Array.isArray(data.resources) ? data.resources : []),
+        permission.message,
+        "pending",
+        Date.now(),
+      );
+      this.broadcast({
+        type: "permissions",
+        permissions: this.getPermissions(),
+      });
+    }
+
+    if (event.type === "permission.replied" && permission.requestID !== undefined) {
+      this.ctx.storage.sql.exec(
+        "UPDATE relay_permissions SET status = ? WHERE id = ?",
+        data.reply === "reject" ? "denied" : "approved",
+        permission.requestID,
+      );
+      this.broadcast({
+        type: "permissions",
+        permissions: this.getPermissions(),
+      });
+    }
+  }
+
+  protected async replyToPermission(
+    requestID: string,
+    reply: "once" | "reject",
+    participant: SocketAttachment["participant"],
+  ) {
+    const permission = this.ctx.storage.sql
+      .exec<PermissionRow>("SELECT * FROM relay_permissions WHERE id = ?", requestID)
+      .toArray()[0];
+
+    if (!permission || permission.status !== "pending") {
+      throw new Error("Permission request is no longer pending");
+    }
+
+    const status = reply === "reject" ? "denied" : "approved";
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_permissions SET status = ? WHERE id = ?",
+      status,
+      requestID,
+    );
+
+    const event = this.insertEvent({
+      id: crypto.randomUUID(),
+      kind: "permission",
+      createdAt: Date.now(),
+      actor: participant,
+      payload: { requestID, action: permission.action, status, reply },
+    });
+
+    this.broadcast({ type: "event", event });
+    this.broadcast({ type: "permissions", permissions: this.getPermissions() });
+  }
+
+  protected insertEvent(event: Omit<TimelineEvent, "seq">, ignoreDuplicate = true): TimelineEvent {
+    const insert = ignoreDuplicate ? "INSERT OR IGNORE" : "INSERT";
+
+    const queueStatus =
+      event.kind === "prompt" && event.payload.delivery === "queue" ? "pending" : null;
+
+    this.ctx.storage.sql.exec(
+      `${insert} INTO relay_events (id, kind, created_at, actor_json, payload_json, queue_status) VALUES (?, ?, ?, ?, ?, ?)`,
+      event.id,
+      event.kind,
+      event.createdAt,
+      event.actor ? JSON.stringify(event.actor) : null,
+      JSON.stringify(event.payload),
+      queueStatus,
+    );
+
+    const row = this.ctx.storage.sql
+      .exec<EventRow>("SELECT * FROM relay_events WHERE id = ?", event.id)
+      .one();
+
+    return this.rowToEvent(row);
+  }
+
+  protected getEvents(): TimelineEvent[] {
+    return this.ctx.storage.sql
+      .exec<EventRow>(
+        "SELECT * FROM (SELECT * FROM relay_events ORDER BY seq DESC LIMIT 500) ORDER BY seq ASC",
+      )
+      .toArray()
+      .map((row) => this.rowToEvent(row));
+  }
+
+  protected rowToEvent(row: EventRow): TimelineEvent {
+    const payload = jsonRecordSchema.parse(JSON.parse(row.payload_json));
+
+    if (row.kind === "prompt" && payload.delivery === "queue") {
+      payload.queueStatus = row.queue_status ?? "consumed";
+    }
+
+    return {
+      seq: row.seq,
+      id: row.id,
+      kind: row.kind,
+      createdAt: row.created_at,
+      actor: row.actor_json ? actorSchema.parse(JSON.parse(row.actor_json)) : undefined,
+      payload,
+    };
+  }
+
+  protected upsertParticipant(
+    participant: Pick<Participant, "id" | "name" | "role" | "color">,
+    lastSeen = Date.now(),
+  ) {
+    this.ctx.storage.sql.exec(
+      "INSERT INTO relay_participants (id, name, role, color, last_seen) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, role = excluded.role, color = excluded.color, last_seen = excluded.last_seen",
+      participant.id,
+      participant.name,
+      participant.role,
+      participant.color,
+      lastSeen,
+    );
+  }
+
+  protected getParticipants(): Participant[] {
+    const onlineIDs = new Set(
+      this.ctx.getWebSockets().flatMap((socket) => {
+        const attachment = socketAttachmentSchema.nullable().parse(socket.deserializeAttachment());
+
+        return attachment ? [attachment.participant.id] : [];
+      }),
+    );
+
+    return this.ctx.storage.sql
+      .exec<ParticipantRow>("SELECT * FROM relay_participants ORDER BY last_seen DESC")
+      .toArray()
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        role: row.role,
+        color: row.color,
+        lastSeen: row.last_seen,
+        online: onlineIDs.has(row.id),
+      }));
+  }
+
+  protected getPermissions(): PermissionRequest[] {
+    return this.ctx.storage.sql
+      .exec<PermissionRow>("SELECT * FROM relay_permissions ORDER BY created_at DESC")
+      .toArray()
+      .map((row) => ({
+        id: row.id,
+        sessionID: row.session_id,
+        action: row.action,
+        resources: z.array(z.string()).parse(JSON.parse(row.resources_json)),
+        message: row.message ?? undefined,
+        status: row.status,
+        createdAt: row.created_at,
+      }));
+  }
+
+  protected getQueue(): QueuedPrompt[] {
+    const events = this.ctx.storage.sql
+      .exec<EventRow>(
+        "SELECT * FROM relay_events WHERE kind = 'prompt' AND queue_status = 'pending' ORDER BY seq ASC",
+      )
+      .toArray()
+      .map((row) => this.rowToEvent(row));
+
+    return queuedPrompts(events);
+  }
+
+  protected consumeQueuedPrompt(eventID: string) {
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_events SET queue_status = 'consumed' WHERE id = ? AND queue_status = 'pending'",
+      eventID,
+    );
+
+    const rows = this.ctx.storage.sql
+      .exec<EventRow>("SELECT * FROM relay_events WHERE id = ?", eventID)
+      .toArray();
+
+    if (rows.length) {
+      this.broadcast({ type: "event", event: this.rowToEvent(rows[0]) });
+    }
+  }
+
+  protected insertRevision(input: {
+    workspaceRevision: number;
+    commitSHA: string;
+    status: RoomRevision["status"];
+    previewURL?: string;
+    provider?: string;
+  }): RoomRevision {
+    const now = Date.now();
+
+    const sequence = this.ctx.storage.sql
+      .exec<{ sequence: number }>(
+        "SELECT COALESCE(MAX(sequence), 0) + 1 AS sequence FROM relay_revisions",
+      )
+      .one().sequence;
+
+    const id = crypto.randomUUID();
+    this.ctx.storage.sql.exec(
+      "INSERT INTO relay_revisions (id, sequence, workspace_revision, commit_sha, status, preview_url, provider, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      id,
+      sequence,
+      input.workspaceRevision,
+      input.commitSHA,
+      input.status,
+      input.previewURL ?? null,
+      input.provider ?? null,
+      now,
+      now,
+    );
+    const revision = this.revisionByID(id);
+
+    if (!revision) {
+      throw new Error("Saved room revision is missing");
+    }
+
+    return revision;
+  }
+
+  protected revisionByID(id: string): RoomRevision | undefined {
+    const row = this.ctx.storage.sql
+      .exec<RevisionRow>("SELECT * FROM relay_revisions WHERE id = ?", id)
+      .toArray()[0];
+
+    return row ? this.rowToRevision(row) : undefined;
+  }
+
+  protected revisionForCommit(commitSHA: string): RoomRevision | undefined {
+    const row = this.ctx.storage.sql
+      .exec<RevisionRow>("SELECT * FROM relay_revisions WHERE commit_sha = ?", commitSHA)
+      .toArray()[0];
+
+    return row ? this.rowToRevision(row) : undefined;
+  }
+
+  protected latestRevision(): RoomRevision | undefined {
+    const row = this.ctx.storage.sql
+      .exec<RevisionRow>("SELECT * FROM relay_revisions ORDER BY sequence DESC LIMIT 1")
+      .toArray()[0];
+
+    return row ? this.rowToRevision(row) : undefined;
+  }
+
+  protected activeRevision(): RoomRevision | undefined {
+    const row = this.ctx.storage.sql
+      .exec<RevisionRow>(
+        "SELECT * FROM relay_revisions WHERE activated_at IS NOT NULL ORDER BY activated_at DESC LIMIT 1",
+      )
+      .toArray()[0];
+
+    return row ? this.rowToRevision(row) : undefined;
+  }
+
+  protected rowToRevision(row: RevisionRow): RoomRevision {
+    return {
+      id: row.id,
+      sequence: row.sequence,
+      workspaceRevision: row.workspace_revision,
+      commitSHA: row.commit_sha,
+      status: row.status,
+      previewURL: row.preview_url ?? undefined,
+      provider: row.provider ?? undefined,
+      deploymentID: row.deployment_id ?? undefined,
+      failure: row.failure ?? undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      activatedAt: row.activated_at ?? undefined,
+    };
+  }
+
+  protected githubCredential(): string | undefined {
+    return (
+      this.ctx.storage.sql
+        .exec<{ github_credential: string | null }>(
+          "SELECT github_credential FROM relay_room WHERE singleton = 1",
+        )
+        .one().github_credential ?? undefined
+    );
+  }
+
+  protected getRoomOrNull(): RoomInfo | null {
+    const rows = this.ctx.storage.sql
+      .exec<{
+        room_id: string;
+        title: string;
+        repository: string;
+        branch: string;
+        agent_status: RoomInfo["agentStatus"];
+        opencode_model: string | null;
+        opencode_session_id: string | null;
+        commit_sha: string | null;
+        workspace_status: RoomInfo["workspaceStatus"];
+        workspace_error: string | null;
+        pull_request_url: string | null;
+        pull_request_number: number | null;
+        pull_request_branch: string | null;
+        pull_request_repository: string | null;
+        pull_request_head_sha: string | null;
+        workspace_revision: number;
+        published_workspace_revision: number;
+        github_credential: string | null;
+        title_auto: number;
+      }>("SELECT * FROM relay_room WHERE singleton = 1")
+      .toArray();
+
+    if (!rows.length) {
+      return null;
+    }
+
+    const row = rows[0];
+
+    return {
+      id: row.room_id,
+      title: row.title,
+      repository: row.repository,
+      branch: row.branch,
+      commitSHA: row.commit_sha ?? undefined,
+      workspaceStatus: row.workspace_status,
+      workspaceError: row.workspace_error ?? undefined,
+      agentStatus: row.agent_status,
+      model: row.opencode_model ?? this.env.OPENCODE_MODEL,
+      opencodeSessionID: row.opencode_session_id ?? undefined,
+      workspaceRevision: row.workspace_revision,
+      publishedWorkspaceRevision: row.published_workspace_revision,
+      pullRequestURL: row.pull_request_url ?? undefined,
+      pullRequestNumber: row.pull_request_number ?? undefined,
+      pullRequestBranch: row.pull_request_branch ?? undefined,
+      pullRequestRepository: row.pull_request_repository ?? undefined,
+      pullRequestHeadSHA: row.pull_request_head_sha ?? undefined,
+      titleAuto: row.title_auto !== 0,
+      autoPublishConfigured: Boolean(row.github_credential),
+      latestRevision: this.latestRevision(),
+      activeRevision: this.activeRevision(),
+    };
+  }
+
+  protected getRoom(): RoomInfo {
+    const room = this.getRoomOrNull();
+
+    if (!room) {
+      throw new Error("Room has not been initialized");
+    }
+
+    return room;
+  }
+
+  protected setRoomStatus(status: RoomInfo["agentStatus"]) {
+    this.ctx.storage.sql.exec("UPDATE relay_room SET agent_status = ? WHERE singleton = 1", status);
+    this.broadcast({ type: "room", room: this.getRoom() });
+  }
+
+  protected setRoomTitle(title: string, { auto = false } = {}) {
+    this.ctx.storage.sql.exec(
+      "UPDATE relay_room SET title = ?, title_auto = ? WHERE singleton = 1",
+      title,
+      auto ? 1 : 0,
+    );
+    this.broadcast({ type: "room", room: this.getRoom() });
+  }
+
+  protected hasEvent(id: string): boolean {
+    return (
+      this.ctx.storage.sql
+        .exec<{ count: number }>("SELECT COUNT(*) AS count FROM relay_events WHERE id = ?", id)
+        .one().count > 0
+    );
+  }
+
+  protected getBrief(): ImplementationBrief {
+    const row = this.ctx.storage.sql
+      .exec<BriefRow>("SELECT * FROM relay_brief WHERE singleton = 1")
+      .one();
+
+    return {
+      objective: row.objective,
+      constraints: z.array(z.string()).parse(JSON.parse(row.constraints_json)),
+      validation: z.array(z.string()).parse(JSON.parse(row.validation_json)),
+      revision: row.revision,
+      review: {
+        status: row.review_status,
+        round: row.review_round,
+        startedAt: row.review_started_at ?? undefined,
+        startedBy: row.review_started_by_json
+          ? actorSchema.parse(JSON.parse(row.review_started_by_json))
+          : undefined,
+        resolvedAt: row.review_resolved_at ?? undefined,
+        resolvedBy: row.review_resolved_by_json
+          ? actorSchema.parse(JSON.parse(row.review_resolved_by_json))
+          : undefined,
+      },
+      reviewComments: this.getBriefReviewComments(),
+      updatedAt: row.updated_at ?? undefined,
+      updatedBy: row.updated_by_json
+        ? actorSchema.parse(JSON.parse(row.updated_by_json))
+        : undefined,
+    };
+  }
+
+  protected getBriefReviewComments(): BriefReviewComment[] {
+    return this.ctx.storage.sql
+      .exec<BriefReviewCommentRow>(
+        "SELECT * FROM relay_brief_review_comments ORDER BY created_at ASC LIMIT 100",
+      )
+      .toArray()
+      .map((row) => ({
+        id: row.id,
+        round: row.review_round,
+        text: row.text,
+        actor: actorSchema.parse(JSON.parse(row.actor_json)),
+        createdAt: row.created_at,
+      }));
+  }
+
+  protected insertBriefReviewComment(
+    round: number,
+    text: string,
+    participant: SocketAttachment["participant"],
+    createdAt: number,
+  ) {
+    this.ctx.storage.sql.exec(
+      "INSERT INTO relay_brief_review_comments (id, review_round, text, actor_json, created_at) VALUES (?, ?, ?, ?, ?)",
+      crypto.randomUUID(),
+      round,
+      text,
+      JSON.stringify(participant),
+      createdAt,
+    );
+  }
+
+  protected getDecisions(): RoomDecision[] {
+    return this.ctx.storage.sql
+      .exec<DecisionRow>("SELECT * FROM relay_decisions ORDER BY created_at DESC LIMIT 100")
+      .toArray()
+      .map((row) => ({
+        id: row.id,
+        text: row.text,
+        rationale: row.rationale ?? undefined,
+        sourceEventID: row.source_event_id ?? undefined,
+        actor: actorSchema.parse(JSON.parse(row.actor_json)),
+        createdAt: row.created_at,
+      }));
+  }
+
+  protected snapshot(): RoomSnapshot {
+    const events = this.getEvents();
+
+    return {
+      type: "snapshot",
+      room: this.getRoom(),
+      models: this.configuredOpenCodeModels(),
+      participants: this.getParticipants(),
+      events,
+      permissions: this.getPermissions(),
+      queue: this.getQueue(),
+      brief: this.getBrief(),
+      decisions: this.getDecisions(),
+    };
+  }
+
+  protected async availableOpenCodeModels() {
+    const allowlist = openCodeModelAllowlist(this.env);
+    const fallbackModels = this.configuredOpenCodeModels();
+
+    if (!this.runner) {
+      return fallbackModels;
+    }
+
+    const models = await this.runner.models().catch((error) => {
+      console.warn("OpenCode model catalog unavailable", error);
+
+      return [];
+    });
+
+    const allowed = allowlist.length
+      ? models.filter((model) => allowlist.includes(model.id))
+      : models;
+
+    return allowed.length ? allowed : fallbackModels;
+  }
+
+  protected configuredOpenCodeModels() {
+    return configuredOpenCodeModels(this.env, this.getRoom().model);
+  }
+
+  protected broadcastPresence() {
+    this.broadcast({ type: "presence", participants: this.getParticipants() });
+  }
+
+  protected broadcastPlanning() {
+    this.broadcast({
+      type: "planning",
+      brief: this.getBrief(),
+      decisions: this.getDecisions(),
+    });
+  }
+
+  protected broadcast(message: ServerMessage) {
+    const serialized = JSON.stringify(message);
+
+    for (const socket of this.ctx.getWebSockets()) {
+      try {
+        socket.send(serialized);
+      } catch {
+        // The hibernation API owns cleanup for closed sockets.
+      }
+    }
+  }
+
+  protected send(socket: RoomSocket, message: ServerMessage) {
+    socket.send(JSON.stringify(message));
+  }
+}
+
+function hashCode(value: string): number {
+  let hash = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(index);
+  }
+
+  return hash | 0;
+}
+
+function validatePreviewURL(value: string): string {
+  const url = new URL(value);
+  const local = url.hostname === "127.0.0.1" || url.hostname === "localhost";
+
+  if (url.protocol !== "https:" && !(local && url.protocol === "http:")) {
+    throw new Error("Preview URL must use HTTPS unless it is local");
+  }
+
+  url.username = "";
+  url.password = "";
+  url.hash = "";
+
+  return url.toString();
+}
+
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function validateHandoffClientState(
+  value: HandoffClientState | undefined,
+): HandoffClientState | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const state = handoffClientStateSchema.parse(value);
+  const draft = state.draft?.slice(0, 8_000);
+
+  const selectedID = state.selectedID?.slice(0, 200);
+
+  const mobileTab =
+    value.mobileTab === "brief" || value.mobileTab === "people" || value.mobileTab === "queue"
+      ? value.mobileTab
+      : "transcript";
+
+  return { draft, selectedID, mobileTab };
+}
+
+async function verifyReadyPreview(previewURL: string, commitSHA: string) {
+  const readiness = new URL("/__relay/ready", validatePreviewURL(previewURL));
+
+  const response = await fetch(readiness, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(8_000),
+  });
+
+  const result: { ready?: boolean; commitSHA?: string; roomProtocol?: number } = await response
+    .json<{ ready?: boolean; commitSHA?: string; roomProtocol?: number }>()
+    .catch(() => ({}));
+
+  if (
+    !response.ok ||
+    !result.ready ||
+    result.commitSHA !== commitSHA ||
+    result.roomProtocol !== 1
+  ) {
+    throw new Error("Deployment did not pass the Relay readiness check");
+  }
+}
+
+function unwrapNativeEvent(value: JsonRecord): JsonRecord {
+  const nested = asRecord(value.event);
+
+  return z.string().safeParse(value.type).success || !Object.keys(nested).length ? value : nested;
+}
+
+function normalizeNativeEvent(value: JsonRecord): JsonRecord {
+  const type = z.string().catch("").parse(value.type);
+
+  return type.startsWith("session.next.")
+    ? { ...value, type: type.replace("session.next.", "session.") }
+    : value;
+}
+
+function asRecord(value: JsonValue | undefined): JsonRecord {
+  return jsonRecord(value);
+}
+
+function cleanPullRequestText(
+  value: string | undefined,
+  fallback: string,
+  maximum: number,
+): string {
+  const normalized = value?.trim() || fallback;
+
+  if (!normalized || normalized.length > maximum || normalized.includes("\0")) {
+    throw new Error(
+      `Pull request text must be between 1 and ${maximum.toLocaleString()} characters`,
+    );
+  }
+
+  return normalized;
+}

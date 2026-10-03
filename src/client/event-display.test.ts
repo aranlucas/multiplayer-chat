@@ -1,8 +1,9 @@
+import type { JsonRecord } from "../shared/json-value";
 import { describe, expect, it } from "vitest";
 import { displayEvent } from "./event-display";
 import type { TimelineEvent } from "../shared/protocol";
 
-function rawToolEvent(tool: string, input: Record<string, unknown>) {
+function rawToolEvent(tool: string, input: JsonRecord) {
   return {
     seq: 1,
     id: "event",
@@ -135,6 +136,7 @@ describe("tool event display", () => {
         newString: "new",
       }),
     );
+
     expect(display).toMatchObject({ title: "edit" });
     expect("command" in display ? display.command : undefined).toBeUndefined();
   });

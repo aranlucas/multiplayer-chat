@@ -3,6 +3,7 @@ import { TurnCoordinator } from "./agent-turn";
 import { sqliteStorage } from "./fixtures/sqlite-storage";
 
 const databases: ReturnType<typeof sqliteStorage>[] = [];
+
 afterEach(() => {
   for (const database of databases.splice(0)) {
     database.close();
@@ -16,6 +17,7 @@ function coordinator() {
     .exec(`CREATE TABLE relay_room (singleton INTEGER PRIMARY KEY, agent_turn_generation INTEGER, agent_status TEXT);
     INSERT INTO relay_room VALUES (1, 0, 'idle');`);
   const notify = vi.fn();
+
   return {
     coordinator: new TurnCoordinator(database.sql, notify),
     restart: () => new TurnCoordinator(database.sql, notify),

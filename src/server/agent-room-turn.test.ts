@@ -1,39 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ClientMessage, RoomSnapshot, ServerMessage } from "../shared/protocol";
+import type { ClientMessage, ServerMessage } from "../shared/protocol";
 import type {
   EmbeddedOpenCodeRunner,
   EmbeddedTurnResult,
   NativeRunnerEvent,
 } from "./embedded-opencode";
-import type { WorkerEnv } from "./opencode";
+import type { RoomEnv } from "./opencode";
 import { sqliteStorage } from "./fixtures/sqlite-storage";
 import { deferred } from "./fixtures/deferred";
 
-const execution = vi.hoisted(() => ({
+const execution = {
   turn: vi.fn<EmbeddedOpenCodeRunner["turn"]>(),
   interrupt: vi.fn<EmbeddedOpenCodeRunner["interrupt"]>(),
-}));
-vi.mock("cloudflare:workers", () => ({
-  DurableObject: class {
-    constructor(
-      protected ctx: DurableObjectState,
-      protected env: WorkerEnv,
-    ) {}
-  },
-}));
-vi.mock("@opencode/sdk/workerd", () => ({
-  OpenCodeWorkerd: { create: async () => ({}) },
-}));
-vi.mock("./embedded-opencode", () => ({
-  EmbeddedOpenCodeRunner: class {
-    turn = execution.turn;
-    interrupt = execution.interrupt;
-  },
-}));
-import { AgentRoom } from "./agent-room";
+  replyToForm: vi.fn<EmbeddedOpenCodeRunner["replyToForm"]>(),
+  cancelForm: vi.fn<EmbeddedOpenCodeRunner["cancelForm"]>(),
+  models: vi.fn<EmbeddedOpenCodeRunner["models"]>().mockResolvedValue([]),
+};
+
+import { AgentRoomCore, type RoomContext, type RoomSocket } from "./agent-room-core";
 import { RepositoryWorkspace } from "./workspace";
+import { parseServerMessage } from "../shared/protocol";
 
 const databases: ReturnType<typeof sqliteStorage>[] = [];
+
 const info = {
   repository: "owner/repo",
   branch: "main",
@@ -46,9 +35,11 @@ beforeEach(() => {
   execution.interrupt.mockReset().mockResolvedValue(undefined);
   vi.spyOn(RepositoryWorkspace.prototype, "ensureReady").mockResolvedValue(info);
 });
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
+
   for (const database of databases.splice(0)) {
     database.close();
   }
@@ -59,46 +50,65 @@ async function createRoom(mode: "live" | "simulation" = "live") {
   databases.push(database);
   const pending: Promise<unknown>[] = [];
   const messages: ServerMessage[] = [];
-  const socket = {
+
+  const socket: RoomSocket = {
+    close: () => {},
+    serializeAttachment: () => {},
     deserializeAttachment: () => ({
       participant: { id: "p1", name: "Maya", role: "maintainer", color: "blue" },
     }),
     send: (message: string) => {
-      messages.push(JSON.parse(message) as ServerMessage);
+      messages.push(parseServerMessage(message));
     },
-  } as WebSocket;
-  const context = {
+  };
+
+  const context: RoomContext = {
+    acceptWebSocket: () => {},
     id: { name: "room-1" },
-    storage: { sql: database.sql },
+    storage: { sql: database.sql, setAlarm: async () => {} },
     getWebSockets: () => [socket],
     blockConcurrencyWhile<T>(callback: () => Promise<T>) {
       const promise = callback();
       pending.push(promise);
+
       return promise;
     },
-    waitUntil(promise: Promise<unknown>) {
+    waitUntil(promise: Promise<void>) {
       pending.push(promise);
     },
-  } as DurableObjectState;
-  const env = {
+  };
+
+  const env: RoomEnv = {
+    CLOUDFLARE_ACCOUNT_ID: "local-test",
     OPENCODE_MODE: mode,
     OPENCODE_PROVIDER: "opencode-zen",
     OPENCODE_MODEL: "opencode/test-model",
     OPENCODE_ZEN_API_KEY: "mock-only",
     RAILWAY_ENVIRONMENT_ID: "mock-only",
     RAILWAY_TOKEN: "mock-only",
-  } as WorkerEnv;
-  const room = new AgentRoom(context, env);
+  };
+
+  const room = new AgentRoomCore(context, env, mode === "live" ? { runner: execution } : {});
   await Promise.all(pending);
   await room.initialize("room-1");
   await Promise.all(pending);
+
   return {
     database,
     messages,
     room,
     send: (message: ClientMessage) => room.webSocketMessage(socket, JSON.stringify(message)),
-    snapshot: async () =>
-      (await (await room.fetch(new Request("https://room.test"))).json()) as RoomSnapshot,
+    snapshot: async () => {
+      const message = parseServerMessage(
+        await (await room.fetch(new Request("https://room.test"))).text(),
+      );
+
+      if (message.type !== "snapshot") {
+        throw new Error("Expected room snapshot");
+      }
+
+      return message;
+    },
     changes: () =>
       database.sql
         .exec<{ content: string }>("SELECT content FROM relay_workspace_changes ORDER BY path")
@@ -114,14 +124,17 @@ function controlledTurn() {
   execution.turn.mockImplementationOnce((_request, onEvent) => {
     callback = onEvent;
     started.resolve();
+
     return completion.promise;
   });
+
   return {
     result: completion,
     started: started.promise,
     emit: (event: NativeRunnerEvent) => callback?.(event),
   };
 }
+
 function result(
   sessionID: string,
   content: string,

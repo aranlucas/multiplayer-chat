@@ -1,7 +1,11 @@
+import { z } from "zod";
+import { jsonRecordSchema, type JsonRecord } from "./json-value";
 import { textValue } from "./text-value";
+
 export type ParticipantRole = "maintainer" | "contributor";
 
 export const DEFAULT_REPOSITORY = "aranlucas/multiplayer-chat";
+
 export const DEFAULT_BRANCH = "main";
 
 export interface Participant {
@@ -69,7 +73,7 @@ export interface TimelineEvent {
   kind: "participant" | "prompt" | "opencode" | "permission" | "system";
   createdAt: number;
   actor?: Pick<Participant, "id" | "name" | "role" | "color">;
-  payload: Record<string, unknown>;
+  payload: JsonRecord;
 }
 
 export function queuedPrompts(events: TimelineEvent[]): QueuedPrompt[] {
@@ -237,211 +241,294 @@ export function safeRoomID(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9-_]/g, "-")
     .replace(/-+/g, "-");
+
   return normalized.slice(0, 64) || "reconnect-loop";
 }
 
 export function safeParticipantName(value: string | null): string {
   const normalized = (value ?? "Guest").trim().replace(/[<>]/g, "");
+
   return normalized.slice(0, 32) || "Guest";
 }
 
-export function parseClientMessage(value: unknown): ClientMessage {
-  if (!value || typeof value !== "object") {
-    throw new Error("Invalid message");
-  }
-  const message = value as Record<string, unknown>;
-  if (message.type === "prompt") {
-    const text = typeof message.text === "string" ? message.text.trim() : "";
-    if (!text || text.length > 8_000) {
-      throw new Error("Prompt must be between 1 and 8,000 characters");
-    }
-    if (message.delivery !== "steer" && message.delivery !== "queue") {
-      throw new Error("Invalid delivery mode");
-    }
-    return {
-      type: "prompt",
-      text,
-      delivery: message.delivery,
-      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
-    };
-  }
-  if (message.type === "permission.reply") {
-    if (typeof message.requestID !== "string") {
-      throw new Error("Missing permission request ID");
-    }
-    if (message.reply !== "once" && message.reply !== "reject") {
-      throw new Error("Invalid permission reply");
-    }
-    return {
-      type: "permission.reply",
-      requestID: message.requestID,
-      reply: message.reply,
-    };
-  }
-  if (message.type === "question.reply") {
-    const sessionID = parseQuestionIdentifier(message.sessionID, "session");
-    const formID = parseQuestionIdentifier(message.formID, "form");
-    if (!message.answer || typeof message.answer !== "object") {
-      throw new Error("Question answer is required");
-    }
-    const entries = Object.entries(message.answer);
-    if (entries.length > 20) {
-      throw new Error("Question answer is too large");
-    }
-    const answer: Record<string, string | string[]> = {};
-    for (const [key, raw] of entries) {
-      if (!/^q\d+$/.test(key)) {
-        throw new Error("Invalid question field");
-      }
-      const values = Array.isArray(raw) ? raw : [raw];
-      if (
-        values.length > 20 ||
-        values.some((item) => typeof item !== "string" || item.length > 2_000)
-      ) {
-        throw new Error("Invalid question answer");
-      }
-      answer[key] = Array.isArray(raw) ? (values as string[]) : (values[0] as string);
-    }
-    return {
-      type: "question.reply",
-      sessionID,
-      formID,
-      answer,
-      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
-    };
-  }
-  if (message.type === "question.cancel") {
-    return {
-      type: "question.cancel",
-      sessionID: parseQuestionIdentifier(message.sessionID, "session"),
-      formID: parseQuestionIdentifier(message.formID, "form"),
-      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
-    };
-  }
-  if (message.type === "room.rename") {
-    const title = typeof message.title === "string" ? message.title.trim() : "";
-    if (!title || title.length > 100 || title.includes("\0")) {
-      throw new Error("Room title must be between 1 and 100 characters");
-    }
-    return {
-      type: "room.rename",
-      title,
-      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
-    };
-  }
-  if (message.type === "room.model.configure") {
-    const model = typeof message.model === "string" ? message.model.trim() : "";
-    if (!model || model.length > 200 || model.includes("\0") || !model.includes("/")) {
-      throw new Error("Choose a valid OpenCode model");
-    }
-    return {
-      type: "room.model.configure",
-      model,
-      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
-    };
-  }
-  if (message.type === "agent.pause") {
-    return { type: "agent.pause" };
-  }
-  if (message.type === "brief.update") {
-    return {
-      type: "brief.update",
-      objective: parsePlanningText(message.objective, "objective", 4_000),
-      constraints: parsePlanningList(message.constraints, "constraints"),
-      validation: parsePlanningList(message.validation, "validation checks"),
-      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
-    };
-  }
-  if (message.type === "decision.create") {
-    const text = parsePlanningText(message.text, "decision", 2_000, true);
-    const rationale = parsePlanningText(message.rationale, "decision rationale", 4_000);
-    const sourceEventID =
-      typeof message.sourceEventID === "string" && message.sourceEventID.length <= 200
-        ? message.sourceEventID
-        : undefined;
-    return {
-      type: "decision.create",
-      text,
-      rationale: rationale || undefined,
-      sourceEventID,
-      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
-    };
-  }
-  if (message.type === "brief.review.start") {
-    return {
-      type: "brief.review.start",
-      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
-    };
-  }
-  if (message.type === "brief.review.comment") {
-    return {
-      type: "brief.review.comment",
-      text: parsePlanningText(message.text, "review comment", 4_000, true),
-      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
-    };
-  }
-  if (message.type === "brief.review.resolve") {
-    if (message.outcome !== "approved" && message.outcome !== "changes_requested") {
-      throw new Error("Choose a valid review outcome");
-    }
-    const comment = parsePlanningText(message.comment, "review comment", 4_000);
-    if (message.outcome === "changes_requested" && !comment) {
-      throw new Error("Describe the changes you are requesting");
-    }
-    return {
-      type: "brief.review.resolve",
-      outcome: message.outcome,
-      comment: comment || undefined,
-      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
-    };
-  }
-  if (message.type === "room.configure") {
-    const repository = typeof message.repository === "string" ? message.repository.trim() : "";
-    const branch = typeof message.branch === "string" ? message.branch.trim() : "";
-    if (!repository || repository.length > 200) {
-      throw new Error("Repository is required");
-    }
-    if (!branch || branch.length > 200) {
-      throw new Error("Branch is required");
-    }
-    return {
-      type: "room.configure",
-      repository,
-      branch,
-      requestID: typeof message.requestID === "string" ? message.requestID : undefined,
-    };
-  }
-  if (message.type === "ping") {
-    return { type: "ping" };
-  }
-  throw new Error("Unknown message type");
-}
+const requestIDSchema = z.string().optional().catch(undefined);
 
-function parsePlanningText(value: unknown, label: string, maximum: number, required = false) {
-  const text = typeof value === "string" ? value.trim() : "";
-  if ((required && !text) || text.length > maximum || text.includes("\0")) {
-    throw new Error(
-      required
-        ? `${label} must be between 1 and ${maximum.toLocaleString()} characters`
-        : `${label} must be no more than ${maximum.toLocaleString()} characters`,
+const questionIDSchema = (label: string) =>
+  z
+    .string({ error: `Invalid question ${label} ID` })
+    .min(1, `Invalid question ${label} ID`)
+    .max(200, `Invalid question ${label} ID`)
+    .refine((value) => !value.includes("\0"), `Invalid question ${label} ID`);
+
+function planningTextSchema(label: string, maximum: number, required = false) {
+  const message = required
+    ? `${label} must be between 1 and ${maximum.toLocaleString()} characters`
+    : `${label} must be no more than ${maximum.toLocaleString()} characters`;
+
+  return z
+    .string()
+    .catch("")
+    .transform((value) => value.trim())
+    .refine(
+      (value) =>
+        (!required || value.length > 0) && value.length <= maximum && !value.includes("\0"),
+      message,
     );
-  }
-  return text;
 }
 
-function parsePlanningList(value: unknown, label: string) {
-  if (!Array.isArray(value) || value.length > 30) {
-    throw new Error(`Brief ${label} are invalid`);
-  }
-  return value.map((item) => {
-    const text = parsePlanningText(item, label, 1_000, true);
-    return text;
-  });
+function planningListSchema(label: string) {
+  return z
+    .array(planningTextSchema(label, 1_000, true), { error: `Brief ${label} are invalid` })
+    .max(30, `Brief ${label} are invalid`);
 }
 
-function parseQuestionIdentifier(value: unknown, label: string) {
-  if (typeof value !== "string" || !value || value.length > 200 || value.includes("\0")) {
-    throw new Error(`Invalid question ${label} ID`);
-  }
-  return value;
+const answerSchema = z
+  .record(
+    z.string().regex(/^q\d+$/, "Invalid question field"),
+    z.union([z.string().max(2_000), z.array(z.string().max(2_000)).max(20)], {
+      error: "Invalid question answer",
+    }),
+  )
+  .refine((value) => Object.keys(value).length <= 20, "Question answer is too large");
+
+const clientMessageSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("prompt"),
+    text: z
+      .string()
+      .catch("")
+      .transform((value) => value.trim())
+      .refine(
+        (value) => value.length > 0 && value.length <= 8_000,
+        "Prompt must be between 1 and 8,000 characters",
+      ),
+    delivery: z.enum(["steer", "queue"], { error: "Invalid delivery mode" }),
+    requestID: requestIDSchema,
+  }),
+  z.object({
+    type: z.literal("permission.reply"),
+    requestID: z.string({ error: "Missing permission request ID" }),
+    reply: z.enum(["once", "reject"], { error: "Invalid permission reply" }),
+  }),
+  z.object({
+    type: z.literal("question.reply"),
+    sessionID: questionIDSchema("session"),
+    formID: questionIDSchema("form"),
+    answer: answerSchema,
+    requestID: requestIDSchema,
+  }),
+  z.object({
+    type: z.literal("question.cancel"),
+    sessionID: questionIDSchema("session"),
+    formID: questionIDSchema("form"),
+    requestID: requestIDSchema,
+  }),
+  z.object({
+    type: z.literal("room.rename"),
+    title: planningTextSchema("Room title", 100, true),
+    requestID: requestIDSchema,
+  }),
+  z.object({
+    type: z.literal("room.model.configure"),
+    model: z
+      .string()
+      .catch("")
+      .transform((value) => value.trim())
+      .refine(
+        (value) =>
+          value.length > 0 && value.length <= 200 && !value.includes("\0") && value.includes("/"),
+        "Choose a valid OpenCode model",
+      ),
+    requestID: requestIDSchema,
+  }),
+  z.object({ type: z.literal("agent.pause") }),
+  z.object({
+    type: z.literal("brief.update"),
+    objective: planningTextSchema("objective", 4_000),
+    constraints: planningListSchema("constraints"),
+    validation: planningListSchema("validation checks"),
+    requestID: requestIDSchema,
+  }),
+  z.object({
+    type: z.literal("decision.create"),
+    text: planningTextSchema("decision", 2_000, true),
+    rationale: planningTextSchema("decision rationale", 4_000).transform(
+      (value) => value || undefined,
+    ),
+    sourceEventID: z.string().max(200).optional().catch(undefined),
+    requestID: requestIDSchema,
+  }),
+  z.object({ type: z.literal("brief.review.start"), requestID: requestIDSchema }),
+  z.object({
+    type: z.literal("brief.review.comment"),
+    text: planningTextSchema("review comment", 4_000, true),
+    requestID: requestIDSchema,
+  }),
+  z
+    .object({
+      type: z.literal("brief.review.resolve"),
+      outcome: z.enum(["approved", "changes_requested"], {
+        error: "Choose a valid review outcome",
+      }),
+      comment: planningTextSchema("review comment", 4_000).transform((value) => value || undefined),
+      requestID: requestIDSchema,
+    })
+    .refine(
+      (value) => value.outcome !== "changes_requested" || Boolean(value.comment),
+      "Describe the changes you are requesting",
+    ),
+  z.object({
+    type: z.literal("room.configure"),
+    repository: z
+      .string()
+      .trim()
+      .min(1, "Repository is required")
+      .max(200, "Repository is required"),
+    branch: z.string().trim().min(1, "Branch is required").max(200, "Branch is required"),
+    requestID: requestIDSchema,
+  }),
+  z.object({ type: z.literal("ping") }),
+]);
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- WebSocket JSON enters here and is validated against the complete discriminated wire contract.
+export function parseClientMessage(value: unknown): ClientMessage {
+  return clientMessageSchema.parse(value);
+}
+
+export const actorSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  role: z.enum(["maintainer", "contributor"]),
+  color: z.string(),
+});
+
+const participantSchema = actorSchema.extend({ online: z.boolean(), lastSeen: z.number() });
+
+const revisionSchema = z.object({
+  id: z.string(),
+  sequence: z.number(),
+  workspaceRevision: z.number(),
+  commitSHA: z.string(),
+  status: z.enum(["waiting", "building", "ready", "failed"]),
+  previewURL: z.string().optional(),
+  provider: z.string().optional(),
+  deploymentID: z.string().optional(),
+  failure: z.string().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  activatedAt: z.number().optional(),
+});
+
+const roomSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  titleAuto: z.boolean(),
+  repository: z.string(),
+  branch: z.string(),
+  commitSHA: z.string().optional(),
+  workspaceStatus: z.enum(["cloning", "ready", "error"]),
+  workspaceError: z.string().optional(),
+  agentStatus: z.enum(["idle", "running", "paused", "error"]),
+  model: z.string(),
+  opencodeSessionID: z.string().optional(),
+  workspaceRevision: z.number(),
+  publishedWorkspaceRevision: z.number(),
+  pullRequestURL: z.string().optional(),
+  pullRequestNumber: z.number().optional(),
+  pullRequestBranch: z.string().optional(),
+  pullRequestRepository: z.string().optional(),
+  pullRequestHeadSHA: z.string().optional(),
+  autoPublishConfigured: z.boolean(),
+  latestRevision: revisionSchema.optional(),
+  activeRevision: revisionSchema.optional(),
+});
+
+const eventSchema = z.object({
+  seq: z.number(),
+  id: z.string(),
+  kind: z.enum(["participant", "prompt", "opencode", "permission", "system"]),
+  createdAt: z.number(),
+  actor: actorSchema.optional(),
+  payload: jsonRecordSchema,
+});
+
+const permissionSchema = z.object({
+  id: z.string(),
+  sessionID: z.string(),
+  action: z.string(),
+  resources: z.array(z.string()),
+  message: z.string().optional(),
+  status: z.enum(["pending", "approved", "denied"]),
+  createdAt: z.number(),
+});
+
+const briefActorSchema = actorSchema.omit({ role: true });
+
+const briefSchema = z.object({
+  objective: z.string(),
+  constraints: z.array(z.string()),
+  validation: z.array(z.string()),
+  revision: z.number(),
+  review: z.object({
+    status: z.enum(["draft", "in_review", "approved", "changes_requested"]),
+    round: z.number(),
+    startedAt: z.number().optional(),
+    startedBy: briefActorSchema.optional(),
+    resolvedAt: z.number().optional(),
+    resolvedBy: briefActorSchema.optional(),
+  }),
+  reviewComments: z.array(
+    z.object({
+      id: z.string(),
+      round: z.number(),
+      text: z.string(),
+      actor: actorSchema,
+      createdAt: z.number(),
+    }),
+  ),
+  updatedAt: z.number().optional(),
+  updatedBy: briefActorSchema.optional(),
+});
+
+const decisionSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  rationale: z.string().optional(),
+  sourceEventID: z.string().optional(),
+  actor: actorSchema,
+  createdAt: z.number(),
+});
+
+const serverMessageSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("snapshot"),
+    room: roomSchema,
+    models: z.array(
+      z.object({ id: z.string(), name: z.string(), providerID: z.string(), free: z.boolean() }),
+    ),
+    participants: z.array(participantSchema),
+    events: z.array(eventSchema),
+    permissions: z.array(permissionSchema),
+    queue: z.array(
+      z.object({
+        eventID: z.string(),
+        participant: briefActorSchema,
+        text: z.string(),
+        createdAt: z.number(),
+      }),
+    ),
+    brief: briefSchema,
+    decisions: z.array(decisionSchema),
+  }),
+  z.object({ type: z.literal("event"), event: eventSchema }),
+  z.object({ type: z.literal("presence"), participants: z.array(participantSchema) }),
+  z.object({ type: z.literal("room"), room: roomSchema }),
+  z.object({ type: z.literal("permissions"), permissions: z.array(permissionSchema) }),
+  z.object({ type: z.literal("planning"), brief: briefSchema, decisions: z.array(decisionSchema) }),
+  z.object({ type: z.literal("ack"), requestID: z.string().optional() }),
+  z.object({ type: z.literal("error"), message: z.string(), requestID: z.string().optional() }),
+]);
+
+export function parseServerMessage(text: string): ServerMessage {
+  return serverMessageSchema.parse(JSON.parse(text));
 }

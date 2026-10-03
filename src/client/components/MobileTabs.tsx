@@ -17,6 +17,7 @@ export function MobileTabs({ active, participants, queued, decisions, onChange }
     { id: "people", label: "People", count: participants },
     { id: "queue", label: "Queue", count: queued },
   ];
+
   return (
     <nav className="mobile-tabs" aria-label="Session sections">
       {tabs.map((tab) => (

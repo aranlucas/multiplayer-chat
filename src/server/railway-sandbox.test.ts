@@ -1,6 +1,19 @@
-import { ExecInterruptedError, type ExecHandle, type ExecResult, type Sandbox } from "railway";
-import { describe, expect, it, vi } from "vitest";
-import { RailwayRoomSandbox } from "./railway-sandbox";
+import { sqliteStorage } from "./fixtures/sqlite-storage";
+import { ExecInterruptedError, type ExecResult } from "railway";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  RailwayRoomSandbox,
+  type SandboxConnection,
+  type SandboxExecution,
+} from "./railway-sandbox";
+
+const databases: ReturnType<typeof sqliteStorage>[] = [];
+
+afterEach(() => {
+  for (const database of databases.splice(0)) {
+    database.close();
+  }
+});
 
 const successfulResult: ExecResult = {
   exitCode: 0,
@@ -16,15 +29,18 @@ describe("RailwayRoomSandbox.exec", () => {
       stdout: "partial ",
       stderr: "warning ",
     });
+
     const resumedResult = {
       ...successfulResult,
       stdout: "output\n",
       stderr: "continued\n",
     };
+
     const sandbox = fakeSandbox(
       fakeExecHandle(interrupted, "exec-session-1"),
       fakeExecHandle(resumedResult, "exec-session-1"),
     );
+
     const roomSandbox = railwayRoomSandbox(sandbox);
 
     await expect(roomSandbox.exec("pnpm test")).resolves.toMatchObject({
@@ -49,10 +65,12 @@ describe("RailwayRoomSandbox.exec", () => {
       stdout: "",
       stderr: "",
     });
+
     const sandbox = fakeSandbox(
       fakeExecHandle(interrupted, new Error("No durable session")),
       fakeExecHandle(successfulResult, "exec-session-2"),
     );
+
     const roomSandbox = railwayRoomSandbox(sandbox);
 
     await expect(
@@ -73,10 +91,12 @@ describe("RailwayRoomSandbox.exec", () => {
       stdout: "partial output",
       stderr: "",
     });
+
     const sandbox = fakeSandbox(
       fakeExecHandle(interrupted, new Error("No durable session")),
       fakeExecHandle(successfulResult, "exec-session-2"),
     );
+
     const roomSandbox = railwayRoomSandbox(sandbox);
 
     await expect(roomSandbox.exec("pnpm test")).rejects.toBe(interrupted);
@@ -91,12 +111,15 @@ describe("RailwayRoomSandbox.exec", () => {
       stdout: "",
       stderr: "",
     });
+
     const sandbox = fakeSandbox(
       fakeExecHandle(interrupted, "exec-session-1"),
       fakeExecHandle(successfulResult, "exec-session-2"),
     );
-    sandbox.refresh.mockImplementation(() => {
+
+    sandbox.refresh.mockImplementation(async () => {
       Object.defineProperty(sandbox, "status", { value: "DESTROYED" });
+
       return sandbox;
     });
     const roomSandbox = railwayRoomSandbox(sandbox);
@@ -109,30 +132,43 @@ describe("RailwayRoomSandbox.exec", () => {
   });
 });
 
-function fakeSandbox(...handles: ExecHandle[]): Sandbox & {
-  exec: ReturnType<typeof vi.fn>;
-  refresh: ReturnType<typeof vi.fn>;
-} {
-  return {
+function fakeSandbox(...handles: SandboxExecution[]) {
+  const exec = vi.fn((..._args: Parameters<SandboxConnection["exec"]>) => {
+    const handle = handles.shift();
+
+    if (!handle) {
+      throw new Error("Unexpected execution");
+    }
+
+    return handle;
+  });
+
+  const refresh = vi.fn<() => Promise<void | SandboxConnection>>().mockResolvedValue(undefined);
+
+  const sandbox: SandboxConnection & { exec: typeof exec; refresh: typeof refresh } = {
     id: "sandbox-1",
     status: "RUNNING",
-    exec: vi.fn().mockImplementation(() => handles.shift()),
-    refresh: vi.fn().mockResolvedValue(undefined),
-  } as unknown as Sandbox & {
-    exec: ReturnType<typeof vi.fn>;
-    refresh: ReturnType<typeof vi.fn>;
+    exec,
+    refresh,
+    files: { read: vi.fn(), write: vi.fn(), list: vi.fn(), stat: vi.fn() },
   };
+
+  return sandbox;
 }
 
-function fakeExecHandle(outcome: ExecResult | Error, sessionName: string | Error): ExecHandle {
+function fakeExecHandle(
+  outcome: ExecResult | Error,
+  sessionName: string | Error,
+): SandboxExecution {
   const result = outcome instanceof Error ? Promise.reject(outcome) : Promise.resolve(outcome);
+
   return Object.assign(result, {
     sessionName:
       sessionName instanceof Error ? Promise.reject(sessionName) : Promise.resolve(sessionName),
     kill: vi.fn().mockResolvedValue(true),
     detach: vi.fn().mockResolvedValue(undefined),
     result: () => result,
-  }) as unknown as ExecHandle;
+  });
 }
 
 function execInterrupted({
@@ -150,18 +186,18 @@ function execInterrupted({
   });
 }
 
-function railwayRoomSandbox(sandbox: Sandbox): RailwayRoomSandbox {
-  const storage = {
-    sql: {
-      exec: vi.fn(() => ({
-        one: () => ({ railway_sandbox_id: null }),
-      })),
-    },
-  } as unknown as DurableObjectStorage;
+function railwayRoomSandbox(sandbox: SandboxConnection): RailwayRoomSandbox {
+  const database = sqliteStorage();
+  database.sql.exec(
+    "CREATE TABLE relay_room (singleton INTEGER PRIMARY KEY, railway_sandbox_id TEXT); INSERT INTO relay_room VALUES (1, NULL);",
+  );
+  databases.push(database);
+  const storage = { sql: database.sql };
+
   const sandboxFactory = {
-    connect: vi.fn(),
+    connect: vi.fn().mockResolvedValue(sandbox),
     create: vi.fn().mockResolvedValue(sandbox),
-  } as unknown as ConstructorParameters<typeof RailwayRoomSandbox>[2];
+  };
 
   return new RailwayRoomSandbox(
     storage,

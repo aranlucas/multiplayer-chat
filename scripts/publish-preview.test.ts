@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { parseJsonRecord, type JsonRecord } from "../src/shared/json-value";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -19,7 +21,7 @@ interface PublisherOptions {
 interface ObservedRequest {
   url?: string;
   authorization?: string;
-  body?: Record<string, unknown>;
+  body?: JsonRecord;
 }
 
 interface ChildResult {
@@ -28,26 +30,23 @@ interface ChildResult {
   stderr: string;
 }
 
-function parseObject(text: string): Record<string, unknown> {
-  const value: unknown = JSON.parse(text);
-  assert.ok(value && typeof value === "object" && !Array.isArray(value));
-  return value as Record<string, unknown>;
+function parseObject(text: string): JsonRecord {
+  return parseJsonRecord(JSON.parse(text));
 }
 
 function parseCommand(text: string): string[] {
-  const value: unknown = JSON.parse(text);
-  assert.ok(Array.isArray(value));
-  assert.ok(value.every((item: unknown): item is string => typeof item === "string"));
-  return value;
+  return z.array(z.string()).parse(JSON.parse(text));
 }
 
 const publisher = fileURLToPath(new URL("./publish-preview.mjs", import.meta.url));
+
 const commitSHA = "1234567890abcdef1234567890abcdef12345678";
 
 async function runPublisher(options: PublisherOptions = {}) {
   const directory = await mkdtemp(join(tmpdir(), "relay-preview-test-"));
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
   const requests: ObservedRequest[] = [];
+
   const server = createServer((request, response) => {
     let bodyText = "";
     request.setEncoding("utf8");
@@ -68,14 +67,16 @@ async function runPublisher(options: PublisherOptions = {}) {
       );
     });
   });
+
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => resolve());
   });
   onTestFinished(() => new Promise<void>((resolve) => server.close(() => resolve())));
   const address = server.address();
-  assert.ok(address && typeof address === "object");
-  const origin = `http://127.0.0.1:${address.port}`;
+  const networkAddress = z.object({ port: z.number() }).parse(address);
+  const origin = `http://127.0.0.1:${networkAddress.port}`;
+
   const cliResult = {
     type: "preview",
     version: 1,
@@ -84,6 +85,7 @@ async function runPublisher(options: PublisherOptions = {}) {
     deployment_urls: [`${origin}/immutable-build`],
     ...options.cliResult,
   };
+
   const commandLog = join(directory, "command.json");
   await writeFile(
     join(directory, "pnpm"),
@@ -95,6 +97,7 @@ async function runPublisher(options: PublisherOptions = {}) {
     timerFixture,
     "const schedule = globalThis.setTimeout; globalThis.setTimeout = (callback, delay, ...args) => schedule(callback, Math.min(delay, 1), ...args);\n",
   );
+
   const env = {
     ...process.env,
     PATH: `${directory}:${process.env.PATH}`,
@@ -103,6 +106,7 @@ async function runPublisher(options: PublisherOptions = {}) {
     RELAY_CONTROL_ORIGIN: origin,
     RELAY_DEPLOYMENT_WEBHOOK_SECRET: options.webhookSecret ?? "test-webhook",
   };
+
   const result = await new Promise<ChildResult>((resolve, reject) => {
     const child = spawn(process.execPath, ["--import", timerFixture, publisher], { env });
     let stdout = "";
@@ -114,9 +118,11 @@ async function runPublisher(options: PublisherOptions = {}) {
     child.on("error", reject);
     child.on("close", (code) => resolve({ code, stdout, stderr }));
   });
+
   const command = await readFile(commandLog, "utf8")
     .then(parseCommand)
     .catch(() => undefined);
+
   return { ...result, requests, command, origin };
 }
 

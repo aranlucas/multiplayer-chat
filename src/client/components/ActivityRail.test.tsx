@@ -17,6 +17,7 @@ describe("ActivityRail", () => {
     const html = renderToStaticMarkup(
       <ActivityRail events={[prompt]} selectedID="event-1" onSelect={() => {}} />,
     );
+
     expect(html).toContain("OpenCode session");
     expect(html).toContain("Inspect the reconnect loop");
     expect(html).not.toContain("Filter events");

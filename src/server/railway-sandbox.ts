@@ -1,8 +1,11 @@
+import type { RoomStorage } from "./storage";
 import {
   ExecInterruptedError,
   Sandbox,
   SandboxNotFoundError,
   type ExecHandle,
+  type ExecOptions,
+  type ExecReattachTarget,
   type ExecResult,
   type SandboxFileEntry,
 } from "railway";
@@ -33,21 +36,32 @@ interface SandboxRow {
   railway_sandbox_id: string | null;
 }
 
+export type SandboxExecution = PromiseLike<ExecResult> &
+  Pick<ExecHandle, "sessionName" | "kill" | "detach" | "result">;
+
+export interface SandboxConnection {
+  id: string;
+  status: Sandbox["status"];
+  files: Pick<Sandbox["files"], "read" | "write" | "list" | "stat">;
+  exec(target: string | ExecReattachTarget, options?: ExecOptions): SandboxExecution;
+  refresh(): Promise<void | SandboxConnection>;
+}
+
 interface RailwaySandboxFactory {
-  connect(id: string, options: ReturnType<typeof clientOptions>): Promise<Sandbox>;
-  create(options: ReturnType<typeof createOptions>): Promise<Sandbox>;
-  create(checkpoint: string, options: ReturnType<typeof createOptions>): Promise<Sandbox>;
+  connect(id: string, options: ReturnType<typeof clientOptions>): Promise<SandboxConnection>;
+  create(options: ReturnType<typeof createOptions>): Promise<SandboxConnection>;
+  create(checkpoint: string, options: ReturnType<typeof createOptions>): Promise<SandboxConnection>;
 }
 
 const factory: RailwaySandboxFactory = Sandbox;
 
 export class RailwayRoomSandbox {
-  private connecting?: Promise<Sandbox>;
-  private current?: Sandbox;
-  private readonly active = new Set<ExecHandle>();
+  private connecting?: Promise<SandboxConnection>;
+  private current?: SandboxConnection;
+  private readonly active = new Set<SandboxExecution>();
 
   constructor(
-    private readonly storage: DurableObjectStorage,
+    private readonly storage: RoomStorage,
     private readonly env: RailwaySandboxEnv,
     private readonly sandboxFactory: RailwaySandboxFactory = factory,
   ) {}
@@ -60,9 +74,11 @@ export class RailwayRoomSandbox {
     if (!this.env.RAILWAY_ENVIRONMENT_ID) {
       return "The Railway environment ID is not configured.";
     }
+
     if (!this.env.RAILWAY_TOKEN && !this.env.RAILWAY_API_TOKEN) {
       return "A Railway project or API token is not configured.";
     }
+
     return undefined;
   }
 
@@ -70,8 +86,10 @@ export class RailwayRoomSandbox {
     const sandbox = await this.get();
     const handle = sandbox.exec(command, execOptions(options));
     this.active.add(handle);
+
     try {
       const result = await handle;
+
       return commandResult(result);
     } catch (error) {
       if (!(error instanceof ExecInterruptedError)) {
@@ -79,12 +97,15 @@ export class RailwayRoomSandbox {
       }
 
       const sessionName = await handle.sessionName.catch(() => undefined);
+
       if (sessionName) {
         if (!(await this.isStillRunning(sandbox))) {
           throw error;
         }
+
         try {
           const resumed = await this.runReattach(sandbox, sessionName, options, true);
+
           return mergeInterruptedResult(error, resumed);
         } catch (resumeError) {
           if (
@@ -99,6 +120,7 @@ export class RailwayRoomSandbox {
         if (!options.retryOnInterrupted) {
           throw error;
         }
+
         if (!(await this.isStillRunning(sandbox))) {
           throw error;
         }
@@ -111,32 +133,37 @@ export class RailwayRoomSandbox {
   }
 
   private async runExec(
-    sandbox: Sandbox,
+    sandbox: SandboxConnection,
     command: string,
     options: SandboxCommandOptions,
   ): Promise<SandboxCommandResult> {
     const handle = sandbox.exec(command, execOptions(options));
     this.active.add(handle);
+
     try {
       const result = await handle;
+
       return commandResult(result);
     } finally {
       this.active.delete(handle);
     }
   }
 
-  private async isStillRunning(sandbox: Sandbox): Promise<boolean> {
+  private async isStillRunning(sandbox: SandboxConnection): Promise<boolean> {
     try {
       await sandbox.refresh();
+
       if (sandbox.status === "RUNNING") {
         return true;
       }
     } catch {
       // The original interruption remains the most useful error to surface.
     }
+
     if (this.current === sandbox) {
       this.current = undefined;
     }
+
     return false;
   }
 
@@ -145,6 +172,7 @@ export class RailwayRoomSandbox {
     const handle = sandbox.exec(command, execOptions(options));
     const sessionName = await handle.sessionName;
     await handle.detach();
+
     return sessionName;
   }
 
@@ -153,11 +181,12 @@ export class RailwayRoomSandbox {
     options: SandboxCommandOptions = {},
   ): Promise<SandboxCommandResult> {
     const sandbox = await this.get();
+
     return this.runReattach(sandbox, sessionName, options, false);
   }
 
   private async runReattach(
-    sandbox: Sandbox,
+    sandbox: SandboxConnection,
     sessionName: string,
     options: SandboxCommandOptions,
     resumeFromLastRead: boolean,
@@ -171,9 +200,12 @@ export class RailwayRoomSandbox {
         resumeFromLastRead,
       },
     );
+
     this.active.add(handle);
+
     try {
       const result = await handle;
+
       return commandResult(result);
     } finally {
       this.active.delete(handle);
@@ -200,28 +232,35 @@ export class RailwayRoomSandbox {
     return (await this.get()).files.stat(path);
   }
 
-  async get(): Promise<Sandbox> {
+  async get(): Promise<SandboxConnection> {
     const error = this.configurationError();
+
     if (error) {
       throw new Error(error);
     }
+
     if (this.current?.status === "RUNNING") {
       return this.current;
     }
+
     if (!this.connecting) {
       this.connecting = this.connectOrCreate().finally(() => {
         this.connecting = undefined;
       });
     }
+
     this.current = await this.connecting;
+
     return this.current;
   }
 
-  private async connectOrCreate(): Promise<Sandbox> {
+  private async connectOrCreate(): Promise<SandboxConnection> {
     const id = this.sandboxID();
+
     if (id) {
       try {
         const sandbox = await this.sandboxFactory.connect(id, clientOptions(this.env));
+
         if (sandbox.status === "RUNNING") {
           return sandbox;
         }
@@ -230,15 +269,19 @@ export class RailwayRoomSandbox {
           throw error;
         }
       }
+
       this.setSandboxID(null);
     }
 
     const options = createOptions(this.env);
     const checkpoint = this.env.RAILWAY_SANDBOX_CHECKPOINT?.trim();
+
     const sandbox = checkpoint
       ? await this.sandboxFactory.create(checkpoint, options)
       : await this.sandboxFactory.create(options);
+
     this.setSandboxID(sandbox.id);
+
     return sandbox;
   }
 
@@ -257,6 +300,7 @@ export class RailwayRoomSandbox {
 
 function clientOptions(env: RailwaySandboxEnv) {
   const token = env.RAILWAY_TOKEN ?? env.RAILWAY_API_TOKEN ?? "";
+
   return {
     token,
     authType: env.RAILWAY_TOKEN ? ("project-token" as const) : ("bearer" as const),
@@ -268,11 +312,21 @@ function clientOptions(env: RailwaySandboxEnv) {
 const railwayFetch: typeof fetch = (input, init) => fetch(input, init);
 
 function createOptions(env: RailwaySandboxEnv) {
-  return {
+  const options: ReturnType<typeof clientOptions> & {
+    idleTimeoutMinutes: number;
+    region?: string;
+  } = {
     ...clientOptions(env),
     idleTimeoutMinutes: idleTimeoutMinutes(env.RAILWAY_SANDBOX_IDLE_TIMEOUT_MINUTES),
-    ...(env.RAILWAY_SANDBOX_REGION?.trim() ? { region: env.RAILWAY_SANDBOX_REGION.trim() } : {}),
   };
+
+  const region = env.RAILWAY_SANDBOX_REGION?.trim();
+
+  if (region) {
+    options.region = region;
+  }
+
+  return options;
 }
 
 function execOptions(options: SandboxCommandOptions) {
@@ -307,9 +361,12 @@ function idleTimeoutMinutes(value: string | undefined): number {
   if (!value) {
     return 120;
   }
+
   const parsed = Number(value);
+
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 120) {
     throw new Error("RAILWAY_SANDBOX_IDLE_TIMEOUT_MINUTES must be between 1 and 120");
   }
+
   return parsed;
 }

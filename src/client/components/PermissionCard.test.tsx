@@ -52,6 +52,7 @@ describe("PermissionCard", () => {
     const html = renderToStaticMarkup(
       <PermissionCard permission={permission()} canApprove={false} compact onReply={() => {}} />,
     );
+
     expect(html).toContain("Needs maintainer approval");
     expect(html).toContain("Run a mutating shell command");
     expect(html).toContain("src/worker.ts");

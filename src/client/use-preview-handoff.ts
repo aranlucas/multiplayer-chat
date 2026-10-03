@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { useEffect, useEffectEvent, useState } from "react";
 import type { RoomRevision } from "../shared/protocol";
 import type { RoomIdentity } from "./use-room";
@@ -20,10 +21,12 @@ export function usePreviewHandoff(options: HandoffOptions) {
   const [attempt, setAttempt] = useState(0);
   const [transitioning, setTransitioning] = useState(false);
   const [error, setError] = useState<string>();
+
   const snapshot = useEffectEvent(() => {
     const { identity, draft, selectedID, mobileTab } = options;
     setTransitioning(true);
     setError(undefined);
+
     return { participant: identity, clientState: { draft, selectedID, mobileTab } };
   });
 
@@ -32,15 +35,20 @@ export function usePreviewHandoff(options: HandoffOptions) {
     if (!target || new URL(target).origin === window.location.origin) {
       return;
     }
+
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+
     async function transfer() {
       // Strict Mode may clean up the first effect before this request begins.
       await Promise.resolve();
+
       if (controller.signal.aborted) {
         return;
       }
+
       const state = snapshot();
+
       try {
         const response = await fetch(
           `${controlOrigin}/api/rooms/${encodeURIComponent(roomID)}/handoffs`,
@@ -51,29 +59,40 @@ export function usePreviewHandoff(options: HandoffOptions) {
             signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
           },
         );
-        const result = (await response.json()) as { url?: string; error?: string };
+
+        const result = z
+          .object({ url: z.string().optional(), error: z.string().optional() })
+          .parse(await response.json());
+
         if (!response.ok || !result.url) {
           throw new Error(result.error || "Unable to move to the preview");
         }
+
         if (controller.signal.aborted) {
           return;
         }
+
         const url = result.url;
         window.sessionStorage.setItem(`relay:${roomID}:draft`, state.clientState.draft);
         window.sessionStorage.setItem(`relay:${roomID}:mobile-tab`, state.clientState.mobileTab);
+
         if (state.clientState.selectedID) {
           window.sessionStorage.setItem(`relay:${roomID}:selected`, state.clientState.selectedID);
         }
+
         timer = setTimeout(() => window.location.assign(url), 450);
       } catch (failure) {
         if (controller.signal.aborted) {
           return;
         }
+
         setTransitioning(false);
         setError(failure instanceof Error ? failure.message : "Preview handoff failed");
       }
     }
+
     void transfer();
+
     return () => {
       controller.abort();
       clearTimeout(timer);

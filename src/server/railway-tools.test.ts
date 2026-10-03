@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { RailwayRoomSandbox } from "./railway-sandbox";
-import { railwayTools } from "./railway-tools";
+
+import { railwayToolDefinitions, type RailwayToolDependencies } from "./railway-tools";
 
 describe("railwayTools", () => {
   it("checkpoints an edit immediately after writing it", async () => {
@@ -8,21 +8,25 @@ describe("railwayTools", () => {
       readFile: vi.fn().mockResolvedValue("const enabled = false;\n"),
       writeFile: vi.fn().mockResolvedValue(undefined),
     };
+
     const checkpointWorkspace = vi.fn().mockResolvedValue(undefined);
-    const tools = await registeredTools(
-      sandbox as unknown as RailwayRoomSandbox,
-      checkpointWorkspace,
-    );
+
+    const tools = registeredTools(sandboxFixture(sandbox), checkpointWorkspace);
 
     const edit = tools.get("edit");
+
     if (!edit) {
       throw new Error("edit tool was not registered");
     }
-    await edit.execute({
-      path: "src/feature.ts",
-      oldString: "false",
-      newString: "true",
-    });
+
+    await edit.execute(
+      {
+        path: "src/feature.ts",
+        oldString: "false",
+        newString: "true",
+      },
+      { progress: async () => {} },
+    );
 
     expect(sandbox.writeFile).toHaveBeenCalledWith(
       "/workspace/repository/src/feature.ts",
@@ -45,16 +49,17 @@ describe("railwayTools", () => {
         success: true,
       }),
     };
+
     const checkpointWorkspace = vi.fn().mockResolvedValue(undefined);
-    const tools = await registeredTools(
-      sandbox as unknown as RailwayRoomSandbox,
-      checkpointWorkspace,
-    );
+
+    const tools = registeredTools(sandboxFixture(sandbox), checkpointWorkspace);
 
     const shell = tools.get("shell");
+
     if (!shell) {
       throw new Error("shell tool was not registered");
     }
+
     await shell.execute(
       { command: "apply-some-change" },
       { progress: vi.fn().mockResolvedValue(undefined) },
@@ -64,37 +69,28 @@ describe("railwayTools", () => {
   });
 });
 
-interface RegisteredTool {
-  execute(input: unknown, context?: unknown): Promise<unknown>;
+function sandboxFixture(
+  overrides: Partial<RailwayToolDependencies["sandbox"]>,
+): RailwayToolDependencies["sandbox"] {
+  return {
+    exec: vi.fn(),
+    reattach: vi.fn(),
+    detach: vi.fn(),
+    stat: vi.fn(),
+    list: vi.fn(),
+    readFile: vi.fn(),
+    writeFile: vi.fn(),
+    ...overrides,
+  };
 }
 
-async function registeredTools(
-  sandbox: RailwayRoomSandbox,
-  checkpointWorkspace: () => Promise<unknown>,
-): Promise<Map<string, RegisteredTool>> {
-  const tools = new Map<string, RegisteredTool>();
-  const registration = { dispose: vi.fn().mockResolvedValue(undefined) };
-  const plugin = railwayTools({
-    sandbox,
-    ensureWorkspace: vi.fn().mockResolvedValue(undefined),
-    checkpointWorkspace,
-  });
-  await plugin.setup({
-    tool: {
-      transform: async (
-        callback: (draft: {
-          add(tool: RegisteredTool & { name: string }): void;
-          remove(name: string): void;
-        }) => void,
-      ) => {
-        callback({
-          add: (tool) => tools.set(tool.name, tool),
-          remove: vi.fn(),
-        });
-        return registration;
-      },
-    },
-    session: { hook: vi.fn().mockResolvedValue(registration) },
-  } as never);
-  return tools;
+function registeredTools(
+  sandbox: RailwayToolDependencies["sandbox"],
+  checkpointWorkspace: () => Promise<void>,
+) {
+  return new Map(
+    railwayToolDefinitions({ sandbox, ensureWorkspace: async () => {}, checkpointWorkspace }).map(
+      (tool) => [tool.name, tool],
+    ),
+  );
 }

@@ -16,12 +16,15 @@ export function Composer({ disabled, text, onTextChange, onSend }: ComposerProps
 
   function submit() {
     const value = text.trim();
+
     if (!value || disabled) {
       return;
     }
+
     if (text.length > MAX_LENGTH) {
       return;
     }
+
     if (onSend(value, delivery)) {
       onTextChange("");
     }

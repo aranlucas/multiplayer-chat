@@ -1,3 +1,4 @@
+import { avatarStyle } from "../avatar-style";
 import {
   Check,
   ChevronDown,
@@ -78,6 +79,7 @@ export function Header({
 
   function configureRepository(event: React.FormEvent) {
     event.preventDefault();
+
     if (onConfigure(repository.trim(), branch.trim())) {
       setEditingRepository(false);
     }
@@ -85,6 +87,7 @@ export function Header({
 
   function renameRoom(event: React.FormEvent) {
     event.preventDefault();
+
     if (onRenameRoom(title.trim())) {
       setEditingTitle(false);
     }
@@ -92,6 +95,7 @@ export function Header({
 
   function configureModel(event: React.FormEvent) {
     event.preventDefault();
+
     if (onConfigureModel(model)) {
       setEditingModel(false);
     }
@@ -284,7 +288,7 @@ export function Header({
           <span
             className="avatar avatar-small"
             key={participant.id}
-            style={{ "--avatar": participant.color } as React.CSSProperties}
+            style={avatarStyle(participant.color)}
             title={participant.name}
           >
             {participant.name.charAt(0).toUpperCase()}

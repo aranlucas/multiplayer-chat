@@ -46,9 +46,11 @@ export function QuestionCard({ question, onReply, onCancel }: QuestionCardProps)
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
+
     if (!complete || submitting) {
       return;
     }
+
     if (onReply(question.sessionID, question.formID, answer)) {
       setSubmitting("reply");
     }
@@ -58,6 +60,7 @@ export function QuestionCard({ question, onReply, onCancel }: QuestionCardProps)
     if (submitting) {
       return;
     }
+
     if (onCancel(question.sessionID, question.formID)) {
       setSubmitting("cancel");
     }
@@ -74,6 +77,7 @@ export function QuestionCard({ question, onReply, onCancel }: QuestionCardProps)
             <div className="question-options">
               {field.options.map((option) => {
                 const checked = selected[field.key]?.includes(option.value);
+
                 return (
                   <label
                     className={`question-option ${checked ? "is-selected" : ""}`}
@@ -86,6 +90,7 @@ export function QuestionCard({ question, onReply, onCancel }: QuestionCardProps)
                       checked={checked ?? false}
                       onChange={() => {
                         setSelected((current) => selectOption(current, field, option.value));
+
                         if (field.type === "string") {
                           setCustom((current) => ({
                             ...current,
@@ -118,6 +123,7 @@ export function QuestionCard({ question, onReply, onCancel }: QuestionCardProps)
                       ...current,
                       [field.key]: value,
                     }));
+
                     if (field.type === "string" && value) {
                       setSelected((current) => ({
                         ...current,
@@ -180,7 +186,9 @@ function selectOption(current: Record<string, string[]>, field: QuestionField, v
   if (field.type === "string") {
     return { ...current, [field.key]: [value] };
   }
+
   const existing = current[field.key] ?? [];
+
   return {
     ...current,
     [field.key]: existing.includes(value)
@@ -194,20 +202,23 @@ function buildAnswer(
   selected: Record<string, string[]>,
   custom: Record<string, string>,
 ) {
-  return Object.fromEntries(
-    fields.map((field) => {
+  return Object.fromEntries<string | string[]>(
+    fields.map((field): [string, string | string[]] => {
       const ownAnswer = custom[field.key]?.trim();
+
       if (field.type === "string") {
         return [field.key, ownAnswer || selected[field.key]?.[0] || ""];
       }
+
       return [field.key, [...(selected[field.key] ?? []), ...(ownAnswer ? [ownAnswer] : [])]];
     }),
-  ) as Record<string, string | string[]>;
+  );
 }
 
 function answerValues(value: string | string[] | undefined) {
   if (Array.isArray(value)) {
     return value.filter(Boolean);
   }
+
   return value ? [value] : [];
 }
