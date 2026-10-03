@@ -1,3 +1,4 @@
+import { avatarStyle } from "../avatar-style";
 import { textValue } from "../../shared/text-value";
 import { Activity, Circle, Clock3, UsersRound } from "lucide-react";
 import type {
@@ -70,10 +71,7 @@ export function CollaborationRail({
         <div className="participant-list">
           {participants.map((participant) => (
             <div className="participant-row" key={participant.id}>
-              <span
-                className="avatar"
-                style={{ "--avatar": participant.color } as React.CSSProperties}
-              >
+              <span className="avatar" style={avatarStyle(participant.color)}>
                 {participant.name.charAt(0).toUpperCase()}
               </span>
               <span className="participant-name">
@@ -99,10 +97,7 @@ export function CollaborationRail({
         {queue.length ? (
           queue.map((item) => (
             <div className="queue-row" key={item.eventID}>
-              <span
-                className="avatar avatar-small"
-                style={{ "--avatar": item.participant.color } as React.CSSProperties}
-              >
+              <span className="avatar avatar-small" style={avatarStyle(item.participant.color)}>
                 {item.participant.name.charAt(0).toUpperCase()}
               </span>
               <div>

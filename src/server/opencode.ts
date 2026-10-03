@@ -1,3 +1,4 @@
+import type { AgentRoom } from "./agent-room";
 import type { OpenCodeWorkerd } from "@opencode/sdk/workerd";
 import type { OpenCodeModelOption } from "../shared/protocol";
 import type { GitHubOAuthEnv } from "./github-auth";
@@ -8,9 +9,7 @@ import {
   type AIGatewayEnv,
 } from "./ai-gateway";
 
-export interface WorkerEnv extends GitHubOAuthEnv, RailwaySandboxEnv, AIGatewayEnv {
-  AGENT_ROOMS: DurableObjectNamespace;
-  ASSETS: Fetcher;
+export interface RoomEnv extends GitHubOAuthEnv, RailwaySandboxEnv, AIGatewayEnv {
   OPENCODE_MODE: "simulation" | "live";
   OPENCODE_PROVIDER: "opencode-zen" | "openrouter" | "cloudflare-workers-ai";
   OPENCODE_ZEN_API_KEY?: string;
@@ -22,9 +21,17 @@ export interface WorkerEnv extends GitHubOAuthEnv, RailwaySandboxEnv, AIGatewayE
   RELAY_DEPLOYMENT_WEBHOOK_SECRET?: string;
 }
 
+export interface WorkerEnv extends RoomEnv {
+  AGENT_ROOMS: DurableObjectNamespace<AgentRoom>;
+  ASSETS: Fetcher;
+}
+
 const MUSE_SPARK_MODEL = "opencode/muse-spark-1.2-contributor-free";
+
 const MUSE_SPARK_MODEL_NAME = "Muse Spark 1.2 Contributor Free";
+
 const OPENROUTER_NEMOTRON_MODEL = "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free";
+
 const OPENROUTER_NEMOTRON_MODEL_NAME = "NVIDIA Nemotron 3 Ultra (free)";
 
 type OpenCodeConfigurationEnv = Pick<
@@ -49,10 +56,11 @@ export function openCodeModelAllowlist(env: Pick<WorkerEnv, "OPENCODE_MODEL_ALLO
 }
 
 export function configuredOpenCodeModels(
-  env: WorkerEnv,
+  env: RoomEnv,
   fallback = env.OPENCODE_MODEL,
 ): OpenCodeModelOption[] {
   const allowlist = openCodeModelAllowlist(env);
+
   return (allowlist.length ? allowlist : [fallback]).map((model) => ({
     id: model,
     name:
@@ -66,29 +74,35 @@ export function configuredOpenCodeModels(
   }));
 }
 
-export function hasLiveOpenCode(env: WorkerEnv) {
+export function hasLiveOpenCode(env: RoomEnv) {
   return env.OPENCODE_MODE === "live" && !liveOpenCodeConfigurationError(env);
 }
 
-export function liveOpenCodeConfigurationError(env: WorkerEnv): string | undefined {
+export function liveOpenCodeConfigurationError(env: RoomEnv): string | undefined {
   if (env.OPENCODE_MODE !== "live") {
     return undefined;
   }
+
   if (!env.RAILWAY_ENVIRONMENT_ID) {
     return "The Railway environment ID is not configured.";
   }
+
   if (!env.RAILWAY_TOKEN && !env.RAILWAY_API_TOKEN) {
     return "A Railway project or API token is not configured.";
   }
+
   if (env.OPENCODE_PROVIDER === "opencode-zen" && !env.OPENCODE_ZEN_API_KEY) {
     return "The OpenCode Zen API key is not configured.";
   }
+
   if (env.OPENCODE_PROVIDER === "openrouter" && !env.OPENROUTER_API_KEY) {
     return "The OpenRouter API key is not configured.";
   }
+
   if (env.OPENCODE_PROVIDER === "cloudflare-workers-ai" && !env.CLOUDFLARE_API_TOKEN) {
     return "The Cloudflare API token is not configured.";
   }
+
   return aiGatewayConfigurationError(env);
 }
 
@@ -97,19 +111,27 @@ export function openCodeConfiguration(
 ): OpenCodeWorkerd.Configuration {
   const gateway = openRouterGatewayConfiguration(env);
   const [modelProvider] = env.OPENCODE_MODEL.split("/", 1);
+
   type ProviderConfiguration = NonNullable<OpenCodeWorkerd.Configuration["providers"]>[string];
+
   const providers: Record<string, ProviderConfiguration> = {};
+
   if (env.OPENCODE_PROVIDER === "opencode-zen" && env.OPENCODE_ZEN_API_KEY) {
     providers[modelProvider] = {
       settings: { apiKey: env.OPENCODE_ZEN_API_KEY },
     };
   }
+
   if (env.OPENCODE_PROVIDER === "openrouter" && env.OPENROUTER_API_KEY) {
     providers[modelProvider] = {
       settings: { apiKey: env.OPENROUTER_API_KEY, ...gateway?.settings },
-      ...(gateway?.headers ? { headers: gateway.headers } : {}),
     };
+
+    if (gateway?.headers) {
+      providers[modelProvider] = { ...providers[modelProvider], headers: gateway.headers };
+    }
   }
+
   if (env.OPENCODE_PROVIDER === "cloudflare-workers-ai" && env.CLOUDFLARE_API_TOKEN) {
     providers[modelProvider] = {
       settings: {
@@ -118,6 +140,7 @@ export function openCodeConfiguration(
       },
     };
   }
+
   if (
     modelProvider === "opencode" &&
     (env.OPENCODE_MODEL === MUSE_SPARK_MODEL ||
@@ -132,6 +155,7 @@ export function openCodeConfiguration(
       },
     };
   }
+
   if (
     modelProvider === "openrouter" &&
     (env.OPENCODE_MODEL === OPENROUTER_NEMOTRON_MODEL ||
@@ -146,6 +170,7 @@ export function openCodeConfiguration(
       },
     };
   }
+
   return {
     default_agent: "build",
     permissions: [
@@ -162,6 +187,7 @@ export function openCodeConfiguration(
 
 function modelDisplayName(model: string) {
   const modelID = model.split("/").at(-1) ?? model;
+
   return modelID
     .replace(/:free$/, "-free")
     .split("-")
@@ -169,9 +195,11 @@ function modelDisplayName(model: string) {
       if (part === "mimo") {
         return "MiMo";
       }
+
       if (/^v\d/i.test(part)) {
         return part.toUpperCase();
       }
+
       return part.charAt(0).toUpperCase() + part.slice(1);
     })
     .join(" ");

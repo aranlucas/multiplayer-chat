@@ -65,6 +65,7 @@ describe("ImplementationBrief review", () => {
         ],
       }),
     );
+
     expect(html).toContain("In review");
     expect(html).toContain("Overall review");
     expect(html).toContain("Approve");
@@ -86,6 +87,7 @@ describe("ImplementationBrief review", () => {
         },
       }),
     );
+
     expect(html).toContain("Changes requested");
     expect(html).toContain("Edit the brief to address feedback");
     expect(html).not.toContain("Start review");

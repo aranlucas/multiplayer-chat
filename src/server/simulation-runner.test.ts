@@ -1,3 +1,4 @@
+import type { JsonRecord } from "../shared/json-value";
 import { describe, expect, it, vi } from "vitest";
 import type { WorkspaceInfo } from "./workspace";
 import {
@@ -13,17 +14,15 @@ function workspaceStub(
     search?: SimulatedWorkspace["search"];
     diff?: SimulatedWorkspace["diff"];
   } = {},
-): {
-  workspace: SimulatedWorkspace;
-  search: ReturnType<typeof vi.fn<(query: string) => Promise<string>>>;
-  diff: ReturnType<typeof vi.fn<() => Promise<string>>>;
-} {
+) {
   const search = vi.fn<(query: string) => Promise<string>>(
     overrides.search ?? (async () => "src/server/agent-room.ts:10: WebSocket"),
   );
+
   const diff = vi.fn<() => Promise<string>>(
     overrides.diff ?? (async () => "Working tree is clean."),
   );
+
   return {
     search,
     diff,
@@ -57,7 +56,7 @@ describe("extractSearchTerm", () => {
 describe("runSimulatedTurn", () => {
   it("searches and diffs the workspace, then plays back the scripted events", async () => {
     const { workspace, search, diff } = workspaceStub();
-    const payloads: Array<Record<string, unknown>> = [];
+    const payloads: Array<JsonRecord> = [];
     const delays: number[] = [];
 
     await runSimulatedTurn({
@@ -108,11 +107,13 @@ describe("runSimulatedTurn", () => {
 
   it("labels a GitHub snapshot workspace and a no-match search", async () => {
     const search = vi.fn<(query: string) => Promise<string>>(async () => "No matches found.");
+
     const { workspace } = workspaceStub({
       info: { directory: "github://aranlucas/multiplayer-chat@abcdef1234567890" },
       search,
     });
-    const payloads: Array<Record<string, unknown>> = [];
+
+    const payloads: Array<JsonRecord> = [];
 
     await runSimulatedTurn({
       prompt: "find reconnect",
@@ -141,6 +142,7 @@ describe("runSimulatedTurn", () => {
     const search = vi.fn<(query: string) => Promise<string>>(async () => {
       throw new Error("Repository search failed");
     });
+
     const { workspace, diff } = workspaceStub({ search });
     const emitEvent = vi.fn();
     const delay = vi.fn(async () => {});
@@ -160,7 +162,8 @@ describe("runSimulatedTurn", () => {
 
   it("stops the playback when a later emit fails", async () => {
     const { workspace } = workspaceStub();
-    const emitEvent = vi.fn((payload: Record<string, unknown>) => {
+
+    const emitEvent = vi.fn((payload: JsonRecord) => {
       if (payload.status === "running") {
         throw new Error("broadcast failed");
       }
@@ -196,6 +199,7 @@ describe("drainSimulatedQueue", () => {
       { eventID: "q1", text: "first follow-up" },
       { eventID: "q2", text: "second follow-up" },
     ];
+
     const order: string[] = [];
 
     await drainSimulatedQueue({
@@ -222,6 +226,7 @@ describe("drainSimulatedQueue", () => {
       { eventID: "q1", text: "first follow-up" },
       { eventID: "q2", text: "second follow-up" },
     ];
+
     const consumed: string[] = [];
 
     await expect(

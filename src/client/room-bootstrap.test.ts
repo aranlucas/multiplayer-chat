@@ -3,7 +3,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resolveRelayBootstrap } from "./room-bootstrap";
 
 const roomID = "native-preview-room";
+
 const alice = { id: "alice", name: "Alice", role: "maintainer" };
+
 const bob = { id: "bob", name: "Bob", role: "contributor" };
 
 beforeEach(() => {
@@ -30,6 +32,7 @@ function enterHandoff(participant: typeof alice, draft: string) {
       ),
     ),
   );
+
   return resolveRelayBootstrap();
 }
 
@@ -46,9 +49,11 @@ it("persists transferred client state on the destination before a reload", async
 it("keeps each tab's participant when another tab redeems a handoff on the same origin", async () => {
   await enterHandoff(alice, "Alice's draft");
   const aliceSession: Array<[string, string]> = [];
+
   for (let index = 0; index < sessionStorage.length; index += 1) {
     const key = sessionStorage.key(index);
     const value = key === null ? null : sessionStorage.getItem(key);
+
     if (key !== null && value !== null) {
       aliceSession.push([key, value]);
     }
@@ -60,9 +65,11 @@ it("keeps each tab's participant when another tab redeems a handoff on the same 
   expect((await resolveRelayBootstrap()).identity).toEqual(bob);
 
   sessionStorage.clear();
+
   for (const [key, value] of aliceSession) {
     sessionStorage.setItem(key, value);
   }
+
   expect((await resolveRelayBootstrap()).identity).toEqual(alice);
 });
 

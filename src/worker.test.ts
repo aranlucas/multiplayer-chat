@@ -1,10 +1,8 @@
+import { parseJsonRecord, type JsonRecord } from "./shared/json-value";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
-vi.mock("@opencode/sdk/workerd", () => ({ OpenCodeWorkerd: class {} }));
-
-import app from "./worker";
-import type { WorkerEnv } from "./server/opencode";
+import app from "./http-app";
+import type { RoomEnv } from "./server/opencode";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -65,14 +63,15 @@ describe("/api/health", () => {
   });
 });
 
-async function readHealth(bindings: WorkerEnv): Promise<unknown> {
+async function readHealth(bindings: RoomEnv): Promise<JsonRecord> {
   const response = await app.request("https://relay.test/api/health", {}, bindings);
   expect(response.status).toBe(200);
   expect(response.headers.get("content-type")).toMatch(/application\/json/);
-  return response.json();
+
+  return parseJsonRecord(await response.json());
 }
 
-function env(overrides: Partial<WorkerEnv> = {}): WorkerEnv {
+function env(overrides: Partial<RoomEnv> = {}): RoomEnv {
   return {
     OPENCODE_MODE: "live",
     OPENCODE_PROVIDER: "opencode-zen",
@@ -82,5 +81,5 @@ function env(overrides: Partial<WorkerEnv> = {}): WorkerEnv {
     RAILWAY_ENVIRONMENT_ID: "railway-environment",
     RAILWAY_TOKEN: "railway-project-token",
     ...overrides,
-  } as WorkerEnv;
+  };
 }

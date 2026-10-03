@@ -7,7 +7,8 @@ describe("sessionTitleFromEvent", () => {
       type: "session.updated",
       data: { sessionID: "s1", info: { title: "Fix the reconnect loop" } },
     };
-    expect(sessionTitleFromEvent(event as Record<string, unknown>)).toBe("Fix the reconnect loop");
+
+    expect(sessionTitleFromEvent(event)).toBe("Fix the reconnect loop");
   });
 
   it("handles the session.next.updated wire format before normalization", () => {
@@ -15,7 +16,8 @@ describe("sessionTitleFromEvent", () => {
       type: "session.next.updated",
       data: { info: { title: "Refactor auth flow" } },
     };
-    expect(sessionTitleFromEvent(event as Record<string, unknown>)).toBe("Refactor auth flow");
+
+    expect(sessionTitleFromEvent(event)).toBe("Refactor auth flow");
   });
 
   it("falls back to properties for newer OpenCode event payloads", () => {
@@ -23,7 +25,8 @@ describe("sessionTitleFromEvent", () => {
       type: "session.updated",
       properties: { info: { title: "Use title agent output" } },
     };
-    expect(sessionTitleFromEvent(event as Record<string, unknown>)).toBe("Use title agent output");
+
+    expect(sessionTitleFromEvent(event)).toBe("Use title agent output");
   });
 
   it("returns undefined for unrelated events", () => {

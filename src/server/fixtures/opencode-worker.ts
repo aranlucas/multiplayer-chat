@@ -1,16 +1,26 @@
+import { z } from "zod";
 import { DurableObject } from "cloudflare:workers";
 import { Plugin } from "@opencode/plugin";
 import { OpenCodeWorkerd } from "@opencode/sdk/workerd";
-import { EmbeddedOpenCodeRunner } from "../embedded-opencode";
+import { EmbeddedOpenCodeRunner, openCodeHost } from "../embedded-opencode";
 import { openCodeConfiguration } from "../opencode";
+
+// All SDK operations in this fixture are in-process. Provider requests are captured
+// by the plugin below; this final guard prevents accidental external inference.
+globalThis.fetch = async () => {
+  throw new Error("External network disabled in SDK regression worker");
+};
 
 interface TestEnv {
   HOSTS: DurableObjectNamespace<OpenCodeTestHost>;
 }
 
 let pluginSetups = 0;
+
 const blockedSessions = new Set<string>();
+
 const gatewaySessions = new Set<string>();
+
 const gatewayRequests = new Map<string, { url: string; headers: Record<string, string> }>();
 
 const plugin = Plugin.define({
@@ -25,6 +35,7 @@ const plugin = Plugin.define({
       if (gatewaySessions.has(event.sessionID)) {
         return;
       }
+
       // Verify plugin activation without sending a model request.
       blockedSessions.add(event.sessionID);
       throw new Error("Prompt stopped by the regression test plugin");
@@ -33,12 +44,14 @@ const plugin = Plugin.define({
       if (!gatewaySessions.has(event.sessionID)) {
         throw new Error("Unexpected model request in the SDK regression fixture");
       }
+
       if (event.kind === "primary") {
         gatewayRequests.set(event.sessionID, {
           url: event.request.url,
           headers: Object.fromEntries(event.request.headers),
         });
       }
+
       // Capture the fully constructed SDK request before any external inference.
       throw new Error("Gateway request captured by the regression test plugin");
     });
@@ -68,7 +81,7 @@ export class OpenCodeTestHost extends DurableObject<TestEnv> {
       }),
     );
     this.runner = new EmbeddedOpenCodeRunner(
-      this.host,
+      this.host.then(openCodeHost),
       {
         ensureReady: async () => {
           throw new Error("Form operations must not initialize the workspace");
@@ -82,17 +95,21 @@ export class OpenCodeTestHost extends DurableObject<TestEnv> {
   async fetch(request: Request): Promise<Response> {
     const host = await this.host;
     const path = new URL(request.url).pathname;
+
     const session = await host.sessions.create({
       model: { providerID: "openrouter", id: "openai/gpt-4.1" },
       location: { directory: "/workspace/repository" },
     });
+
     const form = await host.sessions.form.create({
       sessionID: session.id,
       title: "Choose a build target",
       fields: [{ key: "target", type: "string", required: true }],
     });
+
     if (path === "/gateway") {
       gatewaySessions.add(session.id);
+
       try {
         await host.sessions.prompt({ sessionID: session.id, text: "Verify gateway routing" });
         await host.sessions.wait(
@@ -100,9 +117,11 @@ export class OpenCodeTestHost extends DurableObject<TestEnv> {
           { signal: AbortSignal.timeout(10_000) },
         );
         const captured = gatewayRequests.get(session.id);
+
         if (!captured) {
           throw new Error("The SDK did not construct a gateway request");
         }
+
         return Response.json(captured);
       } finally {
         gatewaySessions.delete(session.id);
@@ -120,11 +139,13 @@ export class OpenCodeTestHost extends DurableObject<TestEnv> {
         if (!(error instanceof Error)) {
           throw error;
         }
+
         return Response.json({
           pluginLoaded: pluginSetups > 0,
           promptBlocked: blockedSessions.has(session.id),
         });
       }
+
       throw new Error("The regression plugin did not block prompt admission");
     } else if (path === "/answer") {
       await this.runner.replyToForm(session.id, form.id, { target: "production" });
@@ -135,6 +156,7 @@ export class OpenCodeTestHost extends DurableObject<TestEnv> {
         this.runner.replyToForm(session.id, form.id, { target: "production" }),
         this.runner.replyToForm(session.id, form.id, { target: "preview" }),
       ]);
+
       return Response.json({
         outcomes: outcomes.map((outcome) =>
           outcome.status === "fulfilled" ? "fulfilled" : errorTag(outcome.reason),
@@ -150,24 +172,24 @@ export class OpenCodeTestHost extends DurableObject<TestEnv> {
           form: await host.sessions.form.get({ sessionID: session.id, formID: form.id }),
         });
       }
+
       throw new Error("An invalid answer was accepted");
     } else {
       throw new Error(`Unknown test operation: ${path}`);
     }
+
     return Response.json(await host.sessions.form.get({ sessionID: session.id, formID: form.id }));
   }
 }
 
-function errorTag(error: unknown): string {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "_tag" in error &&
-    typeof error._tag === "string"
-  ) {
-    return error._tag;
+function errorTag(cause: unknown): string {
+  const error = z.object({ _tag: z.string() }).safeParse(cause);
+
+  if (error.success) {
+    return error.data._tag;
   }
-  throw new Error("Unexpected SDK error", { cause: error });
+
+  throw new Error("Unexpected SDK error", { cause });
 }
 
 export default {

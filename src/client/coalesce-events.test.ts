@@ -1,8 +1,9 @@
+import { jsonRecord, type JsonRecord } from "../shared/json-value";
 import { describe, expect, it } from "vitest";
 import type { TimelineEvent } from "../shared/protocol";
 import { coalesceTimelineEvents } from "./coalesce-events";
 
-function raw(seq: number, type: string, data: Record<string, unknown>): TimelineEvent {
+function raw(seq: number, type: string, data: JsonRecord): TimelineEvent {
   return {
     seq,
     id: `event-${seq}`,
@@ -19,6 +20,7 @@ describe("coalesceTimelineEvents", () => {
       assistantMessageID: "message",
       ordinal: 0,
     };
+
     const events = coalesceTimelineEvents([
       raw(1, "session.reasoning.started", identity),
       raw(2, "session.reasoning.delta", { ...identity, delta: "Inspecting " }),
@@ -27,8 +29,9 @@ describe("coalesceTimelineEvents", () => {
         delta: "the repository.",
       }),
     ]);
+
     expect(events).toHaveLength(1);
-    expect((events[0].payload.event as { data: { delta: string } }).data.delta).toBe(
+    expect(jsonRecord(jsonRecord(events[0].payload.event).data).delta).toBe(
       "Inspecting the repository.",
     );
   });
@@ -39,13 +42,15 @@ describe("coalesceTimelineEvents", () => {
       assistantMessageID: "message",
       ordinal: 0,
     };
+
     const events = coalesceTimelineEvents([
       raw(1, "session.text.started", identity),
       raw(2, "session.text.delta", { ...identity, delta: "Partial" }),
       raw(3, "session.text.ended", { ...identity, text: "Complete response." }),
     ]);
+
     expect(events).toHaveLength(1);
-    const data = (events[0].payload.event as { data: { delta: string; streaming: boolean } }).data;
+    const data = jsonRecord(jsonRecord(events[0].payload.event).data);
     expect(data).toEqual(
       expect.objectContaining({
         delta: "Complete response.",
@@ -60,6 +65,7 @@ describe("coalesceTimelineEvents", () => {
       assistantMessageID: "message",
       ordinal: 0,
     };
+
     const completed = coalesceTimelineEvents([
       raw(1, "session.reasoning.delta", {
         ...identity,
@@ -70,18 +76,13 @@ describe("coalesceTimelineEvents", () => {
         text: "Finished thought.",
       }),
     ]);
+
     const repeated = coalesceTimelineEvents([
       ...completed,
       raw(3, "session.usage.updated", { sessionID: "session" }),
     ]);
 
-    expect(
-      (
-        repeated[0].payload.event as {
-          data: { streaming: boolean };
-        }
-      ).data.streaming,
-    ).toBe(false);
+    expect(jsonRecord(jsonRecord(repeated[0].payload.event).data).streaming).toBe(false);
   });
 
   it("keeps separate assistant messages separate", () => {
@@ -99,9 +100,11 @@ describe("coalesceTimelineEvents", () => {
         delta: "Two",
       }),
     ]);
-    expect(
-      events.map((event) => (event.payload.event as { data: { delta: string } }).data.delta),
-    ).toEqual(["One", "Two"]);
+
+    expect(events.map((event) => jsonRecord(jsonRecord(event.payload.event).data).delta)).toEqual([
+      "One",
+      "Two",
+    ]);
   });
 
   it("drops empty stream boundaries", () => {
@@ -126,6 +129,7 @@ describe("coalesceTimelineEvents", () => {
       assistantMessageID: "message",
       id: "call-1",
     };
+
     const events = coalesceTimelineEvents([
       raw(1, "session.tool.input.started", { ...identity, name: "shell" }),
       raw(2, "session.tool.input.ended", {
@@ -166,6 +170,7 @@ describe("coalesceTimelineEvents", () => {
       assistantMessageID: "message",
       callID: "native-call-1",
     };
+
     const events = coalesceTimelineEvents([
       raw(1, "session.tool.input.started", { ...identity, name: "bash" }),
       raw(2, "session.tool.input.ended", {
@@ -212,6 +217,7 @@ describe("coalesceTimelineEvents", () => {
         },
       ],
     };
+
     const events = coalesceTimelineEvents([
       raw(1, "form.created", { form }),
       raw(2, "form.replied", {

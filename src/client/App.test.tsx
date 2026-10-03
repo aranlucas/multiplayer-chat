@@ -4,23 +4,45 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RoomInfo } from "../shared/protocol";
 import type { RelayBootstrap } from "./room-bootstrap";
 import type { RoomState } from "./use-room";
-import { App } from "./App";
+import { App, type AppDependencies } from "./App";
 import { draftStorageKey } from "./draft-storage";
 
-const harness = vi.hoisted(() => {
+const harness = (() => {
   const createPullRequest = vi.fn(async (): Promise<string | undefined> => undefined);
   const ok = () => true;
+
+  const roomState: RoomState = {
+    room: undefined,
+    models: [],
+    participants: [],
+    events: [],
+    permissions: [],
+    queue: [],
+    brief: {
+      objective: "",
+      constraints: [],
+      validation: [],
+      revision: 0,
+      review: { status: "draft" as const, round: 0 },
+      reviewComments: [],
+    },
+    decisions: [],
+    connection: "connected" as const,
+  };
+
+  const githubState: ReturnType<AppDependencies["useGitHub"]>["state"] = {
+    configured: true,
+    authenticated: true,
+    loading: false,
+    creating: false,
+    user: { login: "octocat" },
+    error: undefined,
+  };
+
   return {
     createPullRequest,
     github: {
-      state: {
-        configured: true,
-        authenticated: true,
-        loading: false,
-        creating: false,
-        user: { login: "octocat" },
-        error: undefined as string | undefined,
-      },
+      state: githubState,
       connect: vi.fn(),
       createPullRequest,
     },
@@ -39,46 +61,15 @@ const harness = vi.hoisted(() => {
       commentOnBrief: vi.fn(ok),
       resolveBriefReview: vi.fn(ok),
     },
-    roomState: {
-      room: undefined as RoomInfo | undefined,
-      models: [] as RoomState["models"],
-      participants: [] as RoomState["participants"],
-      events: [] as RoomState["events"],
-      permissions: [] as RoomState["permissions"],
-      queue: [] as RoomState["queue"],
-      brief: {
-        objective: "",
-        constraints: [] as string[],
-        validation: [] as string[],
-        revision: 0,
-        review: { status: "draft" as const, round: 0 },
-        reviewComments: [] as RoomState["brief"]["reviewComments"],
-      },
-      decisions: [] as RoomState["decisions"],
-      connection: "connected" as const,
-    } satisfies RoomState,
+    roomState,
   };
-});
+})();
 
-vi.mock("./use-github", () => ({
+const dependencies: AppDependencies = {
   useGitHub: () => harness.github,
-}));
-
-vi.mock("./use-room", () => ({
-  useRoom: () => ({
-    get state() {
-      return harness.roomState;
-    },
-    actions: harness.actions,
-  }),
-}));
-
-vi.mock("./use-preview-handoff", () => ({
-  usePreviewHandoff: () => ({
-    transitioning: false,
-    retry: () => {},
-  }),
-}));
+  useRoom: () => ({ state: harness.roomState, actions: harness.actions }),
+  usePreviewHandoff: () => ({ transitioning: false, error: undefined, retry: () => {} }),
+};
 
 const bootstrap: RelayBootstrap = {
   roomID: "room-1",
@@ -104,7 +95,7 @@ function unpublishedRoom(overrides: Partial<RoomInfo> = {}): RoomInfo {
 }
 
 function renderApp() {
-  return render(<App bootstrap={bootstrap} />);
+  return render(<App bootstrap={bootstrap} dependencies={dependencies} />);
 }
 
 beforeEach(() => {
@@ -128,7 +119,7 @@ describe("GitHub auto-publish effect", () => {
     expect(harness.createPullRequest).toHaveBeenCalledTimes(1);
 
     harness.roomState.room = unpublishedRoom({ title: "Ticked title" });
-    rerender(<App bootstrap={bootstrap} />);
+    rerender(<App bootstrap={bootstrap} dependencies={dependencies} />);
     expect(harness.createPullRequest).toHaveBeenCalledTimes(1);
   });
 
@@ -137,11 +128,11 @@ describe("GitHub auto-publish effect", () => {
     expect(harness.createPullRequest).toHaveBeenCalledTimes(1);
 
     harness.github.state.error = "Pull request creation failed";
-    rerender(<App bootstrap={bootstrap} />);
+    rerender(<App bootstrap={bootstrap} dependencies={dependencies} />);
     expect(harness.createPullRequest).toHaveBeenCalledTimes(1);
 
     harness.github.state.error = undefined;
-    rerender(<App bootstrap={bootstrap} />);
+    rerender(<App bootstrap={bootstrap} dependencies={dependencies} />);
     expect(harness.createPullRequest).toHaveBeenCalledTimes(2);
   });
 
@@ -150,11 +141,11 @@ describe("GitHub auto-publish effect", () => {
     expect(harness.createPullRequest).toHaveBeenCalledTimes(1);
 
     harness.github.state.error = "Pull request creation failed";
-    rerender(<App bootstrap={bootstrap} />);
+    rerender(<App bootstrap={bootstrap} dependencies={dependencies} />);
     expect(harness.createPullRequest).toHaveBeenCalledTimes(1);
 
     harness.roomState.room = unpublishedRoom({ workspaceRevision: 3 });
-    rerender(<App bootstrap={bootstrap} />);
+    rerender(<App bootstrap={bootstrap} dependencies={dependencies} />);
     expect(harness.createPullRequest).toHaveBeenCalledTimes(2);
   });
 
@@ -196,18 +187,20 @@ describe("Unsent room drafts", () => {
 
   it("isolates stored drafts by control origin, room and participant", () => {
     sessionStorage.setItem(key, "Private synthetic draft");
+
     for (const other of [
       { ...bootstrap, roomID: "room-2" },
       { ...bootstrap, controlOrigin: "https://other.example" },
       { ...bootstrap, identity: { ...bootstrap.identity, id: "person-2" } },
     ]) {
-      const view = render(<App bootstrap={other} />);
+      const view = render(<App bootstrap={other} dependencies={dependencies} />);
       expect(screen.getByRole("textbox", { name: "Ask or steer the agent" })).toHaveProperty(
         "value",
         "",
       );
       view.unmount();
     }
+
     expect(sessionStorage.getItem(key)).toBe("Private synthetic draft");
   });
 
@@ -217,6 +210,7 @@ describe("Unsent room drafts", () => {
       if (name.startsWith("relay:draft:")) {
         throw new DOMException("Quota exhausted", "QuotaExceededError");
       }
+
       original(name, value);
     });
     renderApp();

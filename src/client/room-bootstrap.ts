@@ -1,4 +1,5 @@
-import { getIdentity, rememberIdentity, type RoomIdentity } from "./use-room";
+import { z } from "zod";
+import { getIdentity, rememberIdentity, roomIdentitySchema, type RoomIdentity } from "./use-room";
 
 export interface RelayBootstrap {
   roomID: string;
@@ -20,13 +21,16 @@ export async function resolveRelayBootstrap(): Promise<RelayBootstrap> {
   const roomID = window.location.pathname.match(/^\/r\/([^/]+)/)?.[1] ?? "reconnect-loop";
   const params = new URLSearchParams(window.location.search);
   const storedControl = window.sessionStorage.getItem("relay:control-origin");
+
   const controlOrigin = safeOrigin(
     params.get("control") ?? storedControl ?? window.location.origin,
   );
+
   window.sessionStorage.setItem("relay:control-origin", controlOrigin);
 
   const fragment = new URLSearchParams(window.location.hash.slice(1));
   const handoff = fragment.get("handoff");
+
   if (!handoff) {
     return { roomID, controlOrigin, identity: getIdentity(roomID) };
   }
@@ -39,11 +43,21 @@ export async function resolveRelayBootstrap(): Promise<RelayBootstrap> {
       body: JSON.stringify({ token: handoff }),
     },
   );
-  const result = (await response.json()) as {
-    participant?: RoomIdentity;
-    clientState?: RelayBootstrap["resumeState"];
-    error?: string;
-  };
+
+  const result = z
+    .object({
+      participant: roomIdentitySchema.optional(),
+      clientState: z
+        .object({
+          draft: z.string().optional(),
+          selectedID: z.string().optional(),
+          mobileTab: z.enum(["transcript", "brief", "people", "queue"]).optional(),
+        })
+        .optional(),
+      error: z.string().optional(),
+    })
+    .parse(await response.json());
+
   if (!response.ok || !result.participant) {
     throw new Error(result.error || "Unable to enter the deployed room");
   }
@@ -51,6 +65,7 @@ export async function resolveRelayBootstrap(): Promise<RelayBootstrap> {
   rememberIdentity(roomID, result.participant);
   rememberClientState(roomID, result.clientState);
   window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+
   return {
     roomID,
     controlOrigin,
@@ -63,12 +78,15 @@ function rememberClientState(roomID: string, state: RelayBootstrap["resumeState"
   if (!state) {
     return;
   }
-  if (typeof state.draft === "string") {
+
+  if (state.draft !== undefined) {
     window.sessionStorage.setItem(`relay:${roomID}:draft`, state.draft);
   }
-  if (typeof state.selectedID === "string") {
+
+  if (state.selectedID !== undefined) {
     window.sessionStorage.setItem(`relay:${roomID}:selected`, state.selectedID);
   }
+
   if (
     state.mobileTab === "transcript" ||
     state.mobileTab === "brief" ||
@@ -82,8 +100,10 @@ function rememberClientState(roomID: string, state: RelayBootstrap["resumeState"
 function safeOrigin(value: string): string {
   const url = new URL(value, window.location.origin);
   const local = url.hostname === "127.0.0.1" || url.hostname === "localhost";
+
   if (url.protocol !== "https:" && !(local && url.protocol === "http:")) {
     return window.location.origin;
   }
+
   return url.origin;
 }

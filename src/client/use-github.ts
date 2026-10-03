@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface GitHubUser {
@@ -26,12 +27,14 @@ export function useGitHub(roomID: string, controlOrigin = window.location.origin
     ...initialState,
     loading: controlOrigin === window.location.origin,
   }));
+
   const creatingRef = useRef(false);
 
   useEffect(() => {
     if (controlOrigin !== window.location.origin) {
       return;
     }
+
     const controller = new AbortController();
     fetch(`${controlOrigin}/api/auth/github/session`, {
       credentials: "same-origin",
@@ -41,23 +44,28 @@ export function useGitHub(roomID: string, controlOrigin = window.location.origin
         if (!response.ok) {
           throw new Error("Unable to read the GitHub connection");
         }
-        return response.json() as Promise<{
-          configured: boolean;
-          authenticated: boolean;
-          user?: GitHubUser;
-        }>;
+
+        return z
+          .object({
+            configured: z.boolean(),
+            authenticated: z.boolean(),
+            user: z.object({ login: z.string(), avatarURL: z.string().optional() }).optional(),
+          })
+          .parse(await response.json());
       })
       .then((session) => setState((current) => ({ ...current, ...session, loading: false })))
       .catch((error) => {
         if (controller.signal.aborted) {
           return;
         }
+
         setState((current) => ({
           ...current,
           loading: false,
           error: errorMessage(error),
         }));
       });
+
     return () => controller.abort();
   }, [controlOrigin]);
 
@@ -72,8 +80,10 @@ export function useGitHub(roomID: string, controlOrigin = window.location.origin
     if (creatingRef.current) {
       return undefined;
     }
+
     creatingRef.current = true;
     setState((current) => ({ ...current, creating: true, error: undefined }));
+
     try {
       const response = await fetch(
         `${controlOrigin}/api/rooms/${encodeURIComponent(roomID)}/pull-requests`,
@@ -84,15 +94,21 @@ export function useGitHub(roomID: string, controlOrigin = window.location.origin
           body: "{}",
         },
       );
-      const result = (await response.json()) as {
-        pullRequest?: { url: string };
-        error?: string;
-      };
+
+      const result = z
+        .object({
+          pullRequest: z.object({ url: z.string() }).optional(),
+          error: z.string().optional(),
+        })
+        .parse(await response.json());
+
       if (!response.ok || !result.pullRequest) {
         throw new Error(result.error || "Pull request creation failed");
       }
+
       setState((current) => ({ ...current, creating: false }));
       creatingRef.current = false;
+
       return result.pullRequest.url;
     } catch (error) {
       setState((current) => ({
@@ -101,6 +117,7 @@ export function useGitHub(roomID: string, controlOrigin = window.location.origin
         error: errorMessage(error),
       }));
       creatingRef.current = false;
+
       return undefined;
     }
   }, [controlOrigin, roomID]);
@@ -108,6 +125,6 @@ export function useGitHub(roomID: string, controlOrigin = window.location.origin
   return { state, connect, createPullRequest };
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "GitHub request failed";
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : "GitHub request failed";
 }

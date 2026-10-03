@@ -1,3 +1,4 @@
+import type { JsonRecord } from "../shared/json-value";
 import type { WorkspaceInfo } from "./workspace";
 
 /**
@@ -27,7 +28,7 @@ export function wait(milliseconds: number): Promise<void> {
 export async function runSimulatedTurn(options: {
   prompt: string;
   workspace: SimulatedWorkspace;
-  emitEvent: (payload: Record<string, unknown>) => void;
+  emitEvent: (payload: JsonRecord) => void;
   wait?: (milliseconds: number) => Promise<void>;
 }): Promise<void> {
   const delay = options.wait ?? wait;
@@ -35,10 +36,12 @@ export async function runSimulatedTurn(options: {
   const workspace = await options.workspace.ensureReady();
   const searchOutput = await options.workspace.search(searchTerm);
   const diffOutput = await options.workspace.diff();
+
   const workspaceKind = workspace.directory.startsWith("github://")
     ? "Workers-native GitHub snapshot"
     : "Railway Sandbox";
-  const sequence: Array<{ delay: number; payload: Record<string, unknown> }> = [
+
+  const sequence: Array<{ delay: number; payload: JsonRecord }> = [
     {
       delay: 180,
       payload: {
@@ -98,9 +101,11 @@ export async function drainSimulatedQueue(options: {
 }): Promise<void> {
   while (true) {
     const next = options.nextQueuedPrompt();
+
     if (!next) {
       return;
     }
+
     options.consumeQueuedPrompt(next.eventID);
     await options.runTurn(next.text);
   }
@@ -108,6 +113,7 @@ export async function drainSimulatedQueue(options: {
 
 export function extractSearchTerm(prompt: string): string {
   const tokens = prompt.match(/[A-Za-z_$][\w$.-]{2,}/g) ?? [];
+
   const stopwords = new Set([
     "agent",
     "and",

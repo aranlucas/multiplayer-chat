@@ -39,7 +39,13 @@ afterEach(() => {
 });
 
 function getCounter(container: HTMLElement) {
-  return container.querySelector("#composer-char-count") as HTMLElement;
+  const counter = container.querySelector("#composer-char-count");
+
+  if (!(counter instanceof HTMLElement)) {
+    throw new Error("Missing character counter");
+  }
+
+  return counter;
 }
 
 describe("Composer character counter", () => {
@@ -59,7 +65,12 @@ describe("Composer character counter", () => {
   it("successful Send -> empty draft and empty counter", () => {
     const onSend = vi.fn(() => true);
     const { container } = renderComposer({ initialText: "Hello world", onSend });
-    const textarea = screen.getByRole("textbox", { name: /ask or steer/i }) as HTMLTextAreaElement;
+    const textarea = screen.getByRole("textbox", { name: /ask or steer/i });
+
+    if (!(textarea instanceof HTMLTextAreaElement)) {
+      throw new Error("Missing composer textarea");
+    }
+
     const counter = getCounter(container);
     expect(counter.textContent).toBe("11 / 8,000");
 
@@ -75,7 +86,12 @@ describe("Composer character counter", () => {
   it("rejected Send -> retained draft and counter", () => {
     const onSend = vi.fn(() => false);
     const { container } = renderComposer({ initialText: "Hello world", onSend });
-    const textarea = screen.getByRole("textbox", { name: /ask or steer/i }) as HTMLTextAreaElement;
+    const textarea = screen.getByRole("textbox", { name: /ask or steer/i });
+
+    if (!(textarea instanceof HTMLTextAreaElement)) {
+      throw new Error("Missing composer textarea");
+    }
+
     const counter = getCounter(container);
     expect(counter.textContent).toBe("11 / 8,000");
 
@@ -133,10 +149,13 @@ describe("Composer tools", () => {
 describe("Composer delivery mode", () => {
   it("queued Send with nonempty text uses queue delivery", () => {
     const onSend = vi.fn(() => true);
+
     function TestWrapper() {
       const [text, setText] = useState("queued message");
+
       return <Composer text={text} onTextChange={setText} onSend={onSend} />;
     }
+
     render(<TestWrapper />);
     expect(screen.getByRole("button", { name: /steer now/i, pressed: true })).toBeTruthy();
     expect(screen.getByRole("button", { name: /queue next/i, pressed: false })).toBeTruthy();

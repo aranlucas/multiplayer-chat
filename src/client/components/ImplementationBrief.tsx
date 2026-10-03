@@ -1,3 +1,4 @@
+import { avatarStyle } from "../avatar-style";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -58,6 +59,7 @@ export function ImplementationBrief({
 
   function saveBrief(event: FormEvent) {
     event.preventDefault();
+
     if (
       onUpdate({
         objective: objective.trim(),
@@ -71,6 +73,7 @@ export function ImplementationBrief({
 
   function saveDecision(event: FormEvent) {
     event.preventDefault();
+
     if (onDecision(decision.trim(), rationale.trim() || undefined, selectedEventID)) {
       setDecision("");
       setRationale("");
@@ -214,10 +217,7 @@ export function ImplementationBrief({
         {decisions.map((item) => (
           <article className="decision-card" key={item.id}>
             <div className="decision-meta">
-              <span
-                className="avatar avatar-small"
-                style={{ "--avatar": item.actor.color } as React.CSSProperties}
-              >
+              <span className="avatar avatar-small" style={avatarStyle(item.actor.color)}>
                 {item.actor.name.charAt(0).toUpperCase()}
               </span>
               <span>{item.actor.name}</span>
@@ -262,10 +262,13 @@ function ReviewPanel({
   function saveComment(event: FormEvent) {
     event.preventDefault();
     const text = feedback.trim();
+
     if (!text) {
       setError("Write feedback before commenting.");
+
       return;
     }
+
     if (onReviewComment(text)) {
       setFeedback("");
       setError(undefined);
@@ -274,10 +277,13 @@ function ReviewPanel({
 
   function resolve(outcome: "approved" | "changes_requested") {
     const comment = feedback.trim();
+
     if (outcome === "changes_requested" && !comment) {
       setError("Describe the changes you are requesting.");
+
       return;
     }
+
     if (onResolveReview(outcome, comment || undefined)) {
       setFeedback("");
       setError(undefined);
@@ -357,10 +363,7 @@ function ReviewPanel({
           {brief.reviewComments.map((comment) => (
             <article key={comment.id}>
               <div className="review-comment-meta">
-                <span
-                  className="avatar avatar-small"
-                  style={{ "--avatar": comment.actor.color } as React.CSSProperties}
-                >
+                <span className="avatar avatar-small" style={avatarStyle(comment.actor.color)}>
                   {comment.actor.name.charAt(0).toUpperCase()}
                 </span>
                 <span>{comment.actor.name}</span>
@@ -379,9 +382,11 @@ function ReviewPanel({
 function ReviewMeta({ brief }: { brief: Brief }) {
   const actor = brief.review.resolvedBy ?? brief.review.startedBy;
   const at = brief.review.resolvedAt ?? brief.review.startedAt;
+
   if (!actor || !at) {
     return null;
   }
+
   return (
     <small className="review-meta">
       Review {brief.review.round} · {actor.name} · {formatTime(at)}
@@ -393,12 +398,15 @@ function reviewStatusLabel(status: Brief["review"]["status"]) {
   if (status === "in_review") {
     return "In review";
   }
+
   if (status === "approved") {
     return "Approved";
   }
+
   if (status === "changes_requested") {
     return "Changes requested";
   }
+
   return "Draft";
 }
 
@@ -414,6 +422,7 @@ function BriefList({
   if (!items.length) {
     return null;
   }
+
   return (
     <div className="brief-list">
       <strong>

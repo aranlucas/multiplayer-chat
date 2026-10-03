@@ -50,6 +50,7 @@ describe("room protocol", () => {
       role: "maintainer" as const,
       color: "#fff",
     };
+
     const prompt = (id: string, queueStatus?: string) => ({
       seq: Number(id),
       id,

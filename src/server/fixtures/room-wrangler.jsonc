@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../node_modules/wrangler/config-schema.json",
+  "name": "relay-room-regression",
+  "main": "room-worker.ts",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "minify": true,
+  "define": { "__dirname": "\"/\"", "__filename": "\"/index.js\"" },
+  "durable_objects": { "bindings": [{ "name": "AGENT_ROOMS", "class_name": "AgentRoom" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AgentRoom"] }],
+  "vars": {
+    "OPENCODE_MODE": "simulation",
+    "OPENCODE_PROVIDER": "opencode-zen",
+    "OPENCODE_MODEL": "opencode/test-model",
+    "CLOUDFLARE_ACCOUNT_ID": "synthetic-local",
+  },
+}

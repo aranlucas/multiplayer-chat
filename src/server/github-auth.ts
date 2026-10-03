@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export interface GitHubOAuthEnv {
   GITHUB_OAUTH_CLIENT_ID?: string;
   GITHUB_OAUTH_CLIENT_SECRET?: string;
@@ -18,9 +20,23 @@ export interface GitHubSessionResult {
   setCookie?: string;
 }
 
+const credentialSchema = z.object({ accessToken: z.string().min(1), login: z.string().min(1) });
+
+const sessionSchema = credentialSchema.extend({
+  refreshToken: z.string().optional(),
+  expiresAt: z.number().optional(),
+  refreshTokenExpiresAt: z.number().optional(),
+  avatarURL: z.string().optional(),
+});
+
+const stateSchema = z.object({ state: z.string().min(1), returnTo: z.string() });
+
 const SESSION_COOKIE = "relay_github_session";
+
 const STATE_COOKIE = "relay_github_state";
+
 const encoder = new TextEncoder();
+
 const decoder = new TextDecoder();
 
 export async function beginGitHubAuthorization(
@@ -37,6 +53,7 @@ export async function beginGitHubAuthorization(
   authorize.searchParams.set("redirect_uri", `${requestURL.origin}/api/auth/github/callback`);
   authorize.searchParams.set("scope", "public_repo");
   authorize.searchParams.set("state", state);
+
   return redirect(
     authorize,
     cookie(STATE_COOKIE, sealedState, {
@@ -55,13 +72,15 @@ export async function completeGitHubAuthorization(
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const sealedState = parseCookies(request.headers.get("Cookie"))[STATE_COOKIE];
+
   if (!code || !state || !sealedState) {
     throw new Error("GitHub authorization state is missing");
   }
-  const expected = await unseal<{ state: string; returnTo: string }>(
-    sealedState,
-    env.GITHUB_SESSION_SECRET,
+
+  const expected = stateSchema.parse(
+    JSON.parse(await unseal(sealedState, env.GITHUB_SESSION_SECRET)),
   );
+
   if (!timingSafeEqual(state, expected.state)) {
     throw new Error("GitHub authorization state did not match");
   }
@@ -72,8 +91,10 @@ export async function completeGitHubAuthorization(
     code,
     redirectURI: `${url.origin}/api/auth/github/callback`,
   });
+
   const profile = await githubProfile(token.access_token);
   const now = Date.now();
+
   const session: GitHubSession = {
     accessToken: token.access_token,
     refreshToken: token.refresh_token,
@@ -84,14 +105,17 @@ export async function completeGitHubAuthorization(
     login: profile.login,
     avatarURL: profile.avatar_url,
   };
+
   const headers = new Headers({
     Location: new URL(expected.returnTo, url.origin).toString(),
   });
+
   headers.append("Set-Cookie", await sessionCookie(session, env.GITHUB_SESSION_SECRET));
   headers.append(
     "Set-Cookie",
     cookie(STATE_COOKIE, "", { maxAge: 0, path: "/api/auth/github/callback" }),
   );
+
   return new Response(null, { status: 302, headers });
 }
 
@@ -106,12 +130,16 @@ export async function readGitHubSession(
   ) {
     return {};
   }
+
   const value = parseCookies(request.headers.get("Cookie"))[SESSION_COOKIE];
+
   if (!value) {
     return {};
   }
+
   try {
-    let session = await unseal<GitHubSession>(value, env.GITHUB_SESSION_SECRET);
+    let session = sessionSchema.parse(JSON.parse(await unseal(value, env.GITHUB_SESSION_SECRET)));
+
     if (session.expiresAt && session.expiresAt <= Date.now() + 60_000) {
       if (
         !session.refreshToken ||
@@ -119,11 +147,13 @@ export async function readGitHubSession(
       ) {
         return {};
       }
+
       const token = await refreshToken({
         clientID: env.GITHUB_OAUTH_CLIENT_ID,
         clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET,
         refreshToken: session.refreshToken,
       });
+
       const now = Date.now();
       session = {
         ...session,
@@ -134,11 +164,13 @@ export async function readGitHubSession(
           ? now + token.refresh_token_expires_in * 1_000
           : session.refreshTokenExpiresAt,
       };
+
       return {
         session,
         setCookie: await sessionCookie(session, env.GITHUB_SESSION_SECRET),
       };
     }
+
     return { session };
   } catch {
     return {};
@@ -162,6 +194,7 @@ export async function sealGitHubCredential(
   if (!env.GITHUB_SESSION_SECRET) {
     throw new Error("GitHub session encryption is not configured");
   }
+
   return seal(session, env.GITHUB_SESSION_SECRET);
 }
 
@@ -172,7 +205,8 @@ export async function unsealGitHubCredential(
   if (!env.GITHUB_SESSION_SECRET) {
     throw new Error("GitHub session encryption is not configured");
   }
-  return unseal(value, env.GITHUB_SESSION_SECRET);
+
+  return credentialSchema.parse(JSON.parse(await unseal(value, env.GITHUB_SESSION_SECRET)));
 }
 
 interface TokenResponse {
@@ -217,12 +251,15 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+
   const value = await response.json<TokenResponse>();
+
   if (!response.ok || value.error || !value.access_token) {
     throw new Error(
       value.error_description || value.error || `GitHub token exchange failed (${response.status})`,
     );
   }
+
   return value;
 }
 
@@ -230,14 +267,17 @@ async function githubProfile(accessToken: string): Promise<{ login: string; avat
   const response = await fetch("https://api.github.com/user", {
     headers: githubHeaders(accessToken),
   });
+
   const value = await response.json<{
     login?: string;
     avatar_url?: string;
     message?: string;
   }>();
+
   if (!response.ok || !value.login) {
     throw new Error(value.message || "GitHub identity lookup failed");
   }
+
   return { login: value.login, avatar_url: value.avatar_url };
 }
 
@@ -260,6 +300,7 @@ function safeReturnTo(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//")) {
     return "/";
   }
+
   return value.slice(0, 1_000);
 }
 
@@ -267,12 +308,17 @@ async function sessionCookie(session: GitHubSession, secret: string): Promise<st
   const maxAge = session.refreshTokenExpiresAt
     ? Math.max(0, Math.floor((session.refreshTokenExpiresAt - Date.now()) / 1_000))
     : 60 * 60 * 24 * 30;
+
   return cookie(SESSION_COOKIE, await seal(session, secret), { maxAge });
 }
 
-async function seal(value: unknown, secret: string): Promise<string> {
+async function seal(
+  value: GitHubSession | z.infer<typeof stateSchema>,
+  secret: string,
+): Promise<string> {
   const key = await encryptionKey(secret);
   const iv = crypto.getRandomValues(new Uint8Array(12));
+
   const ciphertext = new Uint8Array(
     await crypto.subtle.encrypt(
       { name: "AES-GCM", iv },
@@ -280,35 +326,43 @@ async function seal(value: unknown, secret: string): Promise<string> {
       encoder.encode(JSON.stringify(value)),
     ),
   );
+
   const joined = new Uint8Array(iv.length + ciphertext.length);
   joined.set(iv);
   joined.set(ciphertext, iv.length);
+
   return base64URL(joined);
 }
 
-async function unseal<T>(value: string, secret: string): Promise<T> {
+async function unseal(value: string, secret: string): Promise<string> {
   const bytes = fromBase64URL(value);
+
   if (bytes.length < 29) {
     throw new Error("Invalid encrypted session");
   }
+
   const plaintext = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: bytes.slice(0, 12) },
     await encryptionKey(secret),
     bytes.slice(12),
   );
-  return JSON.parse(decoder.decode(plaintext)) as T;
+
+  return decoder.decode(plaintext);
 }
 
 async function encryptionKey(secret: string) {
   const digest = await crypto.subtle.digest("SHA-256", encoder.encode(secret));
+
   return crypto.subtle.importKey("raw", digest, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
 function base64URL(bytes: Uint8Array): string {
   let binary = "";
+
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);
   }
+
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
@@ -317,6 +371,7 @@ function fromBase64URL(value: string): Uint8Array {
     .replaceAll("-", "+")
     .replaceAll("_", "/")
     .padEnd(Math.ceil(value.length / 4) * 4, "=");
+
   return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
 }
 
@@ -324,9 +379,11 @@ function parseCookies(header: string | null): Record<string, string> {
   if (!header) {
     return {};
   }
+
   return Object.fromEntries(
     header.split(";").flatMap((part) => {
       const index = part.indexOf("=");
+
       return index < 0
         ? []
         : [[part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1))]];
@@ -349,9 +406,12 @@ function timingSafeEqual(left: string, right: string): boolean {
   if (left.length !== right.length) {
     return false;
   }
+
   let mismatch = 0;
+
   for (let index = 0; index < left.length; index += 1) {
     mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
   }
+
   return mismatch === 0;
 }

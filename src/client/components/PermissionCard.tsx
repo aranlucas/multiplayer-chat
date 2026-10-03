@@ -16,6 +16,7 @@ export function PermissionCard({
   compact = false,
 }: PermissionCardProps) {
   const pending = permission.status === "pending";
+
   return (
     <article
       className={`permission-card ${compact ? "is-compact" : ""} permission-${permission.status}`}

@@ -1,3 +1,4 @@
+import type { RoomSql } from "./storage";
 import type { RoomInfo } from "../shared/protocol";
 
 export class InactiveAgentTurnError extends Error {
@@ -17,7 +18,7 @@ export interface AgentTurn {
 /** Owns the durable lease shared by native and simulated room turns. */
 export class TurnCoordinator {
   constructor(
-    private readonly sql: SqlStorage,
+    private readonly sql: RoomSql,
     private readonly notify: () => void,
   ) {}
 
@@ -27,11 +28,15 @@ export class TurnCoordinator {
     );
     const generation = this.state().agent_turn_generation;
     const isCurrent = () => this.state().agent_turn_generation === generation;
+
     const isRunning = () => {
       const state = this.state();
+
       return state.agent_turn_generation === generation && state.agent_status === "running";
     };
+
     this.notify();
+
     return {
       isCurrent,
       isRunning,

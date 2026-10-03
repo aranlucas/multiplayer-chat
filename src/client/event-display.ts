@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { jsonRecord, type JsonRecord, type JsonValue } from "../shared/json-value";
 import { textValue } from "../shared/text-value";
 import type { TimelineEvent } from "../shared/protocol";
 
@@ -48,17 +50,63 @@ export type DisplayEvent =
   | { type: "participant"; title: string; detail: string }
   | { type: "system"; title: string; detail: string };
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+const toolInputSchema = z
+  .object({
+    command: z.string().optional().catch(undefined),
+    filePath: z.string().optional().catch(undefined),
+    replaceAll: z.boolean().optional().catch(undefined),
+    questions: z
+      .array(z.object({ question: z.string().optional().catch(undefined) }).catch({}))
+      .optional()
+      .catch(undefined),
+  })
+  .catch({});
+
+const questionOptionSchema = z.object({
+  value: z.string(),
+  label: z.string(),
+  description: z.string().optional().catch(undefined),
+});
+
+const questionFieldSchema = z.object({
+  key: z.string(),
+  type: z.enum(["string", "multiselect"]),
+  title: z.string().catch("Question"),
+  description: z.string().catch(""),
+  custom: z
+    .literal(false)
+    .transform(() => false)
+    .catch(true),
+  options: z
+    .array(questionOptionSchema.optional().catch(undefined))
+    .catch([])
+    .transform((values) => values.flatMap((value) => (value ? [value] : []))),
+});
+
+const questionFormSchema = z.object({
+  id: z.string(),
+  sessionID: z.string(),
+  metadata: z.object({ kind: z.string() }),
+  fields: z.array(questionFieldSchema.optional().catch(undefined)),
+});
+
+const questionAnswerValueSchema = z.union([z.string(), z.array(z.string())]);
+
+function asRecord(value: JsonValue | undefined): JsonRecord {
+  return jsonRecord(value);
 }
 
-function stringifyToolInput(value: unknown) {
-  if (typeof value === "string") {
-    return value;
+function stringifyToolInput(value: JsonValue | undefined) {
+  const text = z.string().safeParse(value);
+
+  if (text.success) {
+    return text.data;
   }
+
   if (!value) {
     return "";
   }
+
   try {
     return JSON.stringify(value);
   } catch {
@@ -66,30 +114,38 @@ function stringifyToolInput(value: unknown) {
   }
 }
 
-function summarizeToolInput(tool: string, value: unknown) {
-  const input = asRecord(value);
-  if ((tool === "bash" || tool === "shell") && typeof input.command === "string") {
+function summarizeToolInput(tool: string, value: JsonValue | undefined) {
+  const input = toolInputSchema.parse(value ?? {});
+
+  if ((tool === "bash" || tool === "shell") && input.command !== undefined) {
     return `$ ${input.command}`;
   }
-  if (tool === "edit" && typeof input.filePath === "string") {
+
+  if (tool === "edit" && input.filePath !== undefined) {
     return `Editing ${input.filePath}${input.replaceAll === true ? " (all matches)" : ""}`;
   }
-  if (tool === "question" && Array.isArray(input.questions)) {
-    const questions = input.questions.map(asRecord);
+
+  if (tool === "question" && input.questions !== undefined) {
+    const questions = input.questions;
     const first = questions[0];
-    if (typeof first?.question === "string") {
+
+    if (first?.question !== undefined) {
       return first.question;
     }
+
     return `Asking ${questions.length} question${questions.length === 1 ? "" : "s"}`;
   }
+
   return stringifyToolInput(value);
 }
 
-function bashCommand(tool: string, value: unknown): string | undefined {
-  const input = asRecord(value);
-  if ((tool === "bash" || tool === "shell") && typeof input.command === "string") {
+function bashCommand(tool: string, value: JsonValue | undefined): string | undefined {
+  const input = toolInputSchema.parse(value ?? {});
+
+  if ((tool === "bash" || tool === "shell") && input.command !== undefined) {
     return input.command;
   }
+
   return undefined;
 }
 
@@ -97,13 +153,15 @@ function displayToolName(tool: string) {
   return tool === "shell" ? "bash" : tool;
 }
 
-function textFromContent(value: unknown) {
+function textFromContent(value: JsonValue | undefined) {
   if (!Array.isArray(value)) {
     return undefined;
   }
+
   return value
     .map((item) => {
       const record = asRecord(item);
+
       return record.type === "text"
         ? textValue(record.text ?? "")
         : record.name
@@ -116,6 +174,7 @@ function textFromContent(value: unknown) {
 
 export function displayEvent(event: TimelineEvent): DisplayEvent {
   const payload = event.payload;
+
   if (event.kind === "prompt") {
     return {
       type: "prompt",
@@ -124,6 +183,7 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
       delivery: payload.delivery === "queue" ? "queue" : "steer",
     };
   }
+
   if (event.kind === "participant") {
     return {
       type: "participant",
@@ -131,6 +191,7 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
       detail: textValue(payload.action ?? "joined"),
     };
   }
+
   if (event.kind === "permission") {
     return {
       type: "permission",
@@ -139,6 +200,7 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
       status: textValue(payload.status ?? "resolved"),
     };
   }
+
   if (payload.type === "reasoning") {
     return {
       type: "reasoning",
@@ -146,8 +208,10 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
       detail: textValue(payload.text ?? ""),
     };
   }
+
   if (payload.type === "tool") {
     const tool = textValue(payload.tool ?? "tool call");
+
     return {
       type: "tool",
       title: displayToolName(tool),
@@ -162,6 +226,7 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
             : "completed",
     };
   }
+
   if (payload.type === "text") {
     return {
       type: "text",
@@ -169,6 +234,7 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
       detail: textValue(payload.text ?? ""),
     };
   }
+
   if (payload.type === "diff") {
     return {
       type: "diff",
@@ -177,14 +243,17 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
       deletions: Number(payload.deletions ?? 0),
     };
   }
+
   if (payload.type === "raw") {
     const raw = asRecord(payload.event);
     const data = asRecord(raw.data);
     const type = textValue(raw.type ?? "OpenCode event");
     const question = displayQuestion(type, data);
+
     if (question) {
       return question;
     }
+
     if (type === "session.reasoning.delta") {
       return {
         type: "reasoning",
@@ -193,6 +262,7 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
         streaming: data.streaming !== false,
       };
     }
+
     if (type === "session.text.delta") {
       return {
         type: "text",
@@ -201,8 +271,10 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
         streaming: data.streaming !== false,
       };
     }
+
     if (type === "session.tool.called") {
       const tool = textValue(data.tool ?? data.name ?? "tool call");
+
       return {
         type: "tool",
         title: displayToolName(tool),
@@ -211,6 +283,7 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
         status: "running",
       };
     }
+
     if (type === "session.tool.progress") {
       return {
         type: "tool",
@@ -219,8 +292,10 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
         status: "running",
       };
     }
+
     if (type === "session.tool.success") {
       const tool = textValue(data.tool ?? data.name ?? "tool call");
+
       return {
         type: "tool",
         title: displayToolName(tool),
@@ -230,22 +305,24 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
         status: "completed",
       };
     }
+
     if (type === "session.tool.failed") {
       const tool = textValue(data.tool ?? data.name ?? "tool call");
+
       return {
         type: "tool",
         title: displayToolName(tool),
-        detail:
-          typeof data.error === "string"
-            ? data.error
-            : stringifyToolInput(data.error) || "Tool failed",
+        detail: stringifyToolInput(data.error) || "Tool failed",
         command: bashCommand(tool, data.input),
         status: "failed",
       };
     }
+
     const readable = type.replace(/^session\./, "").replaceAll(".", " ");
+
     return { type: "system", title: "OpenCode", detail: readable };
   }
+
   return {
     type: "system",
     title: "Relay",
@@ -255,64 +332,35 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
 
 function displayQuestion(
   type: string,
-  data: Record<string, unknown>,
+  data: JsonRecord,
 ): Extract<DisplayEvent, { type: "question" }> | undefined {
   if (!type.startsWith("form.")) {
     return undefined;
   }
-  const form = asRecord(data.form);
-  const metadata = asRecord(form.metadata);
-  if (metadata.kind !== "question") {
-    return undefined;
-  }
-  if (
-    typeof form.id !== "string" ||
-    typeof form.sessionID !== "string" ||
-    !Array.isArray(form.fields)
-  ) {
+
+  const parsed = questionFormSchema.safeParse(data.form);
+
+  if (!parsed.success || parsed.data.metadata.kind !== "question") {
     return undefined;
   }
 
-  const fields = form.fields
-    .map((value): QuestionField | undefined => {
-      const field = asRecord(value);
-      if (
-        typeof field.key !== "string" ||
-        (field.type !== "string" && field.type !== "multiselect")
-      ) {
-        return undefined;
-      }
-      const options = Array.isArray(field.options)
-        ? field.options
-            .map((entry): QuestionOption | undefined => {
-              const option = asRecord(entry);
-              if (typeof option.value !== "string" || typeof option.label !== "string") {
-                return undefined;
-              }
-              return {
-                value: option.value,
-                label: option.label,
-                description:
-                  typeof option.description === "string" ? option.description : undefined,
-              };
-            })
-            .filter((entry): entry is QuestionOption => Boolean(entry))
-        : [];
-      return {
-        key: field.key,
-        title: typeof field.title === "string" ? field.title : "Question",
-        description: typeof field.description === "string" ? field.description : "",
-        type: field.type,
-        options,
-        custom: field.custom !== false,
-      };
-    })
-    .filter((value): value is QuestionField => Boolean(value));
+  const form = parsed.data;
+  const fields: QuestionField[] = form.fields.flatMap((field) => (field ? [field] : []));
+
   if (!fields.length) {
     return undefined;
   }
 
-  const answer = asRecord(data.answer);
+  const answer: Record<string, string | string[]> = {};
+
+  for (const [key, raw] of Object.entries(asRecord(data.answer))) {
+    const entry = questionAnswerValueSchema.safeParse(raw);
+
+    if (entry.success) {
+      answer[key] = entry.data;
+    }
+  }
+
   return {
     type: "question",
     title:
@@ -327,16 +375,7 @@ function displayQuestion(
     fields,
     status:
       type === "form.replied" ? "answered" : type === "form.cancelled" ? "cancelled" : "pending",
-    answer:
-      type === "form.replied"
-        ? Object.fromEntries(
-            Object.entries(answer).filter(
-              (entry): entry is [string, string | string[]] =>
-                typeof entry[1] === "string" ||
-                (Array.isArray(entry[1]) && entry[1].every((item) => typeof item === "string")),
-            ),
-          )
-        : undefined,
+    answer: type === "form.replied" ? answer : undefined,
   };
 }
 

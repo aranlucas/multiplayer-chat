@@ -1,3 +1,4 @@
+import type { JsonRecord } from "../../shared/json-value";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { TimelineEvent } from "../../shared/protocol";
@@ -6,8 +7,18 @@ import { Transcript } from "./Transcript";
 function toolEvent(
   tool: string,
   lifecycle: "called" | "success" | "failed",
-  input: Record<string, unknown>,
+  input: JsonRecord,
 ): TimelineEvent {
+  const data: JsonRecord = { tool, input };
+
+  if (lifecycle === "success") {
+    data.content = [{ type: "text", text: "ok" }];
+  }
+
+  if (lifecycle === "failed") {
+    data.error = "boom";
+  }
+
   return {
     seq: 1,
     id: `${tool}-${lifecycle}`,
@@ -17,12 +28,7 @@ function toolEvent(
       type: "raw",
       event: {
         type: `session.tool.${lifecycle}`,
-        data: {
-          tool,
-          input,
-          ...(lifecycle === "success" ? { content: [{ type: "text", text: "ok" }] } : {}),
-          ...(lifecycle === "failed" ? { error: "boom" } : {}),
-        },
+        data,
       },
     },
   };

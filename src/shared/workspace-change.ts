@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export interface WorkspaceChange {
   path: string;
   content: string | null;
@@ -9,39 +11,43 @@ interface GitChangePath {
 }
 
 export const MAX_WORKSPACE_CHANGES = 500;
+
 export const MAX_WORKSPACE_FILE_BYTES = 500_000;
+
 export const MAX_WORKSPACE_CHANGE_BYTES = 1_500_000;
 
-export function parseWorkspaceChanges(value: unknown): WorkspaceChange[] {
-  if (!Array.isArray(value) || value.length > MAX_WORKSPACE_CHANGES) {
-    throw new Error("Invalid workspace changes");
-  }
+const workspaceChangeSchema = z.object({
+  path: z
+    .string({ error: "Invalid changed file path" })
+    .refine(isSafeWorkspacePath, "Invalid changed file path"),
+  content: z.string({ error: "Invalid changed file content" }).nullable(),
+});
 
+const workspaceChangesSchema = z
+  .array(workspaceChangeSchema, { error: "Invalid workspace changes" })
+  .max(MAX_WORKSPACE_CHANGES, "Invalid workspace changes");
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This is the external checkpoint decoder; all paths and content are checked before workspace mutation.
+export function parseWorkspaceChanges(value: unknown): WorkspaceChange[] {
+  const changes = workspaceChangesSchema.parse(value);
   let totalBytes = 0;
-  const changes = value.map((item) => {
-    if (!item || typeof item !== "object") {
-      throw new Error("Invalid workspace change");
-    }
-    const change = item as Record<string, unknown>;
-    if (typeof change.path !== "string" || !isSafeWorkspacePath(change.path)) {
-      throw new Error("Invalid changed file path");
-    }
-    if (change.content !== null && typeof change.content !== "string") {
-      throw new Error("Invalid changed file content");
-    }
-    if (typeof change.content === "string") {
+
+  for (const change of changes) {
+    if (change.content !== null) {
       const bytes = new TextEncoder().encode(change.content).byteLength;
+
       if (bytes > MAX_WORKSPACE_FILE_BYTES) {
         throw new Error("Invalid changed file content");
       }
+
       totalBytes += bytes;
     }
-    return { path: change.path, content: change.content };
-  });
+  }
 
   if (totalBytes > MAX_WORKSPACE_CHANGE_BYTES) {
     throw new Error("Workspace changes are too large");
   }
+
   return changes;
 }
 
@@ -53,22 +59,29 @@ export function parseGitChangePaths(nameStatus: string, untracked: string): GitC
   while (index < tokens.length && tokens[index]) {
     const status = tokens[index++];
     const kind = status[0];
+
     if (kind === "R" || kind === "C") {
       const oldPath = tokens[index++];
       const newPath = tokens[index++];
+
       if (!oldPath || !newPath) {
         throw new Error("Invalid Git change output");
       }
+
       if (kind === "R") {
         addPath(paths, oldPath, true);
       }
+
       addPath(paths, newPath, false);
       continue;
     }
+
     const path = tokens[index++];
+
     if (!path) {
       throw new Error("Invalid Git change output");
     }
+
     addPath(paths, path, kind === "D");
   }
 
@@ -77,9 +90,11 @@ export function parseGitChangePaths(nameStatus: string, untracked: string): GitC
       addPath(paths, path, false);
     }
   }
+
   if (paths.size > MAX_WORKSPACE_CHANGES) {
     throw new Error("Too many workspace changes");
   }
+
   return [...paths.values()].sort((left, right) => left.path.localeCompare(right.path));
 }
 
@@ -98,5 +113,6 @@ function addPath(paths: Map<string, GitChangePath>, path: string, deleted: boole
   if (!isSafeWorkspacePath(path)) {
     throw new Error("Invalid changed file path");
   }
+
   paths.set(path, { path, deleted });
 }

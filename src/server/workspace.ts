@@ -1,3 +1,4 @@
+import type { RoomSql, RoomStorage } from "./storage";
 import {
   MAX_WORKSPACE_CHANGE_BYTES,
   MAX_WORKSPACE_FILE_BYTES,
@@ -30,11 +31,12 @@ interface PullRequestWorkspace extends WorkspaceInfo {
 }
 
 const WORKSPACE_DIRECTORY = "/workspace/repository";
+
 const MAX_TOOL_OUTPUT = 60_000;
 
 // Older checkpoints cleared these two fields while retaining the publication's
 // number and SHA. Recover only from the event for that exact published commit.
-export function restorePullRequestAssociation(sql: DurableObjectStorage["sql"]) {
+export function restorePullRequestAssociation(sql: RoomSql) {
   sql.exec(`
     UPDATE relay_room SET
       pull_request_url = COALESCE(pull_request_url, (
@@ -59,7 +61,7 @@ export class RepositoryWorkspace {
   private readonly sandbox: RailwayRoomSandbox;
 
   constructor(
-    private readonly storage: DurableObjectStorage,
+    private readonly storage: RoomStorage,
     env: WorkspaceEnv,
     sandbox?: RailwayRoomSandbox,
   ) {
@@ -72,6 +74,7 @@ export class RepositoryWorkspace {
         this.preparing = undefined;
       });
     }
+
     return this.preparing;
   }
 
@@ -83,42 +86,53 @@ export class RepositoryWorkspace {
       normalizedRepository,
       normalizedBranch,
     );
+
     if (this.sandbox.configured) {
       await this.sandbox.exec(`rm -rf ${WORKSPACE_DIRECTORY}`, {
         timeout: 30_000,
       });
     }
+
     this.ensureRemoteSchema();
     this.storage.sql.exec("DELETE FROM relay_workspace_files");
     this.storage.sql.exec("DELETE FROM relay_workspace_changes");
     this.storage.sql.exec("DELETE FROM relay_handoffs");
     this.storage.sql.exec("DELETE FROM relay_revisions");
+
     return this.ensureReady();
   }
 
   async search(query: string): Promise<string> {
     const value = query.trim();
+
     if (!value || value.length > 300 || value.includes("\0")) {
       throw new Error("Search query must be 1-300 characters");
     }
+
     await this.ensureReady();
+
     if (!this.sandbox.configured) {
       return this.searchRemote(value);
     }
+
     const result = await this.sandbox.exec(
       `rg --line-number --column --color never --hidden --glob '!.git' --glob '!node_modules' --glob '!dist' --max-count 50 -- ${shellQuote(value)} .`,
       { cwd: WORKSPACE_DIRECTORY, timeout: 30_000 },
     );
+
     if (result.exitCode !== 0 && result.exitCode !== 1) {
       throw new Error(compactFailure("Repository search failed", result));
     }
+
     return truncate(result.stdout || "No matches found.");
   }
 
   async diff(): Promise<string> {
     await this.ensureReady();
+
     if (!this.sandbox.configured) {
       this.ensureRemoteSchema();
+
       const changes = this.storage.sql
         .exec<{
           path: string;
@@ -127,48 +141,59 @@ export class RepositoryWorkspace {
           deleted: number;
         }>("SELECT path, original, content, deleted FROM relay_workspace_changes ORDER BY path")
         .toArray();
+
       if (!changes.length) {
         return "Working tree is clean.";
       }
+
       return truncate(
         changes
           .map((change) => {
             if (change.deleted) {
               return ` D ${change.path}`;
             }
+
             const before = change.original.split("\n").length;
             const after = change.content.split("\n").length;
+
             return ` M ${change.path} (${before} → ${after} lines)`;
           })
           .join("\n"),
       );
     }
+
     const result = await this.sandbox.exec("git diff --stat && git diff --no-ext-diff --", {
       cwd: WORKSPACE_DIRECTORY,
       timeout: 30_000,
     });
+
     if (!result.success) {
       throw new Error(compactFailure("Unable to read the workspace diff", result));
     }
+
     return truncate(result.stdout || "Working tree is clean.");
   }
 
   async pullRequestWorkspace(): Promise<PullRequestWorkspace & { workspaceRevision: number }> {
     const workspace = await this.ensureReady();
     const changes = this.workspaceChanges();
+
     if (!changes.length) {
       throw new Error("There are no shared workspace changes to put in a pull request");
     }
+
     const { workspace_revision: workspaceRevision } = this.storage.sql
       .exec<{ workspace_revision: number }>(
         "SELECT workspace_revision FROM relay_room WHERE singleton = 1",
       )
       .one();
+
     return { ...workspace, changes, workspaceRevision };
   }
 
   async nativeAgentWorkspace(): Promise<PullRequestWorkspace> {
     const workspace = await this.ensureReady();
+
     return { ...workspace, changes: this.workspaceChanges() };
   }
 
@@ -180,10 +205,13 @@ export class RepositoryWorkspace {
     if (!this.sandbox.configured) {
       return this.workspaceChanges();
     }
+
     const changes = await this.sandboxChanges();
+
     if (isCurrent()) {
       this.replaceWorkspaceChanges(changes);
     }
+
     return changes;
   }
 
@@ -199,17 +227,21 @@ export class RepositoryWorkspace {
       if (!this.sandbox.configured) {
         return await this.prepareRemote(repository, branch, row.commit_sha);
       }
+
       const current = await this.sandbox.exec(
         `git -C ${shellQuote(WORKSPACE_DIRECTORY)} rev-parse HEAD`,
         { timeout: 10_000, retryOnInterrupted: true },
       );
+
       const remote = current.success
         ? await this.sandbox.exec(
             `git -C ${shellQuote(WORKSPACE_DIRECTORY)} remote get-url origin`,
             { timeout: 10_000, retryOnInterrupted: true },
           )
         : undefined;
+
       const expectedRemote = `https://github.com/${repository}.git`;
+
       if (
         !current?.success ||
         remote?.stdout.trim().replace(/\.git$/, "") !== expectedRemote.replace(/\.git$/, "")
@@ -217,10 +249,12 @@ export class RepositoryWorkspace {
         await this.sandbox.exec(`rm -rf ${WORKSPACE_DIRECTORY}`, {
           timeout: 30_000,
         });
+
         const clone = await this.sandbox.exec(
           `git clone --depth 1 --branch ${shellQuote(branch)} -- ${shellQuote(expectedRemote)} ${shellQuote(WORKSPACE_DIRECTORY)}`,
           { timeout: 120_000 },
         );
+
         if (!clone.success) {
           throw new Error(compactFailure("Unable to clone the repository", clone));
         }
@@ -232,6 +266,7 @@ export class RepositoryWorkspace {
             timeout: 30_000,
           },
         );
+
         if (!checkout.success) {
           throw new Error(compactFailure("Unable to restore the pinned commit", checkout));
         }
@@ -241,19 +276,23 @@ export class RepositoryWorkspace {
         cwd: WORKSPACE_DIRECTORY,
         timeout: 10_000,
       });
+
       if (!resolved.success) {
         throw new Error(compactFailure("Unable to resolve the repository commit", resolved));
       }
+
       const commitSHA = resolved.stdout.trim();
       await this.applyStoredChanges();
       this.storage.sql.exec(
         "UPDATE relay_room SET commit_sha = ?, workspace_status = 'ready', workspace_error = NULL WHERE singleton = 1",
         commitSHA,
       );
+
       return { repository, branch, commitSHA, directory: WORKSPACE_DIRECTORY };
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Repository workspace failed to initialize";
+
       this.storage.sql.exec(
         "UPDATE relay_room SET workspace_status = 'error', workspace_error = ? WHERE singleton = 1",
         message.slice(0, 2_000),
@@ -281,9 +320,11 @@ export class RepositoryWorkspace {
         deleted INTEGER NOT NULL DEFAULT 0
       );
     `);
+
     const columns = this.storage.sql
       .exec<{ name: string }>("PRAGMA table_info(relay_workspace_changes)")
       .toArray();
+
     if (!columns.some((column) => column.name === "deleted")) {
       this.storage.sql.exec(
         "ALTER TABLE relay_workspace_changes ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0",
@@ -297,10 +338,13 @@ export class RepositoryWorkspace {
     pinnedCommit: string | null,
   ): Promise<WorkspaceInfo> {
     this.ensureRemoteSchema();
+
     const existing = this.storage.sql
       .exec<{ count: number }>("SELECT COUNT(*) AS count FROM relay_workspace_files")
       .one();
+
     let commitSHA = pinnedCommit;
+
     if (!commitSHA) {
       commitSHA = await resolveGitHubBranch(repository, branch);
     }
@@ -309,15 +353,20 @@ export class RepositoryWorkspace {
       const archive = await githubFetch(
         `https://codeload.github.com/${repository}/tar.gz/${commitSHA}`,
       );
+
       const compressed = archive.body;
+
       if (!compressed) {
         throw new Error("GitHub repository archive was empty");
       }
+
       const bytes = new Uint8Array(
         await new Response(compressed.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(),
       );
+
       const files = readTarTextFiles(bytes);
       this.storage.sql.exec("DELETE FROM relay_workspace_files");
+
       for (const file of files) {
         this.storage.sql.exec(
           "INSERT INTO relay_workspace_files (path, content) VALUES (?, ?)",
@@ -331,6 +380,7 @@ export class RepositoryWorkspace {
       "UPDATE relay_room SET commit_sha = ?, workspace_status = 'ready', workspace_error = NULL WHERE singleton = 1",
       commitSHA,
     );
+
     return {
       repository,
       branch,
@@ -344,23 +394,29 @@ export class RepositoryWorkspace {
     const needle = query.toLowerCase();
     const matches: string[] = [];
     const files = [...this.remoteFiles()].sort(([left], [right]) => left.localeCompare(right));
+
     for (const [path, content] of files) {
       const lines = content.split("\n");
+
       for (let index = 0; index < lines.length; index += 1) {
         const column = lines[index].toLowerCase().indexOf(needle);
+
         if (column >= 0) {
           matches.push(`./${path}:${index + 1}:${column + 1}:${lines[index]}`);
         }
+
         if (matches.length >= 50) {
           return truncate(matches.join("\n"));
         }
       }
     }
+
     return matches.length ? truncate(matches.join("\n")) : "No matches found.";
   }
 
   private workspaceChanges(): WorkspaceChange[] {
     this.ensureRemoteSchema();
+
     return this.storage.sql
       .exec<{ path: string; content: string; deleted: number }>(
         "SELECT path, content, deleted FROM relay_workspace_changes ORDER BY path",
@@ -374,12 +430,14 @@ export class RepositoryWorkspace {
 
   private remoteFiles(): Map<string, string> {
     this.ensureRemoteSchema();
+
     const files = new Map(
       this.storage.sql
         .exec<{ path: string; content: string }>("SELECT path, content FROM relay_workspace_files")
         .toArray()
         .map((file) => [file.path, file.content] as const),
     );
+
     for (const change of this.storage.sql
       .exec<{ path: string; content: string; deleted: number }>(
         "SELECT path, content, deleted FROM relay_workspace_changes",
@@ -391,27 +449,33 @@ export class RepositoryWorkspace {
         files.set(change.path, change.content);
       }
     }
+
     return files;
   }
 
   private storeWorkspaceChange(change: WorkspaceChange) {
     this.ensureRemoteSchema();
+
     const base = this.storage.sql
       .exec<{ content: string }>(
         "SELECT content FROM relay_workspace_files WHERE path = ?",
         change.path,
       )
       .toArray()[0];
+
     if ((base && change.content === base.content) || (!base && change.content === null)) {
       this.storage.sql.exec("DELETE FROM relay_workspace_changes WHERE path = ?", change.path);
+
       return;
     }
+
     const existing = this.storage.sql
       .exec<{ original: string }>(
         "SELECT original FROM relay_workspace_changes WHERE path = ?",
         change.path,
       )
       .toArray()[0];
+
     this.storage.sql.exec(
       "INSERT INTO relay_workspace_changes (path, original, content, deleted) VALUES (?, ?, ?, ?) ON CONFLICT(path) DO UPDATE SET content = excluded.content, deleted = excluded.deleted",
       change.path,
@@ -423,11 +487,14 @@ export class RepositoryWorkspace {
 
   private replaceWorkspaceChanges(value: WorkspaceChange[]) {
     const changes = parseWorkspaceChanges(value);
+
     if (JSON.stringify(this.workspaceChanges()) === JSON.stringify(changes)) {
       return;
     }
+
     this.ensureRemoteSchema();
     this.storage.sql.exec("DELETE FROM relay_workspace_changes");
+
     for (const change of changes) {
       this.storeWorkspaceChange(change);
     }
@@ -435,62 +502,79 @@ export class RepositoryWorkspace {
 
   private async sandboxChanges(): Promise<WorkspaceChange[]> {
     const baseCommitSHA = this.room().commit_sha;
+
     if (!baseCommitSHA) {
       throw new Error("Repository commit is not pinned");
     }
+
     const nameStatus = await this.sandbox.exec(
       `git diff --name-status -z ${shellQuote(baseCommitSHA)} --`,
       { cwd: WORKSPACE_DIRECTORY, timeout: 30_000 },
     );
+
     if (!nameStatus.success) {
       throw new Error(compactFailure("Unable to inspect changed files", nameStatus));
     }
+
     const untracked = await this.sandbox.exec("git ls-files --others --exclude-standard -z", {
       cwd: WORKSPACE_DIRECTORY,
       timeout: 30_000,
     });
+
     if (!untracked.success) {
       throw new Error(compactFailure("Unable to inspect untracked files", untracked));
     }
+
     const paths = parseGitChangePaths(nameStatus.stdout, untracked.stdout);
     const changes: WorkspaceChange[] = [];
     let totalBytes = 0;
+
     for (const change of paths) {
       if (change.deleted) {
         changes.push({ path: change.path, content: null });
         continue;
       }
+
       const regular = await this.sandbox.exec(
         `test -f ${shellQuote(change.path)} && test ! -L ${shellQuote(change.path)}`,
         { cwd: WORKSPACE_DIRECTORY, timeout: 5_000 },
       );
+
       if (!regular.success) {
         throw new Error(`Changed path is not a regular file: ${change.path}`);
       }
+
       const file = await this.sandbox.readFile(`${WORKSPACE_DIRECTORY}/${change.path}`);
       ensureFileSize(change.path, file);
       totalBytes += new TextEncoder().encode(file).byteLength;
+
       if (totalBytes > MAX_WORKSPACE_CHANGE_BYTES) {
         throw new Error("Workspace changes are too large");
       }
+
       changes.push({ path: change.path, content: file });
     }
+
     return parseWorkspaceChanges(changes);
   }
 
   private async applyStoredChanges(): Promise<void> {
     for (const change of this.workspaceChanges()) {
       const fullPath = `${WORKSPACE_DIRECTORY}/${change.path}`;
+
       if (change.content === null) {
         const removed = await this.sandbox.exec(`rm -f -- ${shellQuote(change.path)}`, {
           cwd: WORKSPACE_DIRECTORY,
           timeout: 10_000,
         });
+
         if (!removed.success) {
           throw new Error(compactFailure(`Unable to remove ${change.path}`, removed));
         }
+
         continue;
       }
+
       ensureFileSize(change.path, change.content);
       await this.sandbox.writeFile(fullPath, change.content);
     }
@@ -504,9 +588,11 @@ async function githubFetch(url: string): Promise<Response> {
       "User-Agent": "relay-multiplayer-agent",
     },
   });
+
   if (!response.ok) {
     throw new Error(`GitHub request failed (${response.status} ${response.statusText})`);
   }
+
   return response;
 }
 
@@ -517,15 +603,19 @@ async function resolveGitHubBranch(repository: string, branch: string): Promise<
       headers: { "User-Agent": "relay-multiplayer-agent" },
     },
   );
+
   if (!response.ok) {
     throw new Error(`GitHub refs request failed (${response.status} ${response.statusText})`);
   }
+
   const refs = new TextDecoder().decode(await response.arrayBuffer());
   const escapedBranch = branch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = refs.match(new RegExp(`([0-9a-f]{40}) refs/heads/${escapedBranch}(?:\\n|\\0)`));
+
   if (!match) {
     throw new Error(`GitHub branch was not found: ${branch}`);
   }
+
   return match[1];
 }
 
@@ -534,23 +624,29 @@ function readTarTextFiles(bytes: Uint8Array): Array<{ path: string; content: str
   const files: Array<{ path: string; content: string }> = [];
   let offset = 0;
   let totalBytes = 0;
+
   while (offset + 512 <= bytes.length && files.length < 5_000 && totalBytes < 20_000_000) {
     const header = bytes.subarray(offset, offset + 512);
+
     if (header.every((byte) => byte === 0)) {
       break;
     }
+
     const name = decodeTarString(header.subarray(0, 100), decoder);
     const prefix = decodeTarString(header.subarray(345, 500), decoder);
     const rawPath = prefix ? `${prefix}/${name}` : name;
+
     const size = Number.parseInt(
       decodeTarString(header.subarray(124, 136), decoder).trim() || "0",
       8,
     );
+
     const type = header[156];
     const dataOffset = offset + 512;
     const data = bytes.subarray(dataOffset, dataOffset + size);
     const slash = rawPath.indexOf("/");
     const path = slash >= 0 ? rawPath.slice(slash + 1) : rawPath;
+
     if (
       (type === 0 || type === 48) &&
       path &&
@@ -561,16 +657,20 @@ function readTarTextFiles(bytes: Uint8Array): Array<{ path: string; content: str
       files.push({ path, content });
       totalBytes += content.length;
     }
+
     offset = dataOffset + Math.ceil(size / 512) * 512;
   }
+
   if (!files.length) {
     throw new Error("GitHub archive did not contain readable text files");
   }
+
   return files;
 }
 
 function decodeTarString(bytes: Uint8Array, decoder: TextDecoder): string {
   const zero = bytes.indexOf(0);
+
   return decoder.decode(zero >= 0 ? bytes.subarray(0, zero) : bytes);
 }
 
@@ -579,14 +679,17 @@ function validateRepository(value: string): string {
     .trim()
     .replace(/^https:\/\/github\.com\//, "")
     .replace(/\.git$/, "");
+
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalized)) {
     throw new Error("Repository must be a public GitHub owner/name pair");
   }
+
   return normalized;
 }
 
 function validateBranch(value: string): string {
   const normalized = value.trim();
+
   if (
     !normalized ||
     normalized.length > 200 ||
@@ -597,6 +700,7 @@ function validateBranch(value: string): string {
   ) {
     throw new Error("Branch contains unsupported characters");
   }
+
   return normalized;
 }
 
@@ -615,6 +719,7 @@ function compactFailure(
   result: { stdout: string; stderr: string; exitCode: number | null },
 ): string {
   const detail = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
+
   return truncate(`${label} (exit ${result.exitCode})${detail ? `\n${detail}` : ""}`);
 }
 
@@ -622,5 +727,6 @@ function truncate(value: string): string {
   if (value.length <= MAX_TOOL_OUTPUT) {
     return value;
   }
+
   return `${value.slice(0, MAX_TOOL_OUTPUT)}\n… output truncated by Relay`;
 }

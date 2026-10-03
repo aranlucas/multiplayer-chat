@@ -6,15 +6,19 @@ import { resolveRelayBootstrap } from "./room-bootstrap";
 import "./styles.css";
 
 const container = document.getElementById("root");
+
 if (!container) {
   throw new Error("Relay root element is missing");
 }
+
 const root = createRoot(container);
 
 const accent = import.meta.env.VITE_RELAY_ACCENT;
+
 if (accent) {
   document.documentElement.style.setProperty("--lime", accent);
 }
+
 document.documentElement.dataset.relayBuild = import.meta.env.VITE_RELAY_BUILD ?? "production";
 
 if (window.location.pathname.match(/^\/r\//)) {
@@ -26,11 +30,11 @@ if (window.location.pathname.match(/^\/r\//)) {
         </StrictMode>,
       );
     })
-    .catch((error: unknown) => {
+    .catch((cause: unknown) => {
       root.render(
         <main className="handoff-error">
           <strong>Unable to enter this Relay preview</strong>
-          <p>{error instanceof Error ? error.message : "Room handoff failed"}</p>
+          <p>{cause instanceof Error ? cause.message : "Room handoff failed"}</p>
           <a href="/">Return to Relay</a>
         </main>,
       );

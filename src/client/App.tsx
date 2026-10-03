@@ -1,3 +1,4 @@
+import { avatarStyle } from "./avatar-style";
 import { usePreviewHandoff } from "./use-preview-handoff";
 import type { Participant, QueuedPrompt } from "../shared/protocol";
 import { useEffect, useRef, useState } from "react";
@@ -13,23 +14,42 @@ import { Transcript } from "./components/Transcript";
 import { ImplementationBrief } from "./components/ImplementationBrief";
 import { draftStorageKey, readDraft, writeDraft } from "./draft-storage";
 
-export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
+export interface AppDependencies {
+  useRoom: typeof useRoom;
+  useGitHub: typeof useGitHub;
+  usePreviewHandoff: typeof usePreviewHandoff;
+}
+
+const defaultDependencies: AppDependencies = { useRoom, useGitHub, usePreviewHandoff };
+
+export function App({
+  bootstrap,
+  dependencies = defaultDependencies,
+}: {
+  bootstrap: RelayBootstrap;
+  dependencies?: AppDependencies;
+}) {
   const { roomID, identity, controlOrigin } = bootstrap;
-  const { state, actions } = useRoom(roomID, identity, controlOrigin);
-  const github = useGitHub(roomID, controlOrigin);
+  const { state, actions } = dependencies.useRoom(roomID, identity, controlOrigin);
+  const github = dependencies.useGitHub(roomID, controlOrigin);
+
   const [selectedID, setSelectedID] = useState<string | undefined>(
     () =>
       bootstrap.resumeState?.selectedID ??
       window.sessionStorage.getItem(`relay:${roomID}:selected`) ??
       undefined,
   );
+
   const [mobileTab, setMobileTab] = useState<MobileTab>(() => {
     if (bootstrap.resumeState?.mobileTab) {
       return bootstrap.resumeState.mobileTab;
     }
+
     const stored = window.sessionStorage.getItem(`relay:${roomID}:mobile-tab`);
+
     return stored === "brief" || stored === "people" || stored === "queue" ? stored : "transcript";
   });
+
   const draftKey = draftStorageKey(controlOrigin, roomID, identity.id);
   const [draft, setDraft] = useState(() => bootstrap.resumeState?.draft ?? readDraft(draftKey));
   const [draftStorageFailed, setDraftStorageFailed] = useState(false);
@@ -43,7 +63,8 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
     setDraft(text);
     setDraftStorageFailed(!writeDraft(draftKey, text));
   }
-  const handoff = usePreviewHandoff({
+
+  const handoff = dependencies.usePreviewHandoff({
     roomID,
     controlOrigin,
     identity,
@@ -52,6 +73,7 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
     mobileTab,
     revision: state.room?.latestRevision,
   });
+
   const { transitioning } = handoff;
   const attemptedPublication = useRef<string | undefined>(undefined);
   const previousGithubError = useRef<string | undefined>(undefined);
@@ -72,6 +94,7 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
     if (previousGithubError.current && !githubError && !creating) {
       attemptedPublication.current = undefined;
     }
+
     previousGithubError.current = githubError;
 
     if (
@@ -87,13 +110,17 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
     ) {
       return;
     }
+
     const publicationKey = `${roomID}:${repository}:${branch}:${workspaceRevision}`;
+
     if (attemptedPublication.current === publicationKey) {
       return;
     }
+
     if (githubError && attemptedPublication.current === undefined) {
       return;
     }
+
     attemptedPublication.current = publicationKey;
     void createPullRequest();
   }, [
@@ -117,12 +144,16 @@ export function App({ bootstrap }: { bootstrap: RelayBootstrap }) {
   async function handlePullRequest() {
     if (state.room?.pullRequestURL) {
       window.open(state.room.pullRequestURL, "_blank", "noopener,noreferrer");
+
       return;
     }
+
     if (!github.state.authenticated) {
       github.connect();
+
       return;
     }
+
     await github.createPullRequest();
   }
 
@@ -261,7 +292,7 @@ function MobilePeople({ participants }: { participants: Participant[] }) {
       <h1>Participants</h1>
       {participants.map((participant) => (
         <div className="mobile-person" key={participant.id}>
-          <span className="avatar" style={{ "--avatar": participant.color } as React.CSSProperties}>
+          <span className="avatar" style={avatarStyle(participant.color)}>
             {participant.name.charAt(0).toUpperCase()}
           </span>
           <div>

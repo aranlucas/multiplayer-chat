@@ -46,6 +46,7 @@ describe("CollaborationRail permission heading", () => {
         onResolveReview={() => true}
       />,
     );
+
     const heading = permissionHeading(html);
 
     expect(heading).toBeDefined();

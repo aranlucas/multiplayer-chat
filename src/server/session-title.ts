@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { jsonRecordSchema, type JsonRecord } from "../shared/json-value";
+
 /**
  * Extracts the session title from an OpenCode `session.updated` event emitted
  * by the built-in `use-title` agent. The agent calls `setTitle`, which patches
@@ -8,27 +11,33 @@
  * This helper is intentionally free of any `cloudflare:workers` imports so it
  * can be unit tested outside the Workers runtime.
  */
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
+const sessionTitleEventSchema = z.object({
+  type: z.string().catch(""),
+  data: z
+    .object({
+      info: jsonRecordSchema.optional().catch(undefined),
+      title: z.string().optional().catch(undefined),
+    })
+    .catch({}),
+  properties: z.object({ info: jsonRecordSchema.optional().catch(undefined) }).catch({}),
+  info: jsonRecordSchema.optional().catch(undefined),
+});
 
-export function sessionTitleFromEvent(event: Record<string, unknown>): string | undefined {
-  const type = typeof event.type === "string" ? event.type : "";
-  if (type !== "session.updated" && type !== "session.next.updated") {
+export function sessionTitleFromEvent(event: JsonRecord): string | undefined {
+  const parsed = sessionTitleEventSchema.parse(event);
+
+  if (parsed.type !== "session.updated" && parsed.type !== "session.next.updated") {
     return undefined;
   }
-  const data = asRecord(event.data);
-  const properties = asRecord(event.properties);
-  const info = asRecord(data.info ?? properties.info ?? event.info);
-  const candidate = info.title ?? (typeof data.title === "string" ? data.title : undefined);
-  if (typeof candidate !== "string") {
+
+  const info = parsed.data.info ?? parsed.properties.info ?? parsed.info;
+  const candidate = z.string().safeParse(info?.title ?? parsed.data.title);
+
+  if (!candidate.success) {
     return undefined;
   }
-  const title = candidate.trim();
-  if (!title || /^(new session|untitled)/i.test(title)) {
-    return undefined;
-  }
-  return title;
+
+  const title = candidate.data.trim();
+
+  return !title || /^(new session|untitled)/i.test(title) ? undefined : title;
 }

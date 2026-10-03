@@ -49,8 +49,10 @@ export default defineConfig((ctx) => {
       worker: { ...previewConfig.worker, entrypoint: "src/preview-worker.ts" },
     };
   }
+
   if (ctx.mode === "e2e") {
     return { ...e2eConfig, worker: { ...e2eConfig.worker, entrypoint: "src/worker.ts" } };
   }
+
   return productionConfig;
 });

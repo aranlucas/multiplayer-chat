@@ -1,5 +1,6 @@
+import { z } from "zod";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { queuedPrompts } from "../shared/protocol";
+import { queuedPrompts, parseServerMessage } from "../shared/protocol";
 import type {
   ClientMessage,
   DeliveryMode,
@@ -28,6 +29,12 @@ export interface RoomState {
   error?: string;
 }
 
+export const roomIdentitySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  role: z.enum(["maintainer", "contributor"]),
+});
+
 export interface RoomIdentity {
   id: string;
   name: string;
@@ -54,10 +61,12 @@ const initialState: RoomState = {
 
 function appendEvent(events: TimelineEvent[], incoming: TimelineEvent) {
   const existing = events.findIndex((event) => event.id === incoming.id);
+
   const next =
     existing < 0
       ? [...events, incoming]
       : events.map((event, index) => (index === existing ? incoming : event));
+
   return coalesceTimelineEvents(next);
 }
 
@@ -65,21 +74,26 @@ export function getIdentity(roomID: string): RoomIdentity {
   const params = new URLSearchParams(window.location.search);
   const remembered = rememberedIdentity(roomID);
   const requestedName = params.get("name")?.trim() || remembered?.name || "You";
+
   const requestedRole = params.has("role")
     ? params.get("role") === "contributor"
       ? "contributor"
       : "maintainer"
     : (remembered?.role ?? "maintainer");
+
   const storageKey = `relay:${roomID}:${requestedName}:participant`;
   let id = window.localStorage.getItem(storageKey);
+
   if (!id) {
     id =
       requestedName === "You"
         ? crypto.randomUUID()
         : requestedName.toLowerCase().replace(/[^a-z0-9]/g, "-");
   }
+
   const identity = { id, name: requestedName, role: requestedRole };
   rememberIdentity(roomID, identity);
+
   return identity;
 }
 
@@ -93,29 +107,25 @@ export function rememberIdentity(roomID: string, identity: RoomIdentity) {
 
 function rememberedIdentity(roomID: string): RoomIdentity | undefined {
   const key = `relay:${roomID}:identity`;
+
   for (const storage of [window.sessionStorage, window.localStorage]) {
     try {
       const value = storage.getItem(key);
+
       if (!value) {
         continue;
       }
-      const identity: unknown = JSON.parse(value);
-      if (
-        identity &&
-        typeof identity === "object" &&
-        "id" in identity &&
-        typeof identity.id === "string" &&
-        "name" in identity &&
-        typeof identity.name === "string" &&
-        "role" in identity &&
-        (identity.role === "maintainer" || identity.role === "contributor")
-      ) {
-        return { id: identity.id, name: identity.name, role: identity.role };
+
+      const identity = roomIdentitySchema.safeParse(JSON.parse(value));
+
+      if (identity.success) {
+        return identity.data;
       }
     } catch {
       // Try the persistent fallback when tab identity state is malformed.
     }
   }
+
   return undefined;
 }
 
@@ -146,19 +156,25 @@ export function useRoom(
           error: undefined,
         };
       }
+
       if (message.type === "event") {
         const events = appendEvent(current.events, message.event);
+
         return { ...current, events, queue: queuedPrompts(events) };
       }
+
       if (message.type === "presence") {
         return { ...current, participants: message.participants };
       }
+
       if (message.type === "room") {
         return { ...current, room: message.room };
       }
+
       if (message.type === "permissions") {
         return { ...current, permissions: message.permissions };
       }
+
       if (message.type === "planning") {
         return {
           ...current,
@@ -166,9 +182,11 @@ export function useRoom(
           decisions: message.decisions,
         };
       }
+
       if (message.type === "error") {
         return { ...current, error: message.message };
       }
+
       return current;
     });
   }, []);
@@ -179,14 +197,17 @@ export function useRoom(
     const connect = () => {
       const endpoint = new URL(controlOrigin);
       const protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
+
       const params = new URLSearchParams({
         participant: identity.id,
         name: identity.name,
         role: identity.role,
       });
+
       const socket = new WebSocket(
         `${protocol}//${endpoint.host}/api/rooms/${roomID}/ws?${params}`,
       );
+
       socketRef.current = socket;
       setState((current) => ({
         ...current,
@@ -203,7 +224,7 @@ export function useRoom(
       });
       socket.addEventListener("message", (event) => {
         try {
-          handleMessage(JSON.parse(event.data as string) as ServerMessage);
+          handleMessage(parseServerMessage(z.string().parse(event.data)));
         } catch {
           setState((current) => ({
             ...current,
@@ -215,6 +236,7 @@ export function useRoom(
         if (disposed) {
           return;
         }
+
         retryCountRef.current += 1;
         setState((current) => ({ ...current, connection: "reconnecting" }));
         retryRef.current = window.setTimeout(
@@ -226,25 +248,32 @@ export function useRoom(
     };
 
     connect();
+
     return () => {
       disposed = true;
+
       if (retryRef.current) {
         window.clearTimeout(retryRef.current);
       }
+
       socketRef.current?.close(1000, "component unmounted");
     };
   }, [controlOrigin, handleMessage, identity.id, identity.name, identity.role, roomID]);
 
   const send = useCallback((message: ClientMessage) => {
     const socket = socketRef.current;
+
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       setState((current) => ({
         ...current,
         error: "The room is reconnecting. Your message was not sent.",
       }));
+
       return false;
     }
+
     socket.send(JSON.stringify(message));
+
     return true;
   }, []);
 

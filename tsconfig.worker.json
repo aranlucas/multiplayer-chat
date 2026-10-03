@@ -10,5 +10,13 @@
     "noEmit": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src/worker.ts", "src/preview-worker.ts", "src/server", "src/shared", "scripts"]
+  "include": [
+    "src/worker.ts",
+    "src/http-app.ts",
+    "src/preview-worker.ts",
+    "src/server",
+    "src/shared",
+    "scripts",
+    "src/test-network.ts"
+  ]
 }

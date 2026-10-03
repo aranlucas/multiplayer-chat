@@ -17,6 +17,7 @@ export function writeDraft(key: string, text: string): boolean {
     } else {
       window.sessionStorage.removeItem(key);
     }
+
     return true;
   } catch {
     return false;
