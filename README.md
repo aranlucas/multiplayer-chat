@@ -51,7 +51,7 @@ pnpm test
 pnpm build
 ```
 
-The same commands are required by CI. Tests include the Preview publisher's CLI and HTTP integration checks. CI also runs `pnpm build:preview` and `node scripts/check-preview-build.mjs` to verify native Preview output targets the main Worker and retains the room service. `pnpm dev:e2e` starts the browser-oriented Vite/Cloudflare configuration on port 5176; its `e2e/cloudflare.config.ts` uses simulation mode. The repository does not currently define a `test:e2e` script.
+The same commands are required by CI. Tests include the Preview publisher's CLI and HTTP integration checks. CI also runs `pnpm build:preview` to verify the native Preview build. `pnpm dev:e2e` starts the browser-oriented Vite/Cloudflare configuration on port 5176; its `e2e/cloudflare.config.ts` uses simulation mode. The repository does not currently define a `test:e2e` script.
 
 ## Deploy
 
