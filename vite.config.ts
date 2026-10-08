@@ -9,6 +9,9 @@ export default defineConfig({
   define: {
     __dirname: JSON.stringify("/"),
     __filename: JSON.stringify("/index.js"),
+    __RELAY_BUILD_SHA__: JSON.stringify(
+      process.env.WORKERS_CI_COMMIT_SHA ?? process.env.RELAY_BUILD_SHA ?? "local-preview",
+    ),
   },
   plugins: [react(), cloudflare()],
   build: {
