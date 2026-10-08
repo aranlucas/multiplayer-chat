@@ -65,7 +65,7 @@ This builds the Worker and runs `cf deploy --prebuilt` with the generated `.clou
 pnpm deploy:preview
 ```
 
-The build sets `CLOUDFLARE_PREVIEW_BUILD=true`; the publisher runs `cf previews deploy --prebuilt --mode relay-preview` for the CI branch. Provide `WORKERS_CI_BRANCH` and `WORKERS_CI_COMMIT_SHA` (or `GITHUB_HEAD_REF` and `GITHUB_SHA`). The production branch is skipped. Every branch gets a native Preview, and branches named `relay/<room>--<suffix>` also report their deployment to that room.
+Production and previews share `vite.config.ts`. The preview build uses the pinned plugin's `cf-vite build --preview --mode relay-preview` command to set native Preview metadata; the publisher runs `cf previews deploy --prebuilt --mode relay-preview` for the CI branch. The generated `.cloudflare/output/v0/config.json` must record `buildContext.isPreview: true` and mode `relay-preview`. Selecting the Vite mode alone does not mark the output as a native Preview build. Provide `WORKERS_CI_BRANCH` and `WORKERS_CI_COMMIT_SHA` (or `GITHUB_HEAD_REF` and `GITHUB_SHA`). The production branch is skipped. Every branch gets a native Preview, and branches named `relay/<room>--<suffix>` also report their deployment to that room.
 
 Room callbacks require `RELAY_CONTROL_ORIGIN` and the secret `RELAY_DEPLOYMENT_WEBHOOK_SECRET`, matching the production Worker's callback secret. The publisher reads Cloudflare's structured deployment result, verifies the immutable deployment URL against the exact commit and room protocol, then reports that URL and the deployment ID. It does not use the mutable branch URL for room revisions.
 

@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "vite",
     "dev:e2e": "vite --config vite.e2e.config.ts --mode e2e --port 5176",
-    "dev:preview": "VITE_RELAY_BUILD=preview VITE_RELAY_ACCENT='#ff5ca8' vite --config vite.preview.config.ts --mode relay-preview --port 5174",
+    "dev:preview": "VITE_RELAY_BUILD=preview VITE_RELAY_ACCENT='#ff5ca8' vite --mode relay-preview --port 5174",
     "build": "tsc -b && vite build",
-    "build:preview": "tsc -b && CLOUDFLARE_PREVIEW_BUILD=true VITE_RELAY_BUILD=preview VITE_RELAY_ACCENT='#ff5ca8' vite build --config vite.preview.config.ts --mode relay-preview",
+    "build:preview": "tsc -b && VITE_RELAY_BUILD=preview VITE_RELAY_ACCENT='#ff5ca8' cf-vite build --preview --mode relay-preview",
     "deploy:preview": "pnpm build:preview && node scripts/publish-preview.mjs",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
