@@ -41,6 +41,37 @@ OpenRouter can optionally run through [Cloudflare AI Gateway](https://developers
 
 Gateway requests log usage metadata, skip response caching, and require provider credentials rather than falling back to Unified Billing. Prompt and response bodies are excluded from gateway logs by default. Set `CLOUDFLARE_AI_GATEWAY_LOG_PAYLOADS=true` to opt into payload logging. This integration tags traffic as `application=relay`; it does not attribute inference to individual participants. Content classification and task analysis may require payload logging and further gateway settings.
 
+### Named local URL with Portless
+
+[Portless](https://github.com/vercel-labs/portless/tree/v0.15.7) gives this checkout a
+stable local URL. Complete the local setup above, use **Node.js 24 or newer**
+(within this project's supported range), then run:
+
+```sh
+npm install -g portless@0.15.7
+pnpm run dev:portless
+```
+
+Open **https://multiplayer-chat.localhost** with the default proxy settings.
+Portless starts its shared proxy automatically. Its first HTTPS run creates and
+trusts a local certificate authority and may prompt for administrator privileges
+to bind port 443 or update local hostname entries. Start it from an interactive
+terminal and review those prompts. `portless doctor` diagnoses local setup issues.
+
+Portless supplies Vite with a free port, a loopback host, and `--strictPort`.
+
+Linked Git worktrees receive a branch-name prefix, such as
+`https://fix-ui.multiplayer-chat.localhost`; use the URL Portless prints.
+Use `pnpm run dev` for the existing direct-server workflow.
+
+The existing `.dev.vars.example` simulation setup also applies here. To test
+GitHub publication locally, use a development OAuth app with homepage
+`https://multiplayer-chat.localhost` and callback
+`https://multiplayer-chat.localhost/api/auth/github/callback`, and put its
+`GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, and a local
+`GITHUB_SESSION_SECRET` in ignored `.dev.vars`. A worktree needs its printed
+origin registered with the same callback path.
+
 ## Verify
 
 ```bash
