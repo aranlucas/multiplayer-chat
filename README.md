@@ -30,48 +30,16 @@ Requirements: Node.js 24, pnpm, and a Cloudflare/Wrangler-compatible development
 corepack enable
 pnpm install --frozen-lockfile
 cp .dev.vars.example .dev.vars
-npm install -g portless@0.15.7
 pnpm dev
 ```
 
-The Vite + Cloudflare plugin starts the local Worker and UI. The example variables select deterministic `simulation` mode, so a local room does not need OpenRouter or Railway credentials. Open the local URL printed by Vite and use the reconnect demo at `/r/reconnect-loop` to exercise a room.
+The Vite + Cloudflare plugin starts the local Worker and UI. The example variables select deterministic `simulation` mode, so a local room does not need OpenRouter or Railway credentials. Open **https://relay-multiplayer-agent.localhost** (`pnpm dev` runs through [Portless](https://github.com/vercel-labs/portless) (a dev dependency); its first run may ask for `sudo` to bind port 443 and trust a local certificate) and use the reconnect demo at `/r/reconnect-loop` to exercise a room.
 
 To use the live OpenCode path, set `OPENCODE_MODE=live` and provide the matching provider key (`OPENROUTER_API_KEY`, `OPENCODE_ZEN_API_KEY`, or `CLOUDFLARE_API_TOKEN`), a Railway token/API token, and `RAILWAY_ENVIRONMENT_ID`. `OPENCODE_MODEL` and `OPENCODE_MODEL_ALLOWLIST` select the permitted model IDs. GitHub OAuth is only needed for pull-request publication.
 
 OpenRouter can optionally run through [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/usage/providers/openrouter/). Set `CLOUDFLARE_AI_GATEWAY_ID` to an existing gateway slug and `CLOUDFLARE_ACCOUNT_ID` to its account ID; keep `OPENROUTER_API_KEY` and the `openrouter/` model IDs. For an authenticated gateway, also provide `CLOUDFLARE_AI_GATEWAY_TOKEN` as a secret with gateway Run permission. The example variables document these options. Invalid gateway configuration is reported by `/api/health` and rejected at runner initialization.
 
 Gateway requests log usage metadata, skip response caching, and require provider credentials rather than falling back to Unified Billing. Prompt and response bodies are excluded from gateway logs by default. Set `CLOUDFLARE_AI_GATEWAY_LOG_PAYLOADS=true` to opt into payload logging. This integration tags traffic as `application=relay`; it does not attribute inference to individual participants. Content classification and task analysis may require payload logging and further gateway settings.
-
-### Development URL with Portless
-
-The normal `pnpm run dev` command uses
-[Portless](https://github.com/vercel-labs/portless/tree/v0.15.7) for a stable local URL.
-Install its CLI once with **Node.js 24 or newer** (within this project's supported
-range), then run:
-
-```sh
-npm install -g portless@0.15.7
-pnpm run dev
-```
-
-Open **https://multiplayer-chat.localhost** with the default proxy settings.
-Portless starts its shared proxy automatically. Its first HTTPS run creates and
-trusts a local certificate authority and may prompt for administrator privileges
-to bind port 443 or update local hostname entries. Start it from an interactive
-terminal and review those prompts. `portless doctor` diagnoses local setup issues.
-
-Portless supplies Vite with a free port, a loopback host, and `--strictPort`.
-
-Linked Git worktrees receive a branch-name prefix, such as
-`https://fix-ui.multiplayer-chat.localhost`; use the URL Portless prints.
-
-The existing `.dev.vars.example` simulation setup also applies here. To test
-GitHub publication locally, use a development OAuth app with homepage
-`https://multiplayer-chat.localhost` and callback
-`https://multiplayer-chat.localhost/api/auth/github/callback`, and put its
-`GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, and a local
-`GITHUB_SESSION_SECRET` in ignored `.dev.vars`. A worktree needs its printed
-origin registered with the same callback path.
 
 ## Verify
 
