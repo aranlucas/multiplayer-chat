@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:portless": "portless run --name multiplayer-chat vite",
+    "dev": "portless run --name multiplayer-chat vite",
+    "dev:direct": "vite",
     "dev:e2e": "vite --config vite.e2e.config.ts --mode e2e --port 5176",
     "dev:preview": "VITE_RELAY_BUILD=preview VITE_RELAY_ACCENT='#ff5ca8' vite --mode relay-preview --port 5174",
     "build": "tsc -b && vite build",

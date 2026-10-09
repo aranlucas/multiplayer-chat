@@ -30,6 +30,7 @@ Requirements: Node.js 24, pnpm, and a Cloudflare/Wrangler-compatible development
 corepack enable
 pnpm install --frozen-lockfile
 cp .dev.vars.example .dev.vars
+npm install -g portless@0.15.7
 pnpm dev
 ```
 
@@ -41,15 +42,16 @@ OpenRouter can optionally run through [Cloudflare AI Gateway](https://developers
 
 Gateway requests log usage metadata, skip response caching, and require provider credentials rather than falling back to Unified Billing. Prompt and response bodies are excluded from gateway logs by default. Set `CLOUDFLARE_AI_GATEWAY_LOG_PAYLOADS=true` to opt into payload logging. This integration tags traffic as `application=relay`; it does not attribute inference to individual participants. Content classification and task analysis may require payload logging and further gateway settings.
 
-### Named local URL with Portless
+### Development URL with Portless
 
-[Portless](https://github.com/vercel-labs/portless/tree/v0.15.7) gives this checkout a
-stable local URL. Complete the local setup above, use **Node.js 24 or newer**
-(within this project's supported range), then run:
+The normal `pnpm run dev` command uses
+[Portless](https://github.com/vercel-labs/portless/tree/v0.15.7) for a stable local URL.
+Install its CLI once with **Node.js 24 or newer** (within this project's supported
+range), then run:
 
 ```sh
 npm install -g portless@0.15.7
-pnpm run dev:portless
+pnpm run dev
 ```
 
 Open **https://multiplayer-chat.localhost** with the default proxy settings.
@@ -62,7 +64,7 @@ Portless supplies Vite with a free port, a loopback host, and `--strictPort`.
 
 Linked Git worktrees receive a branch-name prefix, such as
 `https://fix-ui.multiplayer-chat.localhost`; use the URL Portless prints.
-Use `pnpm run dev` for the existing direct-server workflow.
+Use `pnpm run dev:direct` to run the original localhost server without Portless.
 
 The existing `.dev.vars.example` simulation setup also applies here. To test
 GitHub publication locally, use a development OAuth app with homepage
