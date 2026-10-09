@@ -64,7 +64,6 @@ Portless supplies Vite with a free port, a loopback host, and `--strictPort`.
 
 Linked Git worktrees receive a branch-name prefix, such as
 `https://fix-ui.multiplayer-chat.localhost`; use the URL Portless prints.
-Use `pnpm run dev:direct` to run the original localhost server without Portless.
 
 The existing `.dev.vars.example` simulation setup also applies here. To test
 GitHub publication locally, use a development OAuth app with homepage
