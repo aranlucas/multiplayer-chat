@@ -10,8 +10,7 @@
     "dist/**",
     "dist-preview/**",
     "node_modules/**",
-    "worker-configuration.d.ts",
-    "tools/oxlint/anti-slop/**"
+    "worker-configuration.d.ts"
   ],
   "categories": {
     "correctness": "error"
@@ -101,7 +100,7 @@
   "jsPlugins": [
     {
       "name": "anti-slop",
-      "specifier": "./tools/oxlint/anti-slop/index.ts"
+      "specifier": "@aranlucas/oxlint-plugin-anti-slop"
     }
   ]
 }

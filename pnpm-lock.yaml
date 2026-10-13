@@ -37,15 +37,15 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
     devDependencies:
+      '@aranlucas/oxlint-plugin-anti-slop':
+        specifier: 0.1.0
+        version: 0.1.0(oxlint@1.87.0(oxlint-tsgolint@7.0.2003))
       '@cloudflare/vite-plugin':
         specifier: ^2.0.0-beta.sha-c82c3efb3
         version: 2.0.0-beta.sha-c82c3efb3(@types/node@26.6.4)(vite@8.3.4(@types/node@26.6.4)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15))
       '@cloudflare/workers-types':
         specifier: ^5.20261008.1
         version: 5.20261008.1
-      '@oxlint/plugins':
-        specifier: 1.87.0
-        version: 1.87.0
       '@testing-library/react':
         specifier: ^16.3.3
         version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -151,6 +151,15 @@ packages:
   '@anycable/core@0.9.2':
     resolution: {integrity: sha512-x5ZXDcW/N4cxWl93CnbHs/u7qq4793jS2kNPWm+duPrXlrva+ml2ZGT7X9tuOBKzyIHf60zWCdIK7TUgMPAwXA==}
     engines: {node: '>=18.0.0'}
+
+  '@aranlucas/oxlint-plugin-anti-slop@0.1.0':
+    resolution: {integrity: sha512-tu5zQVkzsF6Td/jqD2OEQnDEw5Xo3YLEU+bm3FLxsKf4PnOcvZEyEtudVZVVCBXGhO4YprGRdWrxr+/m4MDfUg==}
+    engines: {node: '>=22.18.0'}
+    peerDependencies:
+      oxlint: '>=1.78.0'
+    peerDependenciesMeta:
+      oxlint:
+        optional: true
 
   '@asamuzakjp/css-color@7.1.4':
     resolution: {integrity: sha512-KdNhWlAh2sbYB8Of0Yw84/a+LO/vsBOHJcIg8BpyXo2RGrFWVJvEMRviMON+ysQu0KpV7wxrWrq9jaX0P21GzA==}
@@ -1696,8 +1705,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@oxlint/plugins@1.87.0':
-    resolution: {integrity: sha512-OtSZ6NxNkS7bkVy7zk9zGnajz2hVIu0uRPP/dJvJesGRaXtimpA4lpxap7FaIJndG2UIoKhnBU4DxyDQIWv6yg==}
+  '@oxlint/plugins@1.88.0':
+    resolution: {integrity: sha512-G2xbfWTrbqYRhR/vfeKNMQf/sS3/ti0iKJAAkRxHuXWZH/hne/dyIb9QKk5LuR6cJLARxsL6FMoAYmfspd74MQ==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
 
   '@parcel/watcher-android-arm64@2.5.1':
@@ -4071,6 +4080,12 @@ snapshots:
     dependencies:
       nanoevents: 7.0.1
 
+  '@aranlucas/oxlint-plugin-anti-slop@0.1.0(oxlint@1.87.0(oxlint-tsgolint@7.0.2003))':
+    dependencies:
+      '@oxlint/plugins': 1.88.0
+    optionalDependencies:
+      oxlint: 1.87.0(oxlint-tsgolint@7.0.2003)
+
   '@asamuzakjp/css-color@7.1.4':
     dependencies:
       '@csstools/css-calc': 3.4.3(@csstools/css-parser-algorithms@4.0.2(@csstools/css-tokenizer@4.0.2))(@csstools/css-tokenizer@4.0.2)
@@ -5878,7 +5893,7 @@ snapshots:
   '@oxlint/binding-win32-x64-msvc@1.87.0':
     optional: true
 
-  '@oxlint/plugins@1.87.0': {}
+  '@oxlint/plugins@1.88.0': {}
 
   '@parcel/watcher-android-arm64@2.5.1':
     optional: true
