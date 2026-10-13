@@ -57,9 +57,9 @@ import { sealGitHubCredential, unsealGitHubCredential } from "./github-auth";
 const socketAttachmentSchema = z.object({ participant: actorSchema });
 
 const handoffClientStateSchema = z.object({
-  draft: z.string().optional().catch(undefined),
-  selectedID: z.string().optional().catch(undefined),
-  mobileTab: z.enum(["transcript", "brief", "people", "queue"]).optional().catch(undefined),
+  draft: z.string().optional().catch(),
+  selectedID: z.string().optional().catch(),
+  mobileTab: z.enum(["transcript", "brief", "people", "queue"]).optional().catch(),
 });
 
 interface SocketAttachment {
@@ -1121,7 +1121,7 @@ export class AgentRoomCore {
       this.turns.pause();
 
       if (room.opencodeSessionID) {
-        await this.runner?.interrupt(room.opencodeSessionID).catch(() => undefined);
+        await this.runner?.interrupt(room.opencodeSessionID).catch(() => {});
       }
 
       return;
@@ -1563,8 +1563,8 @@ export class AgentRoomCore {
 
     const eventIdentity = z
       .object({
-        id: z.string().optional().catch(undefined),
-        created: z.number().optional().catch(undefined),
+        id: z.string().optional().catch(),
+        created: z.number().optional().catch(),
       })
       .parse(eventRecord);
 
@@ -1633,8 +1633,8 @@ export class AgentRoomCore {
   protected captureOpenCodePermission(event: JsonRecord, data: JsonRecord) {
     const permission = z
       .object({
-        id: z.string().optional().catch(undefined),
-        requestID: z.string().optional().catch(undefined),
+        id: z.string().optional().catch(),
+        requestID: z.string().optional().catch(),
         message: z.string().nullable().catch(null),
       })
       .parse(data);

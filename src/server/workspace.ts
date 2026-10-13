@@ -609,7 +609,7 @@ async function resolveGitHubBranch(repository: string, branch: string): Promise<
   }
 
   const refs = new TextDecoder().decode(await response.arrayBuffer());
-  const escapedBranch = branch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedBranch = branch.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
   const match = refs.match(new RegExp(`([0-9a-f]{40}) refs/heads/${escapedBranch}(?:\\n|\\0)`));
 
   if (!match) {

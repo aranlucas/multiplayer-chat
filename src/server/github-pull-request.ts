@@ -342,8 +342,8 @@ export class GitHubPullRequestClient {
 function branchName(roomID: string): string {
   const room = roomID
     .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-+/g, "-")
+    .replaceAll(/[^a-z0-9-]/g, "-")
+    .replaceAll(/-+/g, "-")
     .slice(0, 64);
 
   return `relay/${room || "session"}--${Date.now().toString(36)}`;

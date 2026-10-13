@@ -327,7 +327,7 @@ export class EmbeddedOpenCodeRunner {
     model: string,
   ) {
     if (sessionID) {
-      const existing = await opencode.sessions.get({ sessionID }).catch(() => undefined);
+      const existing = await opencode.sessions.get({ sessionID }).catch(() => {});
 
       if (existing) {
         const modelRef = openCodeModelRef(model);
@@ -386,15 +386,15 @@ function deferredProviderFailure(event: JsonRecord): Error | undefined {
 const eventRoutingSchema = z.object({
   data: z
     .object({
-      sessionID: z.string().optional().catch(undefined),
+      sessionID: z.string().optional().catch(),
       form: z
-        .object({ sessionID: z.string().optional().catch(undefined) })
+        .object({ sessionID: z.string().optional().catch() })
         .optional()
-        .catch(undefined),
+        .catch(),
     })
     .catch({}),
   durable: z
-    .object({ seq: z.union([z.number(), z.string()]).optional().catch(undefined) })
+    .object({ seq: z.union([z.number(), z.string()]).optional().catch() })
     .catch({}),
 });
 

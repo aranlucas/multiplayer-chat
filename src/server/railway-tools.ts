@@ -7,7 +7,7 @@ import { Plugin } from "@opencode/plugin";
 import type * as Tool from "@opencode/plugin/promise/tool";
 import { MAX_WORKSPACE_FILE_BYTES } from "../shared/workspace-change";
 import { replaceExact } from "../shared/exact-edit";
-import { RailwayRoomSandbox } from "./railway-sandbox";
+import type { RailwayRoomSandbox } from "./railway-sandbox";
 
 const WORKSPACE_DIRECTORY = "/workspace/repository";
 

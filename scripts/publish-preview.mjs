@@ -61,7 +61,7 @@ function readDeployment(stdout) {
       type: z.literal("preview"),
       version: z.literal(1),
       deployment_id: z.string().min(1),
-      deployment_urls: z.array(z.string().optional().catch(undefined)),
+      deployment_urls: z.array(z.string().optional().catch()),
     })
     .safeParse(JSON.parse(stdout));
 
@@ -118,11 +118,11 @@ async function waitUntilReady(targetURL, expectedSHA) {
   for (let attempt = 0; attempt < 30; attempt += 1) {
     const response = await fetch(new URL("/__relay/ready", targetURL), {
       signal: AbortSignal.timeout(8_000),
-    }).catch(() => undefined);
+    }).catch(() => {});
 
     const result =
       /** @type {{ ready?: boolean; commitSHA?: string; roomProtocol?: number } | undefined} */ (
-        await response?.json().catch(() => undefined)
+        await response?.json().catch(() => {})
       );
 
     if (

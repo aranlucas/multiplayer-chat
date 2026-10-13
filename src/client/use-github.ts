@@ -78,7 +78,7 @@ export function useGitHub(roomID: string, controlOrigin = window.location.origin
 
   const createPullRequest = useCallback(async () => {
     if (creatingRef.current) {
-      return undefined;
+      return;
     }
 
     creatingRef.current = true;
@@ -118,7 +118,7 @@ export function useGitHub(roomID: string, controlOrigin = window.location.origin
       }));
       creatingRef.current = false;
 
-      return undefined;
+      return;
     }
   }, [controlOrigin, roomID]);
 

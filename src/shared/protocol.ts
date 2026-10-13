@@ -239,19 +239,19 @@ export const PARTICIPANT_COLORS = ["#a978e8", "#3f9c70", "#488dcc", "#d88952", "
 export function safeRoomID(value: string): string {
   const normalized = value
     .toLowerCase()
-    .replace(/[^a-z0-9-_]/g, "-")
-    .replace(/-+/g, "-");
+    .replaceAll(/[^a-z0-9-_]/g, "-")
+    .replaceAll(/-+/g, "-");
 
   return normalized.slice(0, 64) || "reconnect-loop";
 }
 
 export function safeParticipantName(value: string | null): string {
-  const normalized = (value ?? "Guest").trim().replace(/[<>]/g, "");
+  const normalized = (value ?? "Guest").trim().replaceAll(/[<>]/g, "");
 
   return normalized.slice(0, 32) || "Guest";
 }
 
-const requestIDSchema = z.string().optional().catch(undefined);
+const requestIDSchema = z.string().optional().catch();
 
 const questionIDSchema = (label: string) =>
   z
@@ -355,7 +355,7 @@ const clientMessageSchema = z.discriminatedUnion("type", [
     rationale: planningTextSchema("decision rationale", 4_000).transform(
       (value) => value || undefined,
     ),
-    sourceEventID: z.string().max(200).optional().catch(undefined),
+    sourceEventID: z.string().max(200).optional().catch(),
     requestID: requestIDSchema,
   }),
   z.object({ type: z.literal("brief.review.start"), requestID: requestIDSchema }),

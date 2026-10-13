@@ -185,7 +185,7 @@ describe("drainSimulatedQueue", () => {
   it("no-ops when the queue is empty", async () => {
     const runTurn = vi.fn(async () => {});
     await drainSimulatedQueue({
-      nextQueuedPrompt: () => undefined,
+      nextQueuedPrompt: () => {},
       consumeQueuedPrompt: () => {
         throw new Error("should not consume");
       },

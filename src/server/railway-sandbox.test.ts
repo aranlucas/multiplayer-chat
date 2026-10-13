@@ -143,7 +143,7 @@ function fakeSandbox(...handles: SandboxExecution[]) {
     return handle;
   });
 
-  const refresh = vi.fn<() => Promise<void | SandboxConnection>>().mockResolvedValue(undefined);
+  const refresh = vi.fn<() => Promise<void | SandboxConnection>>().mockResolvedValue();
 
   const sandbox: SandboxConnection & { exec: typeof exec; refresh: typeof refresh } = {
     id: "sandbox-1",
@@ -166,7 +166,7 @@ function fakeExecHandle(
     sessionName:
       sessionName instanceof Error ? Promise.reject(sessionName) : Promise.resolve(sessionName),
     kill: vi.fn().mockResolvedValue(true),
-    detach: vi.fn().mockResolvedValue(undefined),
+    detach: vi.fn().mockResolvedValue(),
     result: () => result,
   });
 }

@@ -88,7 +88,7 @@ export function getIdentity(roomID: string): RoomIdentity {
     id =
       requestedName === "You"
         ? crypto.randomUUID()
-        : requestedName.toLowerCase().replace(/[^a-z0-9]/g, "-");
+        : requestedName.toLowerCase().replaceAll(/[^a-z0-9]/g, "-");
   }
 
   const identity = { id, name: requestedName, role: requestedRole };

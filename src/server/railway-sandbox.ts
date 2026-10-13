@@ -96,7 +96,7 @@ export class RailwayRoomSandbox {
         throw error;
       }
 
-      const sessionName = await handle.sessionName.catch(() => undefined);
+      const sessionName = await handle.sessionName.catch(() => {});
 
       if (sessionName) {
         if (!(await this.isStillRunning(sandbox))) {

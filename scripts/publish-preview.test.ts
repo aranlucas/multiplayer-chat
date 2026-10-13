@@ -121,7 +121,7 @@ async function runPublisher(options: PublisherOptions = {}) {
 
   const command = await readFile(commandLog, "utf8")
     .then(parseCommand)
-    .catch(() => undefined);
+    .catch(() => {});
 
   return { ...result, requests, command, origin };
 }

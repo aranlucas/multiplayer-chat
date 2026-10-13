@@ -52,20 +52,20 @@ export type DisplayEvent =
 
 const toolInputSchema = z
   .object({
-    command: z.string().optional().catch(undefined),
-    filePath: z.string().optional().catch(undefined),
-    replaceAll: z.boolean().optional().catch(undefined),
+    command: z.string().optional().catch(),
+    filePath: z.string().optional().catch(),
+    replaceAll: z.boolean().optional().catch(),
     questions: z
-      .array(z.object({ question: z.string().optional().catch(undefined) }).catch({}))
+      .array(z.object({ question: z.string().optional().catch() }).catch({}))
       .optional()
-      .catch(undefined),
+      .catch(),
   })
   .catch({});
 
 const questionOptionSchema = z.object({
   value: z.string(),
   label: z.string(),
-  description: z.string().optional().catch(undefined),
+  description: z.string().optional().catch(),
 });
 
 const questionFieldSchema = z.object({
@@ -78,7 +78,7 @@ const questionFieldSchema = z.object({
     .transform(() => false)
     .catch(true),
   options: z
-    .array(questionOptionSchema.optional().catch(undefined))
+    .array(questionOptionSchema.optional().catch())
     .catch([])
     .transform((values) => values.flatMap((value) => (value ? [value] : []))),
 });
@@ -87,7 +87,7 @@ const questionFormSchema = z.object({
   id: z.string(),
   sessionID: z.string(),
   metadata: z.object({ kind: z.string() }),
-  fields: z.array(questionFieldSchema.optional().catch(undefined)),
+  fields: z.array(questionFieldSchema.optional().catch()),
 });
 
 const questionAnswerValueSchema = z.union([z.string(), z.array(z.string())]);
@@ -155,7 +155,7 @@ function displayToolName(tool: string) {
 
 function textFromContent(value: JsonValue | undefined) {
   if (!Array.isArray(value)) {
-    return undefined;
+    return;
   }
 
   return value

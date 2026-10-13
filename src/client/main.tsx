@@ -5,7 +5,7 @@ import { LandingPage } from "./LandingPage";
 import { resolveRelayBootstrap } from "./room-bootstrap";
 import "./styles.css";
 
-const container = document.getElementById("root");
+const container = document.querySelector("#root");
 
 if (!container) {
   throw new Error("Relay root element is missing");
@@ -21,7 +21,7 @@ if (accent) {
 
 document.documentElement.dataset.relayBuild = import.meta.env.VITE_RELAY_BUILD ?? "production";
 
-if (window.location.pathname.match(/^\/r\//)) {
+if (window.location.pathname.startsWith('/r/')) {
   resolveRelayBootstrap()
     .then((bootstrap) => {
       root.render(

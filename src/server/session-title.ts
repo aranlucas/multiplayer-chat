@@ -15,12 +15,12 @@ const sessionTitleEventSchema = z.object({
   type: z.string().catch(""),
   data: z
     .object({
-      info: jsonRecordSchema.optional().catch(undefined),
-      title: z.string().optional().catch(undefined),
+      info: jsonRecordSchema.optional().catch(),
+      title: z.string().optional().catch(),
     })
     .catch({}),
-  properties: z.object({ info: jsonRecordSchema.optional().catch(undefined) }).catch({}),
-  info: jsonRecordSchema.optional().catch(undefined),
+  properties: z.object({ info: jsonRecordSchema.optional().catch() }).catch({}),
+  info: jsonRecordSchema.optional().catch(),
 });
 
 export function sessionTitleFromEvent(event: JsonRecord): string | undefined {

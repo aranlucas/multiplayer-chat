@@ -75,8 +75,8 @@ export function App({
   });
 
   const { transitioning } = handoff;
-  const attemptedPublication = useRef<string | undefined>(undefined);
-  const previousGithubError = useRef<string | undefined>(undefined);
+  const attemptedPublication = useRef<string | undefined>();
+  const previousGithubError = useRef<string | undefined>();
   const pendingPermission = state.permissions.find((permission) => permission.status === "pending");
   const canApprove = identity.role === "maintainer";
   const authenticated = github.state.authenticated;

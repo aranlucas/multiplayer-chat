@@ -32,7 +32,7 @@ const info = {
 
 beforeEach(() => {
   execution.turn.mockReset();
-  execution.interrupt.mockReset().mockResolvedValue(undefined);
+  execution.interrupt.mockReset().mockResolvedValue();
   vi.spyOn(RepositoryWorkspace.prototype, "ensureReady").mockResolvedValue(info);
 });
 
@@ -196,7 +196,7 @@ describe("room turn ownership", () => {
 
   it("pauses immediately, saves interrupted edits and never publishes a late success", async () => {
     const fixture = await createRoom();
-    const publish = vi.spyOn(fixture.room, "publishSavedPullRequest").mockResolvedValue(undefined);
+    const publish = vi.spyOn(fixture.room, "publishSavedPullRequest").mockResolvedValue();
     const turn = controlledTurn();
     const request = fixture.send({ type: "prompt", text: "edit", delivery: "steer" });
     await turn.started;
