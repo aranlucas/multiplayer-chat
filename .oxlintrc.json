@@ -6,12 +6,7 @@
     "node": true,
     "es2026": true
   },
-  "ignorePatterns": [
-    "dist/**",
-    "dist-preview/**",
-    "node_modules/**",
-    "worker-configuration.d.ts"
-  ],
+  "ignorePatterns": ["dist/**", "dist-preview/**", "node_modules/**", "worker-configuration.d.ts"],
   "categories": {
     "correctness": "error"
   },
