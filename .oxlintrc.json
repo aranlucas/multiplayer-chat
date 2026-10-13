@@ -111,5 +111,31 @@
       }
     }
   ],
-  "ignorePatterns": ["dist/**", "dist-preview/**", "node_modules/**", "worker-configuration.d.ts"]
+  "ignorePatterns": [
+    "dist/**",
+    "dist-preview/**",
+    "node_modules/**",
+    "worker-configuration.d.ts",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/.next/**",
+    "**/.expo/**",
+    "**/.vercel/**",
+    "**/.agent/**",
+    "**/.agents/**",
+    "**/.claude/**",
+    "**/.codex/**",
+    "**/.continue/**",
+    "**/.cursor/**",
+    "**/.gemini/**",
+    "**/.opencode/**",
+    "**/.pi/**",
+    "**/.roo/**",
+    "**/.windsurf/**"
+  ],
+  "options": {
+    "typeAware": true
+  }
 }
