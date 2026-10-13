@@ -6,13 +6,7 @@
     "node": true,
     "es2026": true
   },
-  "ignorePatterns": [
-    "dist/**",
-    "dist-preview/**",
-    "node_modules/**",
-    "worker-configuration.d.ts",
-    "tools/oxlint/anti-slop/**"
-  ],
+  "ignorePatterns": ["dist/**", "dist-preview/**", "node_modules/**", "worker-configuration.d.ts"],
   "categories": {
     "correctness": "error"
   },
@@ -101,7 +95,7 @@
   "jsPlugins": [
     {
       "name": "anti-slop",
-      "specifier": "./tools/oxlint/anti-slop/index.ts"
+      "specifier": "@aranlucas/oxlint-plugin-anti-slop"
     }
   ]
 }
