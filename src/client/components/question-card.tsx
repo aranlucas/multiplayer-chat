@@ -3,6 +3,11 @@ import { useState } from "react";
 import type { DisplayEvent, QuestionField } from "../event-display";
 
 type QuestionDisplay = Extract<DisplayEvent, { type: "question" }>;
+type QuestionAnswerEntry = [key: string, answer: string | string[]];
+
+interface QuestionHeadingProps {
+  question: QuestionDisplay;
+}
 
 interface QuestionCardProps {
   question: QuestionDisplay;
@@ -164,7 +169,7 @@ export function QuestionCard({ question, onReply, onCancel }: QuestionCardProps)
   );
 }
 
-function QuestionHeading({ question }: { question: QuestionDisplay }) {
+function QuestionHeading({ question }: QuestionHeadingProps) {
   return (
     <div className="question-heading">
       <span className="question-icon">
@@ -203,7 +208,7 @@ function buildAnswer(
   custom: Record<string, string>,
 ) {
   return Object.fromEntries<string | string[]>(
-    fields.map((field): [string, string | string[]] => {
+    fields.map((field): QuestionAnswerEntry => {
       const ownAnswer = custom[field.key]?.trim();
 
       if (field.type === "string") {

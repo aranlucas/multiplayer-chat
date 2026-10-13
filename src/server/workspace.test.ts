@@ -6,6 +6,8 @@ import { sqliteStorage } from "./fixtures/sqlite-storage";
 import { deferred } from "./fixtures/deferred";
 import { RepositoryWorkspace } from "./workspace";
 
+type WorkspaceContentRow = { content: string };
+
 describe("replaceExact", () => {
   it("replaces one exact match", () => {
     expect(replaceExact("one\ntwo\nthree\n", "two", "updated", false)).toBe(
@@ -150,14 +152,16 @@ describe("RepositoryWorkspace checkpoint ownership", () => {
     const storage = { sql: database.sql };
     const sandbox = new RailwayRoomSandbox(storage, {});
     vi.spyOn(sandbox, "configured", "get").mockReturnValue(true);
-    vi.spyOn(sandbox, "exec").mockImplementation(async (command) => ({
-      success: true,
-      exitCode: 0,
-      stderr: "",
-      truncated: false,
-      timedOut: false,
-      stdout: command.startsWith("git diff") ? "M\0feature.ts\0" : "",
-    }));
+    vi.spyOn(sandbox, "exec").mockImplementation((command) =>
+      Promise.resolve({
+        success: true,
+        exitCode: 0,
+        stderr: "",
+        truncated: false,
+        timedOut: false,
+        stdout: command.startsWith("git diff") ? "M\0feature.ts\0" : "",
+      }),
+    );
     const file = deferred<string>();
     const reading = deferred<void>();
     vi.spyOn(sandbox, "readFile").mockImplementation(() => {
@@ -176,7 +180,7 @@ describe("RepositoryWorkspace checkpoint ownership", () => {
       file.resolve("stale edits");
       expect(await checkpoint).toEqual([{ path: "feature.ts", content: "stale edits" }]);
       expect(
-        database.sql.exec<{ content: string }>("SELECT content FROM relay_workspace_changes").one()
+        database.sql.exec<WorkspaceContentRow>("SELECT content FROM relay_workspace_changes").one()
           .content,
       ).toBe("newer edits");
     } finally {

@@ -2,7 +2,7 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.worker.tsbuildinfo",
     "target": "ES2022",
-    "lib": ["ES2022", "WebWorker"],
+    "lib": ["ES2023", "WebWorker"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,

@@ -8,6 +8,11 @@ import {
   openCodeModelRef,
 } from "./embedded-opencode";
 
+interface HostOverrides {
+  sessions: Partial<OpenCodeHost["sessions"]>;
+  events?: OpenCodeHost["events"];
+}
+
 describe("openCodeModelRef", () => {
   it("preserves model IDs with nested path segments", () => {
     expect(openCodeModelRef("opencode/vendor/coding-free")).toEqual({
@@ -51,9 +56,9 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
         sessions: {
           create: vi.fn().mockResolvedValue({ id: "session-1" }),
           prompt: vi.fn<OpenCodeHost["sessions"]["prompt"]>().mockResolvedValue(undefined),
-          wait: vi.fn<OpenCodeHost["sessions"]["wait"]>().mockImplementation(async () => {
+          wait: vi.fn<OpenCodeHost["sessions"]["wait"]>().mockImplementation(() => {
             controller.abort();
-            throw new Error("Transport");
+            return Promise.reject(new Error("Transport"));
           }),
           interrupt: vi.fn().mockResolvedValue(undefined),
         },
@@ -148,7 +153,9 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
             yield { type: "ignored" };
           }
 
-          await new Promise((resolve) => setTimeout(resolve, 0));
+          await new Promise((resolve) => {
+            setTimeout(resolve, 0);
+          });
           throw failure;
         },
       },
@@ -190,10 +197,7 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
   });
 });
 
-function hostFixture(overrides: {
-  sessions: Partial<OpenCodeHost["sessions"]>;
-  events?: OpenCodeHost["events"];
-}): OpenCodeHost {
+function hostFixture(overrides: HostOverrides): OpenCodeHost {
   return {
     sessions: {
       create: vi.fn().mockResolvedValue({ id: "session-1" }),

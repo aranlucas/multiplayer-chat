@@ -5,13 +5,13 @@ import { useEffect, useRef, useState } from "react";
 import { useRoom } from "./use-room";
 import { useGitHub } from "./use-github";
 import { createThread, type RelayBootstrap } from "./room-bootstrap";
-import { ActivityRail } from "./components/ActivityRail";
-import { CollaborationRail } from "./components/CollaborationRail";
-import { Composer } from "./components/Composer";
-import { Header } from "./components/Header";
-import { MobileTabs, type MobileTab } from "./components/MobileTabs";
-import { Transcript } from "./components/Transcript";
-import { ImplementationBrief } from "./components/ImplementationBrief";
+import { ActivityRail } from "./components/activity-rail";
+import { CollaborationRail } from "./components/collaboration-rail";
+import { Composer } from "./components/composer";
+import { Header } from "./components/header";
+import { MobileTabs, type MobileTab } from "./components/mobile-tabs";
+import { Transcript } from "./components/transcript";
+import { ImplementationBrief } from "./components/implementation-brief";
 import { draftStorageKey, readDraft, writeDraft } from "./draft-storage";
 
 export interface AppDependencies {
@@ -20,15 +20,22 @@ export interface AppDependencies {
   usePreviewHandoff: typeof usePreviewHandoff;
 }
 
-const defaultDependencies: AppDependencies = { useRoom, useGitHub, usePreviewHandoff };
-
-export function App({
-  bootstrap,
-  dependencies = defaultDependencies,
-}: {
+interface AppProps {
   bootstrap: RelayBootstrap;
   dependencies?: AppDependencies;
-}) {
+}
+
+interface MobilePeopleProps {
+  participants: Participant[];
+}
+
+interface MobileQueueProps {
+  queue: QueuedPrompt[];
+}
+
+const defaultDependencies: AppDependencies = { useRoom, useGitHub, usePreviewHandoff };
+
+export function App({ bootstrap, dependencies = defaultDependencies }: AppProps) {
   const { roomID, identity, controlOrigin } = bootstrap;
   const { state, actions } = dependencies.useRoom(roomID, identity, controlOrigin);
   const github = dependencies.useGitHub(roomID, controlOrigin);
@@ -286,7 +293,7 @@ export function App({
   );
 }
 
-function MobilePeople({ participants }: { participants: Participant[] }) {
+function MobilePeople({ participants }: MobilePeopleProps) {
   return (
     <section className="mobile-panel">
       <h1>Participants</h1>
@@ -306,7 +313,7 @@ function MobilePeople({ participants }: { participants: Participant[] }) {
   );
 }
 
-function MobileQueue({ queue }: { queue: QueuedPrompt[] }) {
+function MobileQueue({ queue }: MobileQueueProps) {
   return (
     <section className="mobile-panel">
       <h1>Queued follow-ups</h1>

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { useEffect, useEffectEvent, useState } from "react";
 import type { RoomRevision } from "../shared/protocol";
 import type { RoomIdentity } from "./use-room";
-import type { MobileTab } from "./components/MobileTabs";
+import type { MobileTab } from "./components/mobile-tabs";
 
 interface HandoffOptions {
   roomID: string;

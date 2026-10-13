@@ -27,7 +27,7 @@ const workspaceChangesSchema = z
   .array(workspaceChangeSchema, { error: "Invalid workspace changes" })
   .max(MAX_WORKSPACE_CHANGES, "Invalid workspace changes");
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This is the external checkpoint decoder; all paths and content are checked before workspace mutation.
+// This is the external checkpoint decoder; all paths and content are checked before workspace mutation.
 export function parseWorkspaceChanges(value: unknown): WorkspaceChange[] {
   const changes = workspaceChangesSchema.parse(value);
   let totalBytes = 0;
@@ -95,7 +95,7 @@ export function parseGitChangePaths(nameStatus: string, untracked: string): GitC
     throw new Error("Too many workspace changes");
   }
 
-  return [...paths.values()].sort((left, right) => left.path.localeCompare(right.path));
+  return [...paths.values()].toSorted((left, right) => left.path.localeCompare(right.path));
 }
 
 export function isSafeWorkspacePath(path: string): boolean {

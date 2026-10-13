@@ -26,7 +26,7 @@ export const jsonRecordSchema: z.ZodType<JsonRecord> = z.record(
 );
 
 /** Decode unknown extension values once, before event consumers access their fields. */
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This is the runtime decoder for external JSON extension data, not an application input contract.
+// This is the runtime decoder for external JSON extension data, not an application input contract.
 export function parseJsonRecord(value: unknown): JsonRecord {
   return jsonRecordSchema.parse(value);
 }

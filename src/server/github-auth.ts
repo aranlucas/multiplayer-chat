@@ -20,6 +20,29 @@ export interface GitHubSessionResult {
   setCookie?: string;
 }
 
+type TokenExchangeInput = {
+  clientID: string;
+  clientSecret: string;
+  code: string;
+  redirectURI: string;
+};
+
+type TokenRefreshInput = {
+  clientID: string;
+  clientSecret: string;
+  refreshToken: string;
+};
+
+type GitHubProfile = { login: string; avatar_url?: string };
+
+type GitHubProfileResponse = {
+  login?: string;
+  avatar_url?: string;
+  message?: string;
+};
+
+type CookieOptions = { maxAge: number; path?: string };
+
 const credentialSchema = z.object({ accessToken: z.string().min(1), login: z.string().min(1) });
 
 const sessionSchema = credentialSchema.extend({
@@ -195,7 +218,7 @@ export async function sealGitHubCredential(
     throw new Error("GitHub session encryption is not configured");
   }
 
-  return seal(session, env.GITHUB_SESSION_SECRET);
+  return await seal(session, env.GITHUB_SESSION_SECRET);
 }
 
 export async function unsealGitHubCredential(
@@ -218,13 +241,8 @@ interface TokenResponse {
   error_description?: string;
 }
 
-async function exchangeToken(input: {
-  clientID: string;
-  clientSecret: string;
-  code: string;
-  redirectURI: string;
-}) {
-  return tokenRequest({
+async function exchangeToken(input: TokenExchangeInput) {
+  return await tokenRequest({
     client_id: input.clientID,
     client_secret: input.clientSecret,
     code: input.code,
@@ -232,12 +250,8 @@ async function exchangeToken(input: {
   });
 }
 
-async function refreshToken(input: {
-  clientID: string;
-  clientSecret: string;
-  refreshToken: string;
-}) {
-  return tokenRequest({
+async function refreshToken(input: TokenRefreshInput) {
+  return await tokenRequest({
     client_id: input.clientID,
     client_secret: input.clientSecret,
     grant_type: "refresh_token",
@@ -263,16 +277,12 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
   return value;
 }
 
-async function githubProfile(accessToken: string): Promise<{ login: string; avatar_url?: string }> {
+async function githubProfile(accessToken: string): Promise<GitHubProfile> {
   const response = await fetch("https://api.github.com/user", {
     headers: githubHeaders(accessToken),
   });
 
-  const value = await response.json<{
-    login?: string;
-    avatar_url?: string;
-    message?: string;
-  }>();
+  const value = await response.json<GitHubProfileResponse>();
 
   if (!response.ok || !value.login) {
     throw new Error(value.message || "GitHub identity lookup failed");
@@ -391,7 +401,7 @@ function parseCookies(header: string | null): Record<string, string> {
   );
 }
 
-function cookie(name: string, value: string, options: { maxAge: number; path?: string }): string {
+function cookie(name: string, value: string, options: CookieOptions): string {
   return `${name}=${encodeURIComponent(value)}; Path=${options.path ?? "/"}; Max-Age=${options.maxAge}; HttpOnly; Secure; SameSite=Lax`;
 }
 

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { OpenCodeModelOption, RoomInfo } from "../../shared/protocol";
-import { Header } from "./Header";
+import { Header } from "./header";
 
 const room: RoomInfo = {
   id: "room-1",

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 
+// oxlint-disable-next-line eslint/no-underscore-dangle -- Vite injects this build-time constant.
 declare const __RELAY_BUILD_SHA__: string;
 
 interface PreviewEnv {
@@ -7,7 +8,11 @@ interface PreviewEnv {
   RELAY_CONTROL_ORIGIN: string;
 }
 
-const app = new Hono<{ Bindings: PreviewEnv }>();
+interface PreviewBindings {
+  Bindings: PreviewEnv;
+}
+
+const app = new Hono<PreviewBindings>();
 
 app.get("/__relay/ready", (context) =>
   context.json({

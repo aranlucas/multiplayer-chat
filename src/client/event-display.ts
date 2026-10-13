@@ -155,7 +155,7 @@ function displayToolName(tool: string) {
 
 function textFromContent(value: JsonValue | undefined) {
   if (!Array.isArray(value)) {
-    return undefined;
+    return;
   }
 
   return value
@@ -330,10 +330,9 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
   };
 }
 
-function displayQuestion(
-  type: string,
-  data: JsonRecord,
-): Extract<DisplayEvent, { type: "question" }> | undefined {
+type QuestionDisplay = Extract<DisplayEvent, { type: "question" }>;
+
+function displayQuestion(type: string, data: JsonRecord): QuestionDisplay | undefined {
   if (!type.startsWith("form.")) {
     return undefined;
   }

@@ -2,6 +2,12 @@ import type { ReactNode } from "react";
 
 export type MobileTab = "transcript" | "brief" | "people" | "queue";
 
+interface MobileTabOption {
+  id: MobileTab;
+  label: string;
+  count?: ReactNode;
+}
+
 interface MobileTabsProps {
   active: MobileTab;
   participants: number;
@@ -11,7 +17,7 @@ interface MobileTabsProps {
 }
 
 export function MobileTabs({ active, participants, queued, decisions, onChange }: MobileTabsProps) {
-  const tabs: Array<{ id: MobileTab; label: string; count?: ReactNode }> = [
+  const tabs: MobileTabOption[] = [
     { id: "transcript", label: "Transcript" },
     { id: "brief", label: "Brief", count: decisions },
     { id: "people", label: "People", count: participants },

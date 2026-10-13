@@ -7,7 +7,15 @@ import { Plugin } from "@opencode/plugin";
 import type * as Tool from "@opencode/plugin/promise/tool";
 import { MAX_WORKSPACE_FILE_BYTES } from "../shared/workspace-change";
 import { replaceExact } from "../shared/exact-edit";
-import { RailwayRoomSandbox } from "./railway-sandbox";
+import type { RailwayRoomSandbox } from "./railway-sandbox";
+
+type CommandResult = {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  truncated: boolean;
+};
 
 const WORKSPACE_DIRECTORY = "/workspace/repository";
 
@@ -355,13 +363,7 @@ function relativeWorkspacePath(path: string): string {
   return path.slice(WORKSPACE_DIRECTORY.length + 1);
 }
 
-function formatCommandResult(result: {
-  exitCode: number | null;
-  stdout: string;
-  stderr: string;
-  timedOut: boolean;
-  truncated: boolean;
-}) {
+function formatCommandResult(result: CommandResult) {
   const sections = [
     result.stdout,
     result.stderr ? `stderr:\n${result.stderr}` : "",

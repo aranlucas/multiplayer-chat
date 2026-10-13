@@ -102,17 +102,17 @@ describe("concurrent publication", () => {
 
     const publish = vi
       .fn()
-      .mockImplementationOnce(async () => {
+      .mockImplementationOnce(() => {
         database.sql.exec(
           "UPDATE relay_room SET workspace_revision = 2, published_workspace_revision = 1",
         );
 
-        return publication("first");
+        return Promise.resolve(publication("first"));
       })
-      .mockImplementationOnce(async () => {
+      .mockImplementationOnce(() => {
         database.sql.exec("UPDATE relay_room SET published_workspace_revision = 2");
 
-        return publication("second");
+        return Promise.resolve(publication("second"));
       });
 
     const room = new PublishingRoom(context, publish);

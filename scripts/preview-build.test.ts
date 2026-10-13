@@ -27,18 +27,16 @@ it("build:preview produces output accepted as a native Preview by the installed 
 
   await writeFile(join(directory, "package.json"), JSON.stringify(manifest));
 
-  for (const name of ["src", "preview", "e2e"]) {
-    await mkdir(join(directory, name));
-  }
+  await Promise.all(["src", "preview", "e2e"].map((name) => mkdir(join(directory, name))));
 
-  for (const name of [
-    "vite.config.ts",
-    "cloudflare.config.ts",
-    "preview/cloudflare.config.ts",
-    "e2e/cloudflare.config.ts",
-  ]) {
-    await copyFile(join(project, name), join(directory, name));
-  }
+  await Promise.all(
+    [
+      "vite.config.ts",
+      "cloudflare.config.ts",
+      "preview/cloudflare.config.ts",
+      "e2e/cloudflare.config.ts",
+    ].map((name) => copyFile(join(project, name), join(directory, name))),
+  );
 
   await writeFile(
     join(directory, "tsconfig.json"),

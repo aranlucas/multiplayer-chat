@@ -10,8 +10,8 @@ import type {
   RoomDecision,
 } from "../../shared/protocol";
 import { formatTime } from "../event-display";
-import { PermissionCard } from "./PermissionCard";
-import { ImplementationBrief as ImplementationBriefPanel } from "./ImplementationBrief";
+import { PermissionCard } from "./permission-card";
+import { ImplementationBrief as ImplementationBriefPanel } from "./implementation-brief";
 
 interface CollaborationRailProps {
   participants: Participant[];
@@ -139,7 +139,7 @@ export function CollaborationRail({
               event.kind === "system",
           )
           .slice(-3)
-          .reverse()
+          .toReversed()
           .map((event) => (
             <div className="recent-row" key={event.id}>
               <span>{formatTime(event.createdAt)}</span>

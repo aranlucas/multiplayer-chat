@@ -8,6 +8,31 @@ import {
 } from "../shared/workspace-change";
 import { RailwayRoomSandbox, type RailwaySandboxEnv } from "./railway-sandbox";
 
+type WorkspaceDiffRow = {
+  path: string;
+  original: string;
+  content: string;
+  deleted: number;
+};
+
+type PublishedWorkspaceSnapshot = PullRequestWorkspace & { workspaceRevision: number };
+
+type WorkspaceRevisionRow = { workspace_revision: number };
+
+type SqlColumnRow = { name: string };
+
+type SqlCountRow = { count: number };
+
+type WorkspaceChangeRow = { path: string; content: string; deleted: number };
+
+type WorkspaceFile = { path: string; content: string };
+
+type WorkspaceContentRow = { content: string };
+
+type WorkspaceOriginalRow = { original: string };
+
+type CommandFailure = { stdout: string; stderr: string; exitCode: number | null };
+
 type WorkspaceEnv = RailwaySandboxEnv;
 
 interface WorkspaceRow {
@@ -75,7 +100,7 @@ export class RepositoryWorkspace {
       });
     }
 
-    return this.preparing;
+    return await this.preparing;
   }
 
   async configure(repository: string, branch: string): Promise<WorkspaceInfo> {
@@ -134,12 +159,9 @@ export class RepositoryWorkspace {
       this.ensureRemoteSchema();
 
       const changes = this.storage.sql
-        .exec<{
-          path: string;
-          original: string;
-          content: string;
-          deleted: number;
-        }>("SELECT path, original, content, deleted FROM relay_workspace_changes ORDER BY path")
+        .exec<WorkspaceDiffRow>(
+          "SELECT path, original, content, deleted FROM relay_workspace_changes ORDER BY path",
+        )
         .toArray();
 
       if (!changes.length) {
@@ -174,7 +196,7 @@ export class RepositoryWorkspace {
     return truncate(result.stdout || "Working tree is clean.");
   }
 
-  async pullRequestWorkspace(): Promise<PullRequestWorkspace & { workspaceRevision: number }> {
+  async pullRequestWorkspace(): Promise<PublishedWorkspaceSnapshot> {
     const workspace = await this.ensureReady();
     const changes = this.workspaceChanges();
 
@@ -183,9 +205,7 @@ export class RepositoryWorkspace {
     }
 
     const { workspace_revision: workspaceRevision } = this.storage.sql
-      .exec<{ workspace_revision: number }>(
-        "SELECT workspace_revision FROM relay_room WHERE singleton = 1",
-      )
+      .exec<WorkspaceRevisionRow>("SELECT workspace_revision FROM relay_room WHERE singleton = 1")
       .one();
 
     return { ...workspace, changes, workspaceRevision };
@@ -322,7 +342,7 @@ export class RepositoryWorkspace {
     `);
 
     const columns = this.storage.sql
-      .exec<{ name: string }>("PRAGMA table_info(relay_workspace_changes)")
+      .exec<SqlColumnRow>("PRAGMA table_info(relay_workspace_changes)")
       .toArray();
 
     if (!columns.some((column) => column.name === "deleted")) {
@@ -340,7 +360,7 @@ export class RepositoryWorkspace {
     this.ensureRemoteSchema();
 
     const existing = this.storage.sql
-      .exec<{ count: number }>("SELECT COUNT(*) AS count FROM relay_workspace_files")
+      .exec<SqlCountRow>("SELECT COUNT(*) AS count FROM relay_workspace_files")
       .one();
 
     let commitSHA = pinnedCommit;
@@ -393,7 +413,7 @@ export class RepositoryWorkspace {
     this.ensureRemoteSchema();
     const needle = query.toLowerCase();
     const matches: string[] = [];
-    const files = [...this.remoteFiles()].sort(([left], [right]) => left.localeCompare(right));
+    const files = [...this.remoteFiles()].toSorted(([left], [right]) => left.localeCompare(right));
 
     for (const [path, content] of files) {
       const lines = content.split("\n");
@@ -418,7 +438,7 @@ export class RepositoryWorkspace {
     this.ensureRemoteSchema();
 
     return this.storage.sql
-      .exec<{ path: string; content: string; deleted: number }>(
+      .exec<WorkspaceChangeRow>(
         "SELECT path, content, deleted FROM relay_workspace_changes ORDER BY path",
       )
       .toArray()
@@ -433,15 +453,13 @@ export class RepositoryWorkspace {
 
     const files = new Map(
       this.storage.sql
-        .exec<{ path: string; content: string }>("SELECT path, content FROM relay_workspace_files")
+        .exec<WorkspaceFile>("SELECT path, content FROM relay_workspace_files")
         .toArray()
         .map((file) => [file.path, file.content] as const),
     );
 
     for (const change of this.storage.sql
-      .exec<{ path: string; content: string; deleted: number }>(
-        "SELECT path, content, deleted FROM relay_workspace_changes",
-      )
+      .exec<WorkspaceChangeRow>("SELECT path, content, deleted FROM relay_workspace_changes")
       .toArray()) {
       if (change.deleted) {
         files.delete(change.path);
@@ -457,7 +475,7 @@ export class RepositoryWorkspace {
     this.ensureRemoteSchema();
 
     const base = this.storage.sql
-      .exec<{ content: string }>(
+      .exec<WorkspaceContentRow>(
         "SELECT content FROM relay_workspace_files WHERE path = ?",
         change.path,
       )
@@ -470,7 +488,7 @@ export class RepositoryWorkspace {
     }
 
     const existing = this.storage.sql
-      .exec<{ original: string }>(
+      .exec<WorkspaceOriginalRow>(
         "SELECT original FROM relay_workspace_changes WHERE path = ?",
         change.path,
       )
@@ -535,6 +553,7 @@ export class RepositoryWorkspace {
         continue;
       }
 
+      // eslint-disable-next-line no-await-in-loop -- Validate and bound each file before reading the next file into memory.
       const regular = await this.sandbox.exec(
         `test -f ${shellQuote(change.path)} && test ! -L ${shellQuote(change.path)}`,
         { cwd: WORKSPACE_DIRECTORY, timeout: 5_000 },
@@ -544,6 +563,7 @@ export class RepositoryWorkspace {
         throw new Error(`Changed path is not a regular file: ${change.path}`);
       }
 
+      // eslint-disable-next-line no-await-in-loop -- Enforce the cumulative size limit before fetching another file.
       const file = await this.sandbox.readFile(`${WORKSPACE_DIRECTORY}/${change.path}`);
       ensureFileSize(change.path, file);
       totalBytes += new TextEncoder().encode(file).byteLength;
@@ -563,6 +583,7 @@ export class RepositoryWorkspace {
       const fullPath = `${WORKSPACE_DIRECTORY}/${change.path}`;
 
       if (change.content === null) {
+        // eslint-disable-next-line no-await-in-loop -- Apply the stored change sequence in order and stop at the first failure.
         const removed = await this.sandbox.exec(`rm -f -- ${shellQuote(change.path)}`, {
           cwd: WORKSPACE_DIRECTORY,
           timeout: 10_000,
@@ -576,6 +597,7 @@ export class RepositoryWorkspace {
       }
 
       ensureFileSize(change.path, change.content);
+      // eslint-disable-next-line no-await-in-loop -- Ordered writes preserve parent-path changes and stop at the first failure.
       await this.sandbox.writeFile(fullPath, change.content);
     }
   }
@@ -609,7 +631,7 @@ async function resolveGitHubBranch(repository: string, branch: string): Promise<
   }
 
   const refs = new TextDecoder().decode(await response.arrayBuffer());
-  const escapedBranch = branch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedBranch = branch.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
   const match = refs.match(new RegExp(`([0-9a-f]{40}) refs/heads/${escapedBranch}(?:\\n|\\0)`));
 
   if (!match) {
@@ -619,9 +641,9 @@ async function resolveGitHubBranch(repository: string, branch: string): Promise<
   return match[1];
 }
 
-function readTarTextFiles(bytes: Uint8Array): Array<{ path: string; content: string }> {
+function readTarTextFiles(bytes: Uint8Array): Array<WorkspaceFile> {
   const decoder = new TextDecoder();
-  const files: Array<{ path: string; content: string }> = [];
+  const files: Array<WorkspaceFile> = [];
   let offset = 0;
   let totalBytes = 0;
 
@@ -714,10 +736,7 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-function compactFailure(
-  label: string,
-  result: { stdout: string; stderr: string; exitCode: number | null },
-): string {
+function compactFailure(label: string, result: CommandFailure): string {
   const detail = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
 
   return truncate(`${label} (exit ${result.exitCode})${detail ? `\n${detail}` : ""}`);

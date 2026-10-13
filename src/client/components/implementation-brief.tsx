@@ -14,6 +14,17 @@ import {
 import { useState, type FormEvent } from "react";
 import type { ImplementationBrief as Brief, RoomDecision } from "../../shared/protocol";
 import { formatTime } from "../event-display";
+import { keyedTextItems } from "../keyed-text-items";
+
+interface ReviewMetaProps {
+  brief: Brief;
+}
+
+interface BriefListProps {
+  title: string;
+  items: string[];
+  checks?: boolean;
+}
 
 interface ImplementationBriefProps {
   brief: Brief;
@@ -379,7 +390,7 @@ function ReviewPanel({
   );
 }
 
-function ReviewMeta({ brief }: { brief: Brief }) {
+function ReviewMeta({ brief }: ReviewMetaProps) {
   const actor = brief.review.resolvedBy ?? brief.review.startedBy;
   const at = brief.review.resolvedAt ?? brief.review.startedAt;
 
@@ -410,15 +421,7 @@ function reviewStatusLabel(status: Brief["review"]["status"]) {
   return "Draft";
 }
 
-function BriefList({
-  title,
-  items,
-  checks = false,
-}: {
-  title: string;
-  items: string[];
-  checks?: boolean;
-}) {
+function BriefList({ title, items, checks = false }: BriefListProps) {
   if (!items.length) {
     return null;
   }
@@ -430,10 +433,10 @@ function BriefList({
         {title}
       </strong>
       <ul>
-        {items.map((item, index) => (
-          <li key={`${index}:${item}`}>
+        {keyedTextItems(items).map((item) => (
+          <li key={item.key}>
             {checks ? <CheckCircle2 size={12} /> : null}
-            <span>{item}</span>
+            <span>{item.text}</span>
           </li>
         ))}
       </ul>

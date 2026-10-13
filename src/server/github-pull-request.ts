@@ -214,6 +214,7 @@ export class GitHubPullRequestClient {
     }
 
     for (const deployment of deployments) {
+      // eslint-disable-next-line no-await-in-loop -- The first deployment with a status wins; do not fetch older deployments unnecessarily.
       const statuses = await this.request(
         statusesSchema,
         `/repos/${repository}/deployments/${deployment.id}/statuses?per_page=20`,
@@ -277,6 +278,7 @@ export class GitHubPullRequestClient {
 
   private async waitForCommit(repository: string, sha: string): Promise<GitCommitResponse> {
     for (let attempt = 0; attempt < 20; attempt += 1) {
+      // eslint-disable-next-line no-await-in-loop -- Poll for fork replication after each completed request and backoff.
       const commit = await this.request(
         commitSchema,
         `/repos/${repository}/git/commits/${sha}`,
@@ -288,7 +290,10 @@ export class GitHubPullRequestClient {
         return commit;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, Math.min(250 * 2 ** attempt, 2_000)));
+      // eslint-disable-next-line no-await-in-loop -- Delay the next replication poll until this attempt has completed.
+      await new Promise((resolve) => {
+        setTimeout(resolve, Math.min(250 * 2 ** attempt, 2_000));
+      });
     }
 
     throw new Error(`GitHub fork did not make commit ${sha.slice(0, 12)} available in time`);
@@ -315,7 +320,9 @@ export class GitHubPullRequestClient {
       "X-GitHub-Api-Version": API_VERSION,
     });
 
-    new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+    for (const [name, value] of new Headers(init.headers)) {
+      headers.set(name, value);
+    }
 
     const response = await this.fetcher.call(globalThis, `https://api.github.com${path}`, {
       ...init,
@@ -342,8 +349,8 @@ export class GitHubPullRequestClient {
 function branchName(roomID: string): string {
   const room = roomID
     .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-+/g, "-")
+    .replaceAll(/[^a-z0-9-]/g, "-")
+    .replaceAll(/-+/g, "-")
     .slice(0, 64);
 
   return `relay/${room || "session"}--${Date.now().toString(36)}`;

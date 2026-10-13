@@ -30,6 +30,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@aranlucas/oxforge": "^0.1.1",
     "@aranlucas/oxlint-plugin-anti-slop": "0.1.0",
     "@cloudflare/vite-plugin": "^2.0.0-beta.sha-c82c3efb3",
     "@cloudflare/workers-types": "^5.20261008.1",
@@ -40,9 +41,9 @@
     "@vitejs/plugin-react": "^6.1.2",
     "cf": "1.0.0-beta.13",
     "jsdom": "^30.1.2",
-    "oxfmt": "^0.72.0",
-    "oxlint": "1.87.0",
-    "oxlint-tsgolint": "^7.0.2003",
+    "oxfmt": "^0.73.0",
+    "oxlint": "1.88.0",
+    "oxlint-tsgolint": "^7.0.2004",
     "portless": "0.15.7",
     "terser": "5.51.2",
     "tsx": "^4.23.15",

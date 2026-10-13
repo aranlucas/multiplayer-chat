@@ -21,6 +21,9 @@ import { AgentRoomCore, type RoomContext, type RoomSocket } from "./agent-room-c
 import { RepositoryWorkspace } from "./workspace";
 import { parseServerMessage } from "../shared/protocol";
 
+type WorkspaceContentRow = { content: string };
+type EventCursorRow = { opencode_event_cursor: string };
+
 const databases: ReturnType<typeof sqliteStorage>[] = [];
 
 const info = {
@@ -111,7 +114,7 @@ async function createRoom(mode: "live" | "simulation" = "live") {
     },
     changes: () =>
       database.sql
-        .exec<{ content: string }>("SELECT content FROM relay_workspace_changes ORDER BY path")
+        .exec<WorkspaceContentRow>("SELECT content FROM relay_workspace_changes ORDER BY path")
         .toArray()
         .map((row) => row.content),
   };
@@ -171,7 +174,7 @@ describe("room turn ownership", () => {
     });
     expect(
       fixture.database.sql
-        .exec<{ opencode_event_cursor: string }>("SELECT opencode_event_cursor FROM relay_room")
+        .exec<EventCursorRow>("SELECT opencode_event_cursor FROM relay_room")
         .one().opencode_event_cursor,
     ).toBe("new");
     expect(fixture.changes()).toEqual(["new edits"]);

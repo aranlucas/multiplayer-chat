@@ -26,6 +26,8 @@ export interface WorkerEnv extends RoomEnv {
   ASSETS: Fetcher;
 }
 
+type ProviderConfiguration = NonNullable<OpenCodeWorkerd.Configuration["providers"]>[string];
+
 const MUSE_SPARK_MODEL = "opencode/muse-spark-1.2-contributor-free";
 
 const MUSE_SPARK_MODEL_NAME = "Muse Spark 1.2 Contributor Free";
@@ -111,8 +113,6 @@ export function openCodeConfiguration(
 ): OpenCodeWorkerd.Configuration {
   const gateway = openRouterGatewayConfiguration(env);
   const [modelProvider] = env.OPENCODE_MODEL.split("/", 1);
-
-  type ProviderConfiguration = NonNullable<OpenCodeWorkerd.Configuration["providers"]>[string];
 
   const providers: Record<string, ProviderConfiguration> = {};
 

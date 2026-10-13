@@ -18,7 +18,7 @@ export function coalesceTimelineEvents(events: TimelineEvent[]): TimelineEvent[]
   const tools = new Map<string, number>();
   const forms = new Map<string, number>();
 
-  for (const event of [...events].sort((left, right) => left.seq - right.seq)) {
+  for (const event of events.toSorted((left, right) => left.seq - right.seq)) {
     const raw = rawEvent(event);
 
     if (!raw) {

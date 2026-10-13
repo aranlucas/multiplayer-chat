@@ -7,6 +7,15 @@ import {
   type SandboxExecution,
 } from "./railway-sandbox";
 
+interface InterruptedOutput {
+  stdout?: string;
+  stderr?: string;
+}
+interface MockSandbox extends SandboxConnection {
+  exec: ReturnType<typeof vi.fn<SandboxConnection["exec"]>>;
+  refresh: ReturnType<typeof vi.fn<() => Promise<void | SandboxConnection>>>;
+}
+
 const databases: ReturnType<typeof sqliteStorage>[] = [];
 
 afterEach(() => {
@@ -117,10 +126,10 @@ describe("RailwayRoomSandbox.exec", () => {
       fakeExecHandle(successfulResult, "exec-session-2"),
     );
 
-    sandbox.refresh.mockImplementation(async () => {
+    sandbox.refresh.mockImplementation(() => {
       Object.defineProperty(sandbox, "status", { value: "DESTROYED" });
 
-      return sandbox;
+      return Promise.resolve(sandbox);
     });
     const roomSandbox = railwayRoomSandbox(sandbox);
 
@@ -145,7 +154,7 @@ function fakeSandbox(...handles: SandboxExecution[]) {
 
   const refresh = vi.fn<() => Promise<void | SandboxConnection>>().mockResolvedValue(undefined);
 
-  const sandbox: SandboxConnection & { exec: typeof exec; refresh: typeof refresh } = {
+  const sandbox: MockSandbox = {
     id: "sandbox-1",
     status: "RUNNING",
     exec,
@@ -174,10 +183,7 @@ function fakeExecHandle(
 function execInterrupted({
   stdout = "",
   stderr = "",
-}: {
-  stdout?: string;
-  stderr?: string;
-} = {}): ExecInterruptedError {
+}: InterruptedOutput = {}): ExecInterruptedError {
   return new ExecInterruptedError({
     closeCode: 1006,
     reason: "WebSocket disconnected without sending Close frame.",

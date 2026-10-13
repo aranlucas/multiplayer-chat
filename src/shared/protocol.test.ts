@@ -43,6 +43,24 @@ describe("room protocol", () => {
     });
   });
 
+  it("discards malformed optional identifiers without rejecting a valid message", () => {
+    expect(
+      parseClientMessage({
+        type: "decision.create",
+        text: "Keep the room in sync",
+        rationale: "Preserve ordered state",
+        requestID: 42,
+        sourceEventID: { invalid: true },
+      }),
+    ).toEqual({
+      type: "decision.create",
+      text: "Keep the room in sync",
+      rationale: "Preserve ordered state",
+      requestID: undefined,
+      sourceEventID: undefined,
+    });
+  });
+
   it("keeps only pending prompts in the queue", () => {
     const actor = {
       id: "participant-1",

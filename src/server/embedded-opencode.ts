@@ -316,7 +316,7 @@ export class EmbeddedOpenCodeRunner {
               cost.cache.write === 0,
           ),
       }))
-      .sort((left, right) =>
+      .toSorted((left, right) =>
         left.free === right.free ? left.name.localeCompare(right.name) : left.free ? -1 : 1,
       );
   }
@@ -327,7 +327,7 @@ export class EmbeddedOpenCodeRunner {
     model: string,
   ) {
     if (sessionID) {
-      const existing = await opencode.sessions.get({ sessionID }).catch(() => undefined);
+      const existing = await opencode.sessions.get({ sessionID }).catch(() => {});
 
       if (existing) {
         const modelRef = openCodeModelRef(model);
