@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App";
-import { LandingPage } from "./LandingPage";
+import { App } from "./app";
+import { LandingPage } from "./landing-page";
 import { resolveRelayBootstrap } from "./room-bootstrap";
 import "./styles.css";
 
@@ -21,15 +21,15 @@ if (accent) {
 
 document.documentElement.dataset.relayBuild = import.meta.env.VITE_RELAY_BUILD ?? "production";
 
-if (window.location.pathname.startsWith('/r/')) {
+if (window.location.pathname.startsWith("/r/")) {
   resolveRelayBootstrap()
-    .then((bootstrap) => {
+    .then((bootstrap) =>
       root.render(
         <StrictMode>
           <App bootstrap={bootstrap} />
         </StrictMode>,
-      );
-    })
+      ),
+    )
     .catch((cause: unknown) => {
       root.render(
         <main className="handoff-error">

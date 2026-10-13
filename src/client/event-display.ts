@@ -52,20 +52,20 @@ export type DisplayEvent =
 
 const toolInputSchema = z
   .object({
-    command: z.string().optional().catch(),
-    filePath: z.string().optional().catch(),
-    replaceAll: z.boolean().optional().catch(),
+    command: z.string().optional().catch(undefined),
+    filePath: z.string().optional().catch(undefined),
+    replaceAll: z.boolean().optional().catch(undefined),
     questions: z
-      .array(z.object({ question: z.string().optional().catch() }).catch({}))
+      .array(z.object({ question: z.string().optional().catch(undefined) }).catch({}))
       .optional()
-      .catch(),
+      .catch(undefined),
   })
   .catch({});
 
 const questionOptionSchema = z.object({
   value: z.string(),
   label: z.string(),
-  description: z.string().optional().catch(),
+  description: z.string().optional().catch(undefined),
 });
 
 const questionFieldSchema = z.object({
@@ -78,7 +78,7 @@ const questionFieldSchema = z.object({
     .transform(() => false)
     .catch(true),
   options: z
-    .array(questionOptionSchema.optional().catch())
+    .array(questionOptionSchema.optional().catch(undefined))
     .catch([])
     .transform((values) => values.flatMap((value) => (value ? [value] : []))),
 });
@@ -87,7 +87,7 @@ const questionFormSchema = z.object({
   id: z.string(),
   sessionID: z.string(),
   metadata: z.object({ kind: z.string() }),
-  fields: z.array(questionFieldSchema.optional().catch()),
+  fields: z.array(questionFieldSchema.optional().catch(undefined)),
 });
 
 const questionAnswerValueSchema = z.union([z.string(), z.array(z.string())]);
@@ -330,10 +330,9 @@ export function displayEvent(event: TimelineEvent): DisplayEvent {
   };
 }
 
-function displayQuestion(
-  type: string,
-  data: JsonRecord,
-): Extract<DisplayEvent, { type: "question" }> | undefined {
+type QuestionDisplay = Extract<DisplayEvent, { type: "question" }>;
+
+function displayQuestion(type: string, data: JsonRecord): QuestionDisplay | undefined {
   if (!type.startsWith("form.")) {
     return undefined;
   }

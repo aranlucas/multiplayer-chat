@@ -6,10 +6,10 @@ describe("railwayTools", () => {
   it("checkpoints an edit immediately after writing it", async () => {
     const sandbox = {
       readFile: vi.fn().mockResolvedValue("const enabled = false;\n"),
-      writeFile: vi.fn().mockResolvedValue(),
+      writeFile: vi.fn().mockResolvedValue(undefined),
     };
 
-    const checkpointWorkspace = vi.fn().mockResolvedValue();
+    const checkpointWorkspace = vi.fn().mockResolvedValue(undefined);
 
     const tools = registeredTools(sandboxFixture(sandbox), checkpointWorkspace);
 
@@ -50,7 +50,7 @@ describe("railwayTools", () => {
       }),
     };
 
-    const checkpointWorkspace = vi.fn().mockResolvedValue();
+    const checkpointWorkspace = vi.fn().mockResolvedValue(undefined);
 
     const tools = registeredTools(sandboxFixture(sandbox), checkpointWorkspace);
 
@@ -62,7 +62,7 @@ describe("railwayTools", () => {
 
     await shell.execute(
       { command: "apply-some-change" },
-      { progress: vi.fn().mockResolvedValue() },
+      { progress: vi.fn().mockResolvedValue(undefined) },
     );
 
     expect(checkpointWorkspace).toHaveBeenCalledOnce();

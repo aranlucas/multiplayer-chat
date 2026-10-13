@@ -19,18 +19,28 @@ export interface SimulatedQueueItem {
   text: string;
 }
 
+type SimulatedTurnOptions = {
+  prompt: string;
+  workspace: SimulatedWorkspace;
+  emitEvent: (payload: JsonRecord) => void;
+  wait?: (milliseconds: number) => Promise<void>;
+};
+
+type SimulatedStep = { delay: number; payload: JsonRecord };
+
+type SimulatedQueueOptions = {
+  nextQueuedPrompt: () => SimulatedQueueItem | undefined;
+  consumeQueuedPrompt: (eventID: string) => void;
+  runTurn: (text: string) => Promise<void>;
+};
+
 export function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, milliseconds);
   });
 }
 
-export async function runSimulatedTurn(options: {
-  prompt: string;
-  workspace: SimulatedWorkspace;
-  emitEvent: (payload: JsonRecord) => void;
-  wait?: (milliseconds: number) => Promise<void>;
-}): Promise<void> {
+export async function runSimulatedTurn(options: SimulatedTurnOptions): Promise<void> {
   const delay = options.wait ?? wait;
   const searchTerm = extractSearchTerm(options.prompt);
   const workspace = await options.workspace.ensureReady();
@@ -41,7 +51,7 @@ export async function runSimulatedTurn(options: {
     ? "Workers-native GitHub snapshot"
     : "Railway Sandbox";
 
-  const sequence: Array<{ delay: number; payload: JsonRecord }> = [
+  const sequence: Array<SimulatedStep> = [
     {
       delay: 180,
       payload: {
@@ -89,16 +99,13 @@ export async function runSimulatedTurn(options: {
   ];
 
   for (const step of sequence) {
+    // eslint-disable-next-line no-await-in-loop -- Playback events must retain their scripted order and timing.
     await delay(step.delay);
     options.emitEvent(step.payload);
   }
 }
 
-export async function drainSimulatedQueue(options: {
-  nextQueuedPrompt: () => SimulatedQueueItem | undefined;
-  consumeQueuedPrompt: (eventID: string) => void;
-  runTurn: (text: string) => Promise<void>;
-}): Promise<void> {
+export async function drainSimulatedQueue(options: SimulatedQueueOptions): Promise<void> {
   while (true) {
     const next = options.nextQueuedPrompt();
 
@@ -107,6 +114,7 @@ export async function drainSimulatedQueue(options: {
     }
 
     options.consumeQueuedPrompt(next.eventID);
+    // eslint-disable-next-line no-await-in-loop -- Each queued turn must complete before consuming the next prompt.
     await options.runTurn(next.text);
   }
 }

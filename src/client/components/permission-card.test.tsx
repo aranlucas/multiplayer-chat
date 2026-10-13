@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { PermissionRequest } from "../../shared/protocol";
-import { PermissionCard } from "./PermissionCard";
+import { PermissionCard } from "./permission-card";
 
 function permission(overrides: Partial<PermissionRequest> = {}): PermissionRequest {
   return {

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ImplementationBrief as Brief, PermissionRequest } from "../../shared/protocol";
-import { CollaborationRail } from "./CollaborationRail";
+import { CollaborationRail } from "./collaboration-rail";
 
 const brief: Brief = {
   objective: "Ship a plan review workflow",

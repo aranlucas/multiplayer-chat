@@ -14,8 +14,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { PermissionRequest, TimelineEvent } from "../../shared/protocol";
 import { displayEvent, formatTime } from "../event-display";
-import { PermissionCard } from "./PermissionCard";
-import { QuestionCard } from "./QuestionCard";
+import { PermissionCard } from "./permission-card";
+import { QuestionCard } from "./question-card";
 
 interface TranscriptProps {
   events: TimelineEvent[];
@@ -29,6 +29,17 @@ interface TranscriptProps {
     answer: Record<string, string | string[]>,
   ) => boolean;
   onQuestionCancel: (sessionID: string, formID: string) => boolean;
+}
+
+interface ToolEventProps {
+  event: TimelineEvent;
+  selected: boolean;
+  elementRef?: React.RefObject<HTMLDivElement | null>;
+}
+
+interface TranscriptEventProps extends ToolEventProps {
+  onQuestionReply: TranscriptProps["onQuestionReply"];
+  onQuestionCancel: TranscriptProps["onQuestionCancel"];
 }
 
 export function Transcript({
@@ -95,13 +106,7 @@ function TranscriptEvent({
   elementRef,
   onQuestionReply,
   onQuestionCancel,
-}: {
-  event: TimelineEvent;
-  selected: boolean;
-  elementRef?: React.RefObject<HTMLDivElement | null>;
-  onQuestionReply: TranscriptProps["onQuestionReply"];
-  onQuestionCancel: TranscriptProps["onQuestionCancel"];
-}) {
+}: TranscriptEventProps) {
   const display = displayEvent(event);
 
   if (display.type === "tool") {
@@ -170,15 +175,7 @@ function TranscriptEvent({
   );
 }
 
-function ToolEvent({
-  event,
-  selected,
-  elementRef,
-}: {
-  event: TimelineEvent;
-  selected: boolean;
-  elementRef?: React.RefObject<HTMLDivElement | null>;
-}) {
+function ToolEvent({ event, selected, elementRef }: ToolEventProps) {
   const display = displayEvent(event);
   const [expanded, setExpanded] = useState(display.type === "tool" && Boolean(display.output));
   const [copied, setCopied] = useState(false);
@@ -254,8 +251,6 @@ function ToolEvent({
 async function copyText(value: string) {
   try {
     await navigator.clipboard.writeText(value);
-
-    return;
   } catch {
     const textarea = document.createElement("textarea");
     textarea.value = value;

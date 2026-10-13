@@ -54,12 +54,97 @@ import {
 } from "./github-pull-request";
 import { sealGitHubCredential, unsealGitHubCredential } from "./github-auth";
 
+type CreatePullRequestInput = {
+  accessToken: string;
+  login: string;
+  title?: string;
+  body?: string;
+};
+
+type RecordDeploymentInput = {
+  commitSHA: string;
+  status: RoomRevision["status"];
+  previewURL?: string;
+  provider?: string;
+  deploymentID?: string;
+  failure?: string;
+};
+
+type CreateLocalPreviewInput = {
+  previewURL: string;
+  commitSHA?: string;
+};
+
+type CreateHandoffInput = {
+  participant: HandoffParticipant;
+  clientState?: HandoffClientState;
+  currentOrigin: string;
+  controlOrigin: string;
+};
+
+type HandoffTicket = { url: string; expiresAt: number };
+
+type RedeemHandoffInput = { token: string; targetOrigin: string };
+
+type RedeemedHandoff = {
+  participant: HandoffParticipant;
+  clientState?: HandoffClientState;
+  roomID: string;
+};
+
+type ActivateRevisionInput = {
+  revisionID: string;
+  currentOrigin: string;
+};
+
+type SqlNameRow = { name: string };
+
+type SqlCountRow = { count: number };
+
+type OpenCodeCursorRow = { opencode_event_cursor: string | null };
+
+type InsertRevisionInput = {
+  workspaceRevision: number;
+  commitSHA: string;
+  status: RoomRevision["status"];
+  previewURL?: string;
+  provider?: string;
+};
+
+type RevisionSequenceRow = { sequence: number };
+
+type GitHubCredentialRow = { github_credential: string | null };
+
+type RoomRow = {
+  room_id: string;
+  title: string;
+  repository: string;
+  branch: string;
+  agent_status: RoomInfo["agentStatus"];
+  opencode_model: string | null;
+  opencode_session_id: string | null;
+  commit_sha: string | null;
+  workspace_status: RoomInfo["workspaceStatus"];
+  workspace_error: string | null;
+  pull_request_url: string | null;
+  pull_request_number: number | null;
+  pull_request_branch: string | null;
+  pull_request_repository: string | null;
+  pull_request_head_sha: string | null;
+  workspace_revision: number;
+  published_workspace_revision: number;
+  github_credential: string | null;
+  title_auto: number;
+};
+
+type PreviewReadiness = { ready?: boolean; commitSHA?: string; roomProtocol?: number };
+
 const socketAttachmentSchema = z.object({ participant: actorSchema });
 
 const handoffClientStateSchema = z.object({
-  draft: z.string().optional().catch(),
-  selectedID: z.string().optional().catch(),
-  mobileTab: z.enum(["transcript", "brief", "people", "queue"]).optional().catch(),
+  draft: z.string().optional().catch(undefined),
+  selectedID: z.string().optional().catch(undefined),
+  mobileTab: z.enum(["transcript", "brief", "people", "queue"]).optional().catch(undefined),
 });
 
 interface SocketAttachment {
@@ -250,6 +335,7 @@ export class AgentRoomCore {
     }
   }
 
+  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
   async initialize(roomID: string): Promise<void> {
     this.ensureRoom(this.ctx.id.name ?? roomID);
 
@@ -259,6 +345,8 @@ export class AgentRoomCore {
           .ensureReady()
           .then(() => {
             this.broadcast({ type: "room", room: this.getRoom() });
+
+            return undefined;
           })
           .catch((error) => {
             console.warn("Repository workspace initialization deferred", error);
@@ -268,27 +356,17 @@ export class AgentRoomCore {
     }
   }
 
-  async createPullRequest(input: {
-    accessToken: string;
-    login: string;
-    title?: string;
-    body?: string;
-  }): Promise<PullRequestResult> {
+  async createPullRequest(input: CreatePullRequestInput): Promise<PullRequestResult> {
     if (!this.pullRequestPublication) {
       this.pullRequestPublication = this.publishPullRequest(input).finally(() => {
         this.pullRequestPublication = undefined;
       });
     }
 
-    return this.pullRequestPublication;
+    return await this.pullRequestPublication;
   }
 
-  protected async publishPullRequest(input: {
-    accessToken: string;
-    login: string;
-    title?: string;
-    body?: string;
-  }): Promise<PullRequestResult> {
+  protected async publishPullRequest(input: CreatePullRequestInput): Promise<PullRequestResult> {
     const workspace = await this.workspace.pullRequestWorkspace();
     const room = this.getRoom();
     const title = cleanPullRequestText(input.title, `Relay: ${room.title}`, 160);
@@ -396,18 +474,13 @@ export class AgentRoomCore {
         return result;
       }
 
+      // eslint-disable-next-line no-await-in-loop -- Publish each captured revision before checking for newer workspace edits.
       result = await this.createPullRequest(await unsealGitHubCredential(credential, this.env));
     }
   }
 
-  async recordDeployment(input: {
-    commitSHA: string;
-    status: RoomRevision["status"];
-    previewURL?: string;
-    provider?: string;
-    deploymentID?: string;
-    failure?: string;
-  }): Promise<RoomRevision> {
+  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
+  async recordDeployment(input: RecordDeploymentInput): Promise<RoomRevision> {
     const revision = this.revisionForCommit(input.commitSHA);
 
     if (!revision) {
@@ -469,10 +542,8 @@ export class AgentRoomCore {
     return updated;
   }
 
-  async createLocalPreview(input: {
-    previewURL: string;
-    commitSHA?: string;
-  }): Promise<RoomRevision> {
+  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
+  async createLocalPreview(input: CreateLocalPreviewInput): Promise<RoomRevision> {
     const room = this.getRoom();
     const workspaceRevision = room.workspaceRevision + 1;
 
@@ -514,12 +585,7 @@ export class AgentRoomCore {
     return revision;
   }
 
-  async createHandoff(input: {
-    participant: HandoffParticipant;
-    clientState?: HandoffClientState;
-    currentOrigin: string;
-    controlOrigin: string;
-  }): Promise<{ url: string; expiresAt: number }> {
+  async createHandoff(input: CreateHandoffInput): Promise<HandoffTicket> {
     const revision = this.latestRevision();
 
     if (!revision?.previewURL || revision.status !== "ready") {
@@ -555,11 +621,7 @@ export class AgentRoomCore {
     return { url: target.toString(), expiresAt };
   }
 
-  async redeemHandoff(input: { token: string; targetOrigin: string }): Promise<{
-    participant: HandoffParticipant;
-    clientState?: HandoffClientState;
-    roomID: string;
-  }> {
+  async redeemHandoff(input: RedeemHandoffInput): Promise<RedeemedHandoff> {
     if (!/^[a-f0-9]{64}$/i.test(input.token)) {
       throw new Error("Invalid room handoff ticket");
     }
@@ -607,10 +669,8 @@ export class AgentRoomCore {
     };
   }
 
-  async activateRevision(input: {
-    revisionID: string;
-    currentOrigin: string;
-  }): Promise<RoomRevision> {
+  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
+  async activateRevision(input: ActivateRevisionInput): Promise<RoomRevision> {
     const revision = this.revisionByID(input.revisionID);
 
     if (!revision?.previewURL || revision.status !== "ready") {
@@ -718,6 +778,7 @@ export class AgentRoomCore {
     }
   }
 
+  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return Response.json(this.snapshot());
@@ -767,6 +828,7 @@ export class AgentRoomCore {
     }
   }
 
+  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
   async webSocketClose(socket: RoomSocket): Promise<void> {
     const attachment = socketAttachmentSchema.nullable().parse(socket.deserializeAttachment());
 
@@ -914,14 +976,14 @@ export class AgentRoomCore {
 
   protected hideRelayTablesForOpenCodeBootstrap(): string[] {
     const tables = this.ctx.storage.sql
-      .exec<{ name: string }>(
+      .exec<SqlNameRow>(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND (name LIKE 'relay_%' OR name LIKE '_opencode_bootstrap_relay_%')",
       )
       .toArray()
       .map((row) => row.name);
 
     const hasOpenCodeSchema = this.ctx.storage.sql
-      .exec<{ count: number }>(
+      .exec<SqlCountRow>(
         "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('session', 'session_v2')",
       )
       .one().count;
@@ -951,7 +1013,7 @@ export class AgentRoomCore {
       const visible = hidden.replace(/^_opencode_bootstrap_/, "");
 
       const exists = this.ctx.storage.sql
-        .exec<{ count: number }>(
+        .exec<SqlCountRow>(
           "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = ?",
           hidden,
         )
@@ -964,9 +1026,7 @@ export class AgentRoomCore {
   }
 
   protected ensureColumn(table: string, column: string, definition: string) {
-    const columns = this.ctx.storage.sql
-      .exec<{ name: string }>(`PRAGMA table_info(${table})`)
-      .toArray();
+    const columns = this.ctx.storage.sql.exec<SqlNameRow>(`PRAGMA table_info(${table})`).toArray();
 
     if (!columns.some((candidate) => candidate.name === column)) {
       this.ctx.storage.sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
@@ -975,7 +1035,7 @@ export class AgentRoomCore {
 
   protected ensureRoom(roomID: string) {
     const existing = this.ctx.storage.sql
-      .exec<{ count: number }>("SELECT COUNT(*) AS count FROM relay_room")
+      .exec<SqlCountRow>("SELECT COUNT(*) AS count FROM relay_room")
       .one();
 
     if (existing.count) {
@@ -1563,8 +1623,8 @@ export class AgentRoomCore {
 
     const eventIdentity = z
       .object({
-        id: z.string().optional().catch(),
-        created: z.number().optional().catch(),
+        id: z.string().optional().catch(undefined),
+        created: z.number().optional().catch(undefined),
       })
       .parse(eventRecord);
 
@@ -1590,9 +1650,7 @@ export class AgentRoomCore {
   protected openCodeCursor(): string | undefined {
     return (
       this.ctx.storage.sql
-        .exec<{ opencode_event_cursor: string | null }>(
-          "SELECT opencode_event_cursor FROM relay_room WHERE singleton = 1",
-        )
+        .exec<OpenCodeCursorRow>("SELECT opencode_event_cursor FROM relay_room WHERE singleton = 1")
         .one().opencode_event_cursor ?? undefined
     );
   }
@@ -1633,8 +1691,8 @@ export class AgentRoomCore {
   protected captureOpenCodePermission(event: JsonRecord, data: JsonRecord) {
     const permission = z
       .object({
-        id: z.string().optional().catch(),
-        requestID: z.string().optional().catch(),
+        id: z.string().optional().catch(undefined),
+        requestID: z.string().optional().catch(undefined),
         message: z.string().nullable().catch(null),
       })
       .parse(data);
@@ -1669,6 +1727,7 @@ export class AgentRoomCore {
     }
   }
 
+  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
   protected async replyToPermission(
     requestID: string,
     reply: "once" | "reject",
@@ -1827,17 +1886,11 @@ export class AgentRoomCore {
     }
   }
 
-  protected insertRevision(input: {
-    workspaceRevision: number;
-    commitSHA: string;
-    status: RoomRevision["status"];
-    previewURL?: string;
-    provider?: string;
-  }): RoomRevision {
+  protected insertRevision(input: InsertRevisionInput): RoomRevision {
     const now = Date.now();
 
     const sequence = this.ctx.storage.sql
-      .exec<{ sequence: number }>(
+      .exec<RevisionSequenceRow>(
         "SELECT COALESCE(MAX(sequence), 0) + 1 AS sequence FROM relay_revisions",
       )
       .one().sequence;
@@ -1918,36 +1971,14 @@ export class AgentRoomCore {
   protected githubCredential(): string | undefined {
     return (
       this.ctx.storage.sql
-        .exec<{ github_credential: string | null }>(
-          "SELECT github_credential FROM relay_room WHERE singleton = 1",
-        )
+        .exec<GitHubCredentialRow>("SELECT github_credential FROM relay_room WHERE singleton = 1")
         .one().github_credential ?? undefined
     );
   }
 
   protected getRoomOrNull(): RoomInfo | null {
     const rows = this.ctx.storage.sql
-      .exec<{
-        room_id: string;
-        title: string;
-        repository: string;
-        branch: string;
-        agent_status: RoomInfo["agentStatus"];
-        opencode_model: string | null;
-        opencode_session_id: string | null;
-        commit_sha: string | null;
-        workspace_status: RoomInfo["workspaceStatus"];
-        workspace_error: string | null;
-        pull_request_url: string | null;
-        pull_request_number: number | null;
-        pull_request_branch: string | null;
-        pull_request_repository: string | null;
-        pull_request_head_sha: string | null;
-        workspace_revision: number;
-        published_workspace_revision: number;
-        github_credential: string | null;
-        title_auto: number;
-      }>("SELECT * FROM relay_room WHERE singleton = 1")
+      .exec<RoomRow>("SELECT * FROM relay_room WHERE singleton = 1")
       .toArray();
 
     if (!rows.length) {
@@ -2008,7 +2039,7 @@ export class AgentRoomCore {
   protected hasEvent(id: string): boolean {
     return (
       this.ctx.storage.sql
-        .exec<{ count: number }>("SELECT COUNT(*) AS count FROM relay_events WHERE id = ?", id)
+        .exec<SqlCountRow>("SELECT COUNT(*) AS count FROM relay_events WHERE id = ?", id)
         .one().count > 0
     );
   }
@@ -2165,6 +2196,7 @@ function hashCode(value: string): number {
     hash = (hash << 5) - hash + value.charCodeAt(index);
   }
 
+  // eslint-disable-next-line unicorn/prefer-math-trunc -- Participant colors depend on signed 32-bit overflow, not numeric truncation.
   return hash | 0;
 }
 
@@ -2217,9 +2249,7 @@ async function verifyReadyPreview(previewURL: string, commitSHA: string) {
     signal: AbortSignal.timeout(8_000),
   });
 
-  const result: { ready?: boolean; commitSHA?: string; roomProtocol?: number } = await response
-    .json<{ ready?: boolean; commitSHA?: string; roomProtocol?: number }>()
-    .catch(() => ({}));
+  const result: PreviewReadiness = await response.json<PreviewReadiness>().catch(() => ({}));
 
   if (
     !response.ok ||

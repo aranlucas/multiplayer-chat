@@ -50,7 +50,7 @@ describe("Durable Object room identity after hibernation", () => {
     });
   });
   it("falls back to the stored room id when the Durable Object is unnamed", async () => {
-    const { room } = wokenRoom();
+    const { room } = wokenRoom(undefined);
 
     const result = await room.createHandoff({
       participant: { id: "p1", name: "Maya", role: "maintainer" },

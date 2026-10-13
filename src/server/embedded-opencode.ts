@@ -316,7 +316,7 @@ export class EmbeddedOpenCodeRunner {
               cost.cache.write === 0,
           ),
       }))
-      .sort((left, right) =>
+      .toSorted((left, right) =>
         left.free === right.free ? left.name.localeCompare(right.name) : left.free ? -1 : 1,
       );
   }
@@ -386,15 +386,15 @@ function deferredProviderFailure(event: JsonRecord): Error | undefined {
 const eventRoutingSchema = z.object({
   data: z
     .object({
-      sessionID: z.string().optional().catch(),
+      sessionID: z.string().optional().catch(undefined),
       form: z
-        .object({ sessionID: z.string().optional().catch() })
+        .object({ sessionID: z.string().optional().catch(undefined) })
         .optional()
-        .catch(),
+        .catch(undefined),
     })
     .catch({}),
   durable: z
-    .object({ seq: z.union([z.number(), z.string()]).optional().catch() })
+    .object({ seq: z.union([z.number(), z.string()]).optional().catch(undefined) })
     .catch({}),
 });
 

@@ -5,11 +5,15 @@ import { OpenCodeWorkerd } from "@opencode/sdk/workerd";
 import { EmbeddedOpenCodeRunner, openCodeHost } from "../embedded-opencode";
 import { openCodeConfiguration } from "../opencode";
 
+interface GatewayRequest {
+  url: string;
+  headers: Record<string, string>;
+}
+
 // All SDK operations in this fixture are in-process. Provider requests are captured
 // by the plugin below; this final guard prevents accidental external inference.
-globalThis.fetch = async () => {
-  throw new Error("External network disabled in SDK regression worker");
-};
+globalThis.fetch = () =>
+  Promise.reject(new Error("External network disabled in SDK regression worker"));
 
 interface TestEnv {
   HOSTS: DurableObjectNamespace<OpenCodeTestHost>;
@@ -21,7 +25,7 @@ const blockedSessions = new Set<string>();
 
 const gatewaySessions = new Set<string>();
 
-const gatewayRequests = new Map<string, { url: string; headers: Record<string, string> }>();
+const gatewayRequests = new Map<string, GatewayRequest>();
 
 const plugin = Plugin.define({
   id: "relay.sdk-regression",
@@ -83,10 +87,9 @@ export class OpenCodeTestHost extends DurableObject<TestEnv> {
     this.runner = new EmbeddedOpenCodeRunner(
       this.host.then(openCodeHost),
       {
-        ensureReady: async () => {
-          throw new Error("Form operations must not initialize the workspace");
-        },
-        syncSandboxChanges: async () => [],
+        ensureReady: () =>
+          Promise.reject(new Error("Form operations must not initialize the workspace")),
+        syncSandboxChanges: () => Promise.resolve([]),
       },
       { killActive: async () => {} },
     );
@@ -186,14 +189,17 @@ function errorTag(cause: unknown): string {
   const error = z.object({ _tag: z.string() }).safeParse(cause);
 
   if (error.success) {
+    // oxlint-disable-next-line eslint/no-underscore-dangle -- The SDK error discriminator is named _tag.
     return error.data._tag;
   }
 
   throw new Error("Unexpected SDK error", { cause });
 }
 
-export default {
+const worker = {
   fetch(request: Request, env: TestEnv): Promise<Response> {
     return env.HOSTS.getByName("sdk-regression").fetch(request);
   },
 };
+
+export default worker;

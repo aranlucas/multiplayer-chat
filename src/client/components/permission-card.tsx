@@ -1,6 +1,7 @@
 import { Check, ShieldAlert, X } from "lucide-react";
 import type { PermissionRequest } from "../../shared/protocol";
 import { formatTime } from "../event-display";
+import { keyedTextItems } from "../keyed-text-items";
 
 interface PermissionCardProps {
   permission: PermissionRequest;
@@ -27,8 +28,8 @@ export function PermissionCard({
         <span>{permission.status}</span>
       </div>
       <p>{permission.message ?? "This side effect needs maintainer approval."}</p>
-      {permission.resources.map((resource, index) => (
-        <code key={`${index}:${resource}`}>{resource}</code>
+      {keyedTextItems(permission.resources).map((resource) => (
+        <code key={resource.key}>{resource.text}</code>
       ))}
       {!compact ? (
         <div className="permission-meta">

@@ -9,7 +9,55 @@ import {
   readGitHubSession,
 } from "./server/github-auth";
 
-const app = new Hono<{ Bindings: WorkerEnv }>();
+interface AppBindings {
+  Bindings: WorkerEnv;
+}
+interface PullRequestInput {
+  title?: string;
+  body?: string;
+}
+interface HandoffParticipant {
+  id?: string;
+  name?: string;
+  role?: string;
+}
+interface HandoffClientState {
+  draft?: string;
+  selectedID?: string;
+  mobileTab?: "transcript" | "brief" | "people" | "queue";
+}
+interface HandoffInput {
+  participant?: HandoffParticipant;
+  currentOrigin?: string;
+  clientState?: HandoffClientState;
+}
+interface RedeemHandoffInput {
+  token?: string;
+}
+interface ActivateRevisionInput {
+  revisionID?: string;
+  currentOrigin?: string;
+}
+interface LocalPreviewInput {
+  previewURL?: string;
+  commitSHA?: string;
+}
+interface DeploymentInput {
+  roomID?: string;
+  commitSHA?: string;
+  status?: "waiting" | "building" | "ready" | "failed";
+  previewURL?: string;
+  provider?: string;
+  deploymentID?: string;
+  failure?: string;
+}
+interface PreviewReadiness {
+  ready?: boolean;
+  commitSHA?: string;
+  roomProtocol?: number;
+}
+
+const app = new Hono<AppBindings>();
 
 app.get("/api/health", (context) => {
   return context.json({
@@ -85,9 +133,7 @@ app.post("/api/rooms/:room/pull-requests", async (context) => {
   try {
     const roomID = safeRoomID(context.req.param("room"));
 
-    const input: { title?: string; body?: string } = await context.req
-      .json<{ title?: string; body?: string }>()
-      .catch(() => ({}));
+    const input: PullRequestInput = await context.req.json<PullRequestInput>().catch(() => ({}));
 
     const stub = context.env.AGENT_ROOMS.getByName(roomID);
     await stub.initialize(roomID);
@@ -113,15 +159,7 @@ app.post("/api/rooms/:room/handoffs", async (context) => {
   try {
     const roomID = safeRoomID(context.req.param("room"));
 
-    const input = await context.req.json<{
-      participant?: { id?: string; name?: string; role?: string };
-      currentOrigin?: string;
-      clientState?: {
-        draft?: string;
-        selectedID?: string;
-        mobileTab?: "transcript" | "brief" | "people" | "queue";
-      };
-    }>();
+    const input = await context.req.json<HandoffInput>();
 
     if (!input.participant?.id || !input.participant.name) {
       throw new Error("Participant identity is required");
@@ -155,7 +193,7 @@ app.options("/api/rooms/:room/handoffs/redeem", (context) =>
 app.post("/api/rooms/:room/handoffs/redeem", async (context) => {
   try {
     const roomID = safeRoomID(context.req.param("room"));
-    const input = await context.req.json<{ token?: string }>();
+    const input = await context.req.json<RedeemHandoffInput>();
 
     if (!input.token) {
       throw new Error("Room handoff ticket is required");
@@ -183,10 +221,7 @@ app.post("/api/rooms/:room/revisions/activate", async (context) => {
   try {
     const roomID = safeRoomID(context.req.param("room"));
 
-    const input = await context.req.json<{
-      revisionID?: string;
-      currentOrigin?: string;
-    }>();
+    const input = await context.req.json<ActivateRevisionInput>();
 
     if (!input.revisionID) {
       throw new Error("Room revision is required");
@@ -218,10 +253,7 @@ app.post("/api/rooms/:room/local-preview", async (context) => {
   try {
     const roomID = safeRoomID(context.req.param("room"));
 
-    const input = await context.req.json<{
-      previewURL?: string;
-      commitSHA?: string;
-    }>();
+    const input = await context.req.json<LocalPreviewInput>();
 
     if (!input.previewURL) {
       throw new Error("Preview URL is required");
@@ -250,15 +282,7 @@ app.post("/api/deployments", async (context) => {
   }
 
   try {
-    const input = await context.req.json<{
-      roomID?: string;
-      commitSHA?: string;
-      status?: "waiting" | "building" | "ready" | "failed";
-      previewURL?: string;
-      provider?: string;
-      deploymentID?: string;
-      failure?: string;
-    }>();
+    const input = await context.req.json<DeploymentInput>();
 
     if (!input.roomID || !input.commitSHA || !input.status) {
       throw new Error("Room, commit, and deployment status are required");
@@ -348,9 +372,7 @@ async function verifyPreview(previewURL: string, commitSHA?: string) {
     signal: AbortSignal.timeout(8_000),
   });
 
-  const result: { ready?: boolean; commitSHA?: string; roomProtocol?: number } = await response
-    .json<{ ready?: boolean; commitSHA?: string; roomProtocol?: number }>()
-    .catch(() => ({}));
+  const result: PreviewReadiness = await response.json<PreviewReadiness>().catch(() => ({}));
 
   if (!response.ok || !result.ready) {
     throw new Error("Preview did not pass its Relay readiness check");

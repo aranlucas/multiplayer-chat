@@ -6,16 +6,7 @@
     "./node_modules/@aranlucas/oxforge/configs/vitest.json",
     "./node_modules/@aranlucas/oxforge/configs/type-aware.json"
   ],
-  "plugins": [
-    "typescript",
-    "oxc",
-    "unicorn",
-    "import",
-    "react",
-    "jsx-a11y",
-    "promise",
-    "vitest"
-  ],
+  "plugins": ["typescript", "oxc", "unicorn", "import", "react", "jsx-a11y", "promise", "vitest"],
   "categories": {
     "correctness": "error"
   },
@@ -25,14 +16,8 @@
     "es2026": true
   },
   "rules": {
-    "eqeqeq": [
-      "error",
-      "always"
-    ],
-    "curly": [
-      "error",
-      "all"
-    ],
+    "eqeqeq": ["error", "always"],
+    "curly": ["error", "all"],
     "no-var": "error",
     "prefer-const": "error",
     "no-throw-literal": "error",
@@ -120,19 +105,11 @@
   },
   "overrides": [
     {
-      "files": [
-        "**/*.test.ts",
-        "**/*.test.tsx"
-      ],
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
       "rules": {
         "typescript/no-extraneous-class": "off"
       }
     }
   ],
-  "ignorePatterns": [
-    "dist/**",
-    "dist-preview/**",
-    "node_modules/**",
-    "worker-configuration.d.ts"
-  ]
+  "ignorePatterns": ["dist/**", "dist-preview/**", "node_modules/**", "worker-configuration.d.ts"]
 }

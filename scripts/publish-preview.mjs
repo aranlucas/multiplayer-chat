@@ -61,7 +61,7 @@ function readDeployment(stdout) {
       type: z.literal("preview"),
       version: z.literal(1),
       deployment_id: z.string().min(1),
-      deployment_urls: z.array(z.string().optional().catch()),
+      deployment_urls: z.array(z.string().optional().catch(undefined)),
     })
     .safeParse(JSON.parse(stdout));
 
@@ -116,12 +116,14 @@ async function report(input) {
 /** @param {string} targetURL @param {string} expectedSHA */
 async function waitUntilReady(targetURL, expectedSHA) {
   for (let attempt = 0; attempt < 30; attempt += 1) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Readiness polls must finish before retrying the same deployment.
     const response = await fetch(new URL("/__relay/ready", targetURL), {
       signal: AbortSignal.timeout(8_000),
     }).catch(() => {});
 
     const result =
       /** @type {{ ready?: boolean; commitSHA?: string; roomProtocol?: number } | undefined} */ (
+        // oxlint-disable-next-line eslint/no-await-in-loop -- Inspect each poll response before deciding whether to retry.
         await response?.json().catch(() => {})
       );
 
@@ -134,7 +136,10 @@ async function waitUntilReady(targetURL, expectedSHA) {
       return;
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Delay the next readiness attempt rather than sending concurrent polls.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 2_000);
+    });
   }
 
   throw new Error("Preview did not become healthy with the published commit");

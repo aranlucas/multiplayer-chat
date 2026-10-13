@@ -117,8 +117,6 @@ export function useGitHub(roomID: string, controlOrigin = window.location.origin
         error: errorMessage(error),
       }));
       creatingRef.current = false;
-
-      return;
     }
   }, [controlOrigin, roomID]);
 

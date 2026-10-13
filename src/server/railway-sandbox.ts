@@ -53,6 +53,11 @@ interface RailwaySandboxFactory {
   create(checkpoint: string, options: ReturnType<typeof createOptions>): Promise<SandboxConnection>;
 }
 
+type SandboxCreateSettings = {
+  idleTimeoutMinutes: number;
+  region?: string;
+};
+
 const factory: RailwaySandboxFactory = Sandbox;
 
 export class RailwayRoomSandbox {
@@ -312,10 +317,7 @@ function clientOptions(env: RailwaySandboxEnv) {
 const railwayFetch: typeof fetch = (input, init) => fetch(input, init);
 
 function createOptions(env: RailwaySandboxEnv) {
-  const options: ReturnType<typeof clientOptions> & {
-    idleTimeoutMinutes: number;
-    region?: string;
-  } = {
+  const options: ReturnType<typeof clientOptions> & SandboxCreateSettings = {
     ...clientOptions(env),
     idleTimeoutMinutes: idleTimeoutMinutes(env.RAILWAY_SANDBOX_IDLE_TIMEOUT_MINUTES),
   };

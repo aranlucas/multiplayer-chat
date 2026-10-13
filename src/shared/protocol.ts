@@ -251,7 +251,7 @@ export function safeParticipantName(value: string | null): string {
   return normalized.slice(0, 32) || "Guest";
 }
 
-const requestIDSchema = z.string().optional().catch();
+const requestIDSchema = z.string().optional().catch(undefined);
 
 const questionIDSchema = (label: string) =>
   z
@@ -355,7 +355,7 @@ const clientMessageSchema = z.discriminatedUnion("type", [
     rationale: planningTextSchema("decision rationale", 4_000).transform(
       (value) => value || undefined,
     ),
-    sourceEventID: z.string().max(200).optional().catch(),
+    sourceEventID: z.string().max(200).optional().catch(undefined),
     requestID: requestIDSchema,
   }),
   z.object({ type: z.literal("brief.review.start"), requestID: requestIDSchema }),
@@ -390,7 +390,7 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ping") }),
 ]);
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- WebSocket JSON enters here and is validated against the complete discriminated wire contract.
+// WebSocket JSON enters here and is validated against the complete discriminated wire contract.
 export function parseClientMessage(value: unknown): ClientMessage {
   return clientMessageSchema.parse(value);
 }

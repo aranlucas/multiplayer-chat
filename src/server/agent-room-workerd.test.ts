@@ -79,7 +79,10 @@ describe("room Durable Object runtime", () => {
     const snapshot = reconnected.messages.find((message) => message.type === "snapshot");
     expect(snapshot?.type).toBe("snapshot");
     expect(snapshot?.room.title).toBe("Synthetic collaborative room");
-    expect(snapshot?.participants.map((person) => person.id).sort()).toEqual(["first", "second"]);
+    expect(snapshot?.participants.map((person) => person.id).toSorted()).toEqual([
+      "first",
+      "second",
+    ]);
     expect(snapshot?.decisions).toContainEqual(
       expect.objectContaining({ text: "Keep this synthetic decision" }),
     );
@@ -89,7 +92,9 @@ describe("room Durable Object runtime", () => {
       response.end(JSON.stringify({ ready: true, roomProtocol: 1, commitSHA: "synthetic-sha" }));
     });
 
-    await new Promise<void>((resolve) => preview.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) => {
+      preview.listen(0, "127.0.0.1", resolve);
+    });
 
     try {
       const address = z.object({ port: z.number() }).parse(preview.address());
@@ -136,7 +141,9 @@ describe("room Durable Object runtime", () => {
       });
       expect((await redeem()).status).toBe(400);
     } finally {
-      await new Promise<void>((resolve) => preview.close(() => resolve()));
+      await new Promise<void>((resolve) => {
+        preview.close(() => resolve());
+      });
     }
   }, 20_000);
 });
@@ -149,6 +156,9 @@ async function waitFor(condition: () => boolean) {
       throw new Error("Local room did not produce the expected event");
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Wait for the next observation without spinning or racing poll attempts.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 10);
+    });
   }
 }

@@ -8,6 +8,11 @@ import {
   openCodeModelRef,
 } from "./embedded-opencode";
 
+interface HostOverrides {
+  sessions: Partial<OpenCodeHost["sessions"]>;
+  events?: OpenCodeHost["events"];
+}
+
 describe("openCodeModelRef", () => {
   it("preserves model IDs with nested path segments", () => {
     expect(openCodeModelRef("opencode/vendor/coding-free")).toEqual({
@@ -42,7 +47,7 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
       const changes = [{ path: "src/feature.ts", content: "export {};\n" }];
 
       const workspace = {
-        ensureReady: vi.fn().mockResolvedValue(),
+        ensureReady: vi.fn().mockResolvedValue(undefined),
         syncSandboxChanges: vi.fn().mockResolvedValue(changes),
       };
 
@@ -50,16 +55,16 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
         events: { subscribe: async function* () {} },
         sessions: {
           create: vi.fn().mockResolvedValue({ id: "session-1" }),
-          prompt: vi.fn<OpenCodeHost["sessions"]["prompt"]>().mockResolvedValue(),
-          wait: vi.fn<OpenCodeHost["sessions"]["wait"]>().mockImplementation(async () => {
+          prompt: vi.fn<OpenCodeHost["sessions"]["prompt"]>().mockResolvedValue(undefined),
+          wait: vi.fn<OpenCodeHost["sessions"]["wait"]>().mockImplementation(() => {
             controller.abort();
-            throw new Error("Transport");
+            return Promise.reject(new Error("Transport"));
           }),
-          interrupt: vi.fn().mockResolvedValue(),
+          interrupt: vi.fn().mockResolvedValue(undefined),
         },
       });
 
-      const sandbox = { killActive: vi.fn().mockResolvedValue() };
+      const sandbox = { killActive: vi.fn().mockResolvedValue(undefined) };
       const onEvent = vi.fn();
 
       const runner = new EmbeddedOpenCodeRunner(Promise.resolve(opencode), workspace, sandbox);
@@ -97,7 +102,7 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
     const changes = [{ path: "src/feature.ts", content: "export {};\n" }];
 
     const workspace = {
-      ensureReady: vi.fn().mockResolvedValue(),
+      ensureReady: vi.fn().mockResolvedValue(undefined),
       syncSandboxChanges: vi.fn().mockResolvedValue(changes),
     };
 
@@ -113,7 +118,7 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
     const onEvent = vi.fn();
 
     const runner = new EmbeddedOpenCodeRunner(Promise.resolve(opencode), workspace, {
-      killActive: vi.fn().mockResolvedValue(),
+      killActive: vi.fn().mockResolvedValue(undefined),
     });
 
     await expect(
@@ -137,7 +142,7 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
     const failure = new Error("Transport");
 
     const workspace = {
-      ensureReady: vi.fn().mockResolvedValue(),
+      ensureReady: vi.fn().mockResolvedValue(undefined),
       syncSandboxChanges: vi.fn().mockResolvedValue([]),
     };
 
@@ -148,7 +153,9 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
             yield { type: "ignored" };
           }
 
-          await new Promise((resolve) => setTimeout(resolve, 0));
+          await new Promise((resolve) => {
+            setTimeout(resolve, 0);
+          });
           throw failure;
         },
       },
@@ -166,13 +173,13 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
               signal.addEventListener("abort", () => reject(signal.reason), { once: true });
             }),
         ),
-        wait: vi.fn().mockResolvedValue(),
-        interrupt: vi.fn().mockResolvedValue(),
+        wait: vi.fn().mockResolvedValue(undefined),
+        interrupt: vi.fn().mockResolvedValue(undefined),
       },
     });
 
     const runner = new EmbeddedOpenCodeRunner(Promise.resolve(opencode), workspace, {
-      killActive: vi.fn().mockResolvedValue(),
+      killActive: vi.fn().mockResolvedValue(undefined),
     });
 
     await expect(
@@ -190,18 +197,15 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
   });
 });
 
-function hostFixture(overrides: {
-  sessions: Partial<OpenCodeHost["sessions"]>;
-  events?: OpenCodeHost["events"];
-}): OpenCodeHost {
+function hostFixture(overrides: HostOverrides): OpenCodeHost {
   return {
     sessions: {
       create: vi.fn().mockResolvedValue({ id: "session-1" }),
       get: vi.fn().mockResolvedValue({ id: "session-1" }),
-      prompt: vi.fn().mockResolvedValue(),
-      wait: vi.fn().mockResolvedValue(),
-      interrupt: vi.fn().mockResolvedValue(),
-      switchModel: vi.fn().mockResolvedValue(),
+      prompt: vi.fn().mockResolvedValue(undefined),
+      wait: vi.fn().mockResolvedValue(undefined),
+      interrupt: vi.fn().mockResolvedValue(undefined),
+      switchModel: vi.fn().mockResolvedValue(undefined),
       form: { reply: vi.fn(), cancel: vi.fn() },
       ...overrides.sessions,
     },

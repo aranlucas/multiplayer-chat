@@ -8,32 +8,33 @@ import {
   type SimulatedWorkspace,
 } from "./simulation-runner";
 
-function workspaceStub(
-  overrides: {
-    info?: Partial<WorkspaceInfo>;
-    search?: SimulatedWorkspace["search"];
-    diff?: SimulatedWorkspace["diff"];
-  } = {},
-) {
+interface WorkspaceOverrides {
+  info?: Partial<WorkspaceInfo>;
+  search?: SimulatedWorkspace["search"];
+  diff?: SimulatedWorkspace["diff"];
+}
+
+function workspaceStub(overrides: WorkspaceOverrides = {}) {
   const search = vi.fn<(query: string) => Promise<string>>(
-    overrides.search ?? (async () => "src/server/agent-room.ts:10: WebSocket"),
+    overrides.search ?? (() => Promise.resolve("src/server/agent-room.ts:10: WebSocket")),
   );
 
   const diff = vi.fn<() => Promise<string>>(
-    overrides.diff ?? (async () => "Working tree is clean."),
+    overrides.diff ?? (() => Promise.resolve("Working tree is clean.")),
   );
 
   return {
     search,
     diff,
     workspace: {
-      ensureReady: async () => ({
-        repository: "aranlucas/multiplayer-chat",
-        branch: "main",
-        commitSHA: "abcdef1234567890",
-        directory: "/workspace/repository",
-        ...overrides.info,
-      }),
+      ensureReady: () =>
+        Promise.resolve({
+          repository: "aranlucas/multiplayer-chat",
+          branch: "main",
+          commitSHA: "abcdef1234567890",
+          directory: "/workspace/repository",
+          ...overrides.info,
+        }),
       search,
       diff,
     },
@@ -65,8 +66,9 @@ describe("runSimulatedTurn", () => {
       emitEvent: (payload) => {
         payloads.push(payload);
       },
-      wait: async (milliseconds) => {
+      wait: (milliseconds) => {
         delays.push(milliseconds);
+        return Promise.resolve();
       },
     });
 
@@ -106,7 +108,9 @@ describe("runSimulatedTurn", () => {
   });
 
   it("labels a GitHub snapshot workspace and a no-match search", async () => {
-    const search = vi.fn<(query: string) => Promise<string>>(async () => "No matches found.");
+    const search = vi.fn<(query: string) => Promise<string>>(() =>
+      Promise.resolve("No matches found."),
+    );
 
     const { workspace } = workspaceStub({
       info: { directory: "github://aranlucas/multiplayer-chat@abcdef1234567890" },
@@ -139,9 +143,9 @@ describe("runSimulatedTurn", () => {
   });
 
   it("does not emit events when workspace search fails", async () => {
-    const search = vi.fn<(query: string) => Promise<string>>(async () => {
-      throw new Error("Repository search failed");
-    });
+    const search = vi
+      .fn<(query: string) => Promise<string>>()
+      .mockRejectedValue(new Error("Repository search failed"));
 
     const { workspace, diff } = workspaceStub({ search });
     const emitEvent = vi.fn();
@@ -208,8 +212,9 @@ describe("drainSimulatedQueue", () => {
         order.push(`consume:${eventID}`);
         queue.shift();
       },
-      runTurn: async (text) => {
+      runTurn: (text) => {
         order.push(`turn:${text}`);
+        return Promise.resolve();
       },
     });
 
@@ -236,9 +241,7 @@ describe("drainSimulatedQueue", () => {
           consumed.push(eventID);
           queue.shift();
         },
-        runTurn: async () => {
-          throw new Error("simulated turn failed");
-        },
+        runTurn: () => Promise.reject(new Error("simulated turn failed")),
       }),
     ).rejects.toThrow("simulated turn failed");
 

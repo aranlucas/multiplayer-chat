@@ -1,11 +1,9 @@
 import type { RoomSql } from "./storage";
 import type { RoomInfo } from "../shared/protocol";
 
-export class InactiveAgentTurnError extends Error {
-  constructor() {
-    super("Agent turn is no longer running");
-  }
-}
+type AgentTurnStateRow = { agent_turn_generation: number; agent_status: RoomInfo["agentStatus"] };
+
+export { InactiveAgentTurnError } from "./inactive-agent-turn-error";
 
 export interface AgentTurn {
   /** Checkpoints may still be saved after pause, until another turn takes ownership. */
@@ -58,7 +56,7 @@ export class TurnCoordinator {
 
   private state() {
     return this.sql
-      .exec<{ agent_turn_generation: number; agent_status: RoomInfo["agentStatus"] }>(
+      .exec<AgentTurnStateRow>(
         "SELECT agent_turn_generation, agent_status FROM relay_room WHERE singleton = 1",
       )
       .one();

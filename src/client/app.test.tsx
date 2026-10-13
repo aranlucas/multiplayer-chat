@@ -4,11 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RoomInfo } from "../shared/protocol";
 import type { RelayBootstrap } from "./room-bootstrap";
 import type { RoomState } from "./use-room";
-import { App, type AppDependencies } from "./App";
+import { App, type AppDependencies } from "./app";
 import { draftStorageKey } from "./draft-storage";
 
 const harness = (() => {
-  const createPullRequest = vi.fn(async (): Promise<string | undefined> => undefined);
+  const createPullRequest = vi.fn((): Promise<string | undefined> => Promise.resolve(undefined));
   const ok = () => true;
 
   const roomState: RoomState = {

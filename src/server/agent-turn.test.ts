@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { TurnCoordinator } from "./agent-turn";
 import { sqliteStorage } from "./fixtures/sqlite-storage";
 
+type AgentStatusRow = { agent_status: string };
+
 const databases: ReturnType<typeof sqliteStorage>[] = [];
 
 afterEach(() => {
@@ -22,8 +24,7 @@ function coordinator() {
     coordinator: new TurnCoordinator(database.sql, notify),
     restart: () => new TurnCoordinator(database.sql, notify),
     status: () =>
-      database.sql.exec<{ agent_status: string }>("SELECT agent_status FROM relay_room").one()
-        .agent_status,
+      database.sql.exec<AgentStatusRow>("SELECT agent_status FROM relay_room").one().agent_status,
   };
 }
 

@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resolveRelayBootstrap } from "./room-bootstrap";
 
+type StorageEntry = [key: string, value: string];
+
 const roomID = "native-preview-room";
 
 const alice = { id: "alice", name: "Alice", role: "maintainer" };
@@ -48,7 +50,7 @@ it("persists transferred client state on the destination before a reload", async
 
 it("keeps each tab's participant when another tab redeems a handoff on the same origin", async () => {
   await enterHandoff(alice, "Alice's draft");
-  const aliceSession: Array<[string, string]> = [];
+  const aliceSession: StorageEntry[] = [];
 
   for (let index = 0; index < sessionStorage.length; index += 1) {
     const key = sessionStorage.key(index);

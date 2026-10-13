@@ -2,7 +2,7 @@ import type { JsonRecord } from "../../shared/json-value";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { TimelineEvent } from "../../shared/protocol";
-import { Transcript } from "./Transcript";
+import { Transcript } from "./transcript";
 
 function toolEvent(
   tool: string,

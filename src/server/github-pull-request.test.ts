@@ -3,12 +3,18 @@ import { parseJsonRecord, type JsonRecord, type JsonValue } from "../shared/json
 import { describe, expect, it, vi } from "vitest";
 import { GitHubPullRequestClient } from "./github-pull-request";
 
+interface RecordedRequest {
+  url: string;
+  method?: string;
+  body?: JsonRecord;
+}
+
 describe("GitHubPullRequestClient", () => {
   it("creates blobs, a commit-pinned branch, and a pull request", async () => {
-    const requests: Array<{ url: string; body?: JsonRecord }> = [];
+    const requests: Array<RecordedRequest> = [];
     let blob = 0;
 
-    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+    const fetcher = vi.fn<typeof fetch>((input, init) => {
       const url = input instanceof Request ? input.url : String(input);
 
       const body = init?.body
@@ -101,9 +107,9 @@ describe("GitHubPullRequestClient", () => {
   });
 
   it("publishes later revisions to the same pull request branch", async () => {
-    const requests: Array<{ url: string; method?: string; body?: unknown }> = [];
+    const requests: Array<RecordedRequest> = [];
 
-    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+    const fetcher = vi.fn<typeof fetch>((input, init) => {
       const url = input instanceof Request ? input.url : String(input);
       requests.push({
         url,
@@ -179,7 +185,7 @@ describe("GitHubPullRequestClient", () => {
   });
 
   it("discovers the ready preview URL for an exact commit", async () => {
-    const fetcher = vi.fn<typeof fetch>(async (input) => {
+    const fetcher = vi.fn<typeof fetch>((input) => {
       const url = input instanceof Request ? input.url : String(input);
 
       if (url.includes("/deployments?sha=abc")) {
@@ -211,8 +217,10 @@ describe("GitHubPullRequestClient", () => {
 });
 
 function json(value: JsonValue, status = 200) {
-  return new Response(JSON.stringify(value), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+  return Promise.resolve(
+    new Response(JSON.stringify(value), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
 }

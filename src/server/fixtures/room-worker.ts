@@ -1,6 +1,7 @@
 // The regression runtime permits only its local preview readiness server.
 const localFetch = globalThis.fetch.bind(globalThis);
 
+// oxlint-disable-next-line eslint/require-await -- Preserve fetch's rejected-promise contract for invalid requests and blocked hosts.
 globalThis.fetch = async (input, init) => {
   const url = new URL(input instanceof Request ? input.url : input);
 

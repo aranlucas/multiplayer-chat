@@ -1,16 +1,16 @@
 // @vitest-environment jsdom
 import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Composer } from "./Composer";
+import { Composer } from "./composer";
 import { useState } from "react";
 
-function ComposerHarness(
-  overrides: Partial<{
-    disabled: boolean;
-    initialText: string;
-    onSend: (text: string, delivery: "steer" | "queue") => boolean;
-  }> = {},
-) {
+interface ComposerHarnessProps {
+  disabled?: boolean;
+  initialText?: string;
+  onSend?: (text: string, delivery: "steer" | "queue") => boolean;
+}
+
+function ComposerHarness(overrides: ComposerHarnessProps = {}) {
   const [text, setText] = useState(overrides.initialText ?? "");
   const onSend = overrides.onSend ?? (() => true);
 
@@ -24,13 +24,7 @@ function ComposerHarness(
   );
 }
 
-function renderComposer(
-  overrides: Partial<{
-    disabled: boolean;
-    initialText: string;
-    onSend: (text: string, delivery: "steer" | "queue") => boolean;
-  }> = {},
-) {
+function renderComposer(overrides: ComposerHarnessProps = {}) {
   return render(<ComposerHarness {...overrides} />);
 }
 

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ImplementationBrief as Brief } from "../../shared/protocol";
-import { ImplementationBrief } from "./ImplementationBrief";
+import { ImplementationBrief } from "./implementation-brief";
 
 const reviewer = {
   id: "reviewer-1",

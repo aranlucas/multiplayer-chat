@@ -72,7 +72,12 @@ async function runPublisher(options: PublisherOptions = {}) {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => resolve());
   });
-  onTestFinished(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  onTestFinished(
+    () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      }),
+  );
   const address = server.address();
   const networkAddress = z.object({ port: z.number() }).parse(address);
   const origin = `http://127.0.0.1:${networkAddress.port}`;

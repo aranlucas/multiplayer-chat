@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { TimelineEvent } from "../../shared/protocol";
-import { ActivityRail } from "./ActivityRail";
+import { ActivityRail } from "./activity-rail";
 
 const prompt: TimelineEvent = {
   seq: 1,
