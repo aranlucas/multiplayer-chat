@@ -8,7 +8,11 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["@cloudflare/workers-types"]
+    "types": ["@cloudflare/workers-types"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@test/*": ["./test/*"]
+    }
   },
   "include": [
     "src/worker.ts",
@@ -17,6 +21,10 @@
     "src/server",
     "src/shared",
     "scripts",
-    "src/test-network.ts"
+    "test/server",
+    "test/shared",
+    "test/scripts",
+    "test/worker.test.ts",
+    "test/setup-network.ts"
   ]
 }

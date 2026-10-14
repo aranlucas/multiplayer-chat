@@ -26,14 +26,14 @@
         "ts-check": false
       }
     ],
-    "typescript/no-floating-promises": "error",
     "curly": ["error", "all"],
     "react/no-unstable-nested-components": [
       "error",
       {
         "allowAsProps": true
       }
-    ]
+    ],
+    "typescript/no-floating-promises": "error"
   },
   "ignorePatterns": [
     "dist/**",
@@ -66,16 +66,16 @@
     {
       "files": [
         "scripts/publish-preview.mjs",
-        "src/client/app.test.tsx",
+        "test/client/app.test.tsx",
         "src/client/app.tsx",
         "src/client/event-display.ts",
         "src/server/agent-room-core.ts",
-        "src/server/agent-room-identity.test.ts",
-        "src/server/agent-room-turn.test.ts",
-        "src/server/embedded-opencode.test.ts",
+        "test/server/agent-room-identity.test.ts",
+        "test/server/agent-room-turn.test.ts",
+        "test/server/embedded-opencode.test.ts",
         "src/server/embedded-opencode.ts",
-        "src/server/railway-sandbox.test.ts",
-        "src/server/railway-tools.test.ts",
+        "test/server/railway-sandbox.test.ts",
+        "test/server/railway-tools.test.ts",
         "src/server/session-title.ts",
         "src/shared/protocol.ts"
       ],
