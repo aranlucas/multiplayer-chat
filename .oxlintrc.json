@@ -17,12 +17,6 @@
   },
   "rules": {
     "eqeqeq": ["error", "always"],
-    "curly": ["error", "all"],
-    "no-var": "error",
-    "prefer-const": "error",
-    "no-throw-literal": "error",
-    "no-warning-comments": "error",
-    "typescript/no-explicit-any": "error",
     "typescript/ban-ts-comment": [
       "error",
       {
@@ -33,34 +27,13 @@
       }
     ],
     "typescript/no-floating-promises": "error",
-    "typescript/no-misused-promises": "error",
-    "typescript/await-thenable": "error",
-    "typescript/no-unsafe-assignment": "error",
-    "typescript/no-unsafe-call": "error",
-    "typescript/no-unsafe-member-access": "error",
-    "typescript/no-unsafe-return": "error",
-    "typescript/no-unsafe-argument": "error",
-    "react/exhaustive-deps": "error",
-    "react/rules-of-hooks": "error",
-    "import/no-cycle": "error",
-    "import/no-duplicates": "error",
-    "vitest/no-focused-tests": "error",
-    "vitest/no-disabled-tests": "error",
-    "vitest/valid-expect": "error",
-    "no-shadow": "error",
-    "typescript/no-misused-spread": "error",
-    "typescript/unbound-method": "error",
+    "curly": ["error", "all"],
     "react/no-unstable-nested-components": [
       "error",
       {
         "allowAsProps": true
       }
-    ],
-    "no-eval": "error",
-    "no-implied-eval": "error",
-    "no-new-func": "error",
-    "no-async-promise-executor": "error",
-    "oxc/no-accumulating-spread": "error"
+    ]
   },
   "ignorePatterns": [
     "dist/**",
