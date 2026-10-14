@@ -105,7 +105,7 @@ async function runPublisher(options: PublisherOptions = {}) {
 
   const env = {
     ...process.env,
-    PATH: `${directory}:${process.env.PATH}`,
+    PATH: `${directory}:${String(process.env.PATH)}`,
     WORKERS_CI_BRANCH: options.branch ?? "relay/test-room--123abc",
     WORKERS_CI_COMMIT_SHA: commitSHA,
     RELAY_CONTROL_ORIGIN: origin,

@@ -33,7 +33,7 @@ describe("encrypted credential boundary", () => {
     bytes.set(iv);
     bytes.set(encrypted, iv.length);
 
-    const sealed = btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""))
+    const sealed = btoa(Array.from(bytes, (byte) => String.fromCodePoint(byte)).join(""))
       .replaceAll("+", "-")
       .replaceAll("/", "_")
       .replace(/=+$/, "");

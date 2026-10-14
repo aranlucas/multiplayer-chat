@@ -11,6 +11,7 @@ interface InterruptedOutput {
   stdout?: string;
   stderr?: string;
 }
+
 interface MockSandbox extends SandboxConnection {
   exec: ReturnType<typeof vi.fn<SandboxConnection["exec"]>>;
   refresh: ReturnType<typeof vi.fn<() => Promise<void | SandboxConnection>>>;

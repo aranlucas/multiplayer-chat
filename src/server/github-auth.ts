@@ -1,3 +1,4 @@
+import { textOrFallback } from "../shared/text-fallback";
 import { z } from "zod";
 
 export interface GitHubOAuthEnv {
@@ -218,7 +219,9 @@ export async function sealGitHubCredential(
     throw new Error("GitHub session encryption is not configured");
   }
 
-  return await seal(session, env.GITHUB_SESSION_SECRET);
+  const result = await seal(session, env.GITHUB_SESSION_SECRET);
+
+  return result;
 }
 
 export async function unsealGitHubCredential(
@@ -242,21 +245,25 @@ interface TokenResponse {
 }
 
 async function exchangeToken(input: TokenExchangeInput) {
-  return await tokenRequest({
+  const result = await tokenRequest({
     client_id: input.clientID,
     client_secret: input.clientSecret,
     code: input.code,
     redirect_uri: input.redirectURI,
   });
+
+  return result;
 }
 
 async function refreshToken(input: TokenRefreshInput) {
-  return await tokenRequest({
+  const result = await tokenRequest({
     client_id: input.clientID,
     client_secret: input.clientSecret,
     grant_type: "refresh_token",
     refresh_token: input.refreshToken,
   });
+
+  return result;
 }
 
 async function tokenRequest(body: Record<string, string>): Promise<TokenResponse> {
@@ -270,7 +277,10 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
 
   if (!response.ok || value.error || !value.access_token) {
     throw new Error(
-      value.error_description || value.error || `GitHub token exchange failed (${response.status})`,
+      textOrFallback(
+        value.error_description,
+        textOrFallback(value.error, `GitHub token exchange failed (${response.status})`),
+      ),
     );
   }
 
@@ -285,7 +295,7 @@ async function githubProfile(accessToken: string): Promise<GitHubProfile> {
   const value = await response.json<GitHubProfileResponse>();
 
   if (!response.ok || !value.login) {
-    throw new Error(value.message || "GitHub identity lookup failed");
+    throw new Error(textOrFallback(value.message, "GitHub identity lookup failed"));
   }
 
   return { login: value.login, avatar_url: value.avatar_url };
@@ -370,7 +380,7 @@ function base64URL(bytes: Uint8Array): string {
   let binary = "";
 
   for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
+    binary += String.fromCodePoint(byte);
   }
 
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
@@ -382,7 +392,7 @@ function fromBase64URL(value: string): Uint8Array {
     .replaceAll("_", "/")
     .padEnd(Math.ceil(value.length / 4) * 4, "=");
 
-  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  return Uint8Array.from(atob(padded), (character) => character.codePointAt(0) ?? 0);
 }
 
 function parseCookies(header: string | null): Record<string, string> {
@@ -420,6 +430,7 @@ function timingSafeEqual(left: string, right: string): boolean {
   let mismatch = 0;
 
   for (let index = 0; index < left.length; index += 1) {
+    // eslint-disable-next-line unicorn/prefer-code-point -- Compare every UTF-16 code unit, including surrogate pairs, without changing cookie equality semantics.
     mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
   }
 

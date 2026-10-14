@@ -1,3 +1,4 @@
+import { textOrFallback } from "../shared/text-fallback";
 import { z } from "zod";
 import { useEffect, useEffectEvent, useState } from "react";
 import type { RoomRevision } from "../shared/protocol";
@@ -30,10 +31,10 @@ export function usePreviewHandoff(options: HandoffOptions) {
     return { participant: identity, clientState: { draft, selectedID, mobileTab } };
   });
 
-  useEffect(() => {
+  useEffect((): (() => void) | undefined => {
     // Activation is room-wide, but each participant must move independently.
     if (!target || new URL(target).origin === window.location.origin) {
-      return;
+      return undefined;
     }
 
     const controller = new AbortController();
@@ -65,7 +66,7 @@ export function usePreviewHandoff(options: HandoffOptions) {
           .parse(await response.json());
 
         if (!response.ok || !result.url) {
-          throw new Error(result.error || "Unable to move to the preview");
+          throw new Error(textOrFallback(result.error, "Unable to move to the preview"));
         }
 
         if (controller.signal.aborted) {

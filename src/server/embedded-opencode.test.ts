@@ -58,6 +58,7 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
           prompt: vi.fn<OpenCodeHost["sessions"]["prompt"]>().mockResolvedValue(undefined),
           wait: vi.fn<OpenCodeHost["sessions"]["wait"]>().mockImplementation(() => {
             controller.abort();
+
             return Promise.reject(new Error("Transport"));
           }),
           interrupt: vi.fn().mockResolvedValue(undefined),
@@ -138,6 +139,31 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
     expect(onEvent).toHaveBeenCalledWith({ type: "changes", changes });
   });
 
+  it("keeps a provider's string failure and cause after checkpointing", async () => {
+    const workspace = {
+      ensureReady: vi.fn().mockResolvedValue(undefined),
+      syncSandboxChanges: vi.fn().mockResolvedValue([]),
+    };
+
+    const opencode = hostFixture({
+      sessions: { prompt: vi.fn().mockRejectedValue("Provider failed") },
+    });
+
+    const runner = new EmbeddedOpenCodeRunner(Promise.resolve(opencode), workspace, {
+      killActive: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await expect(
+      runner.turn({
+        roomID: "room-1",
+        prompt: "Implement the approved feature",
+        delivery: "steer",
+        model: "openrouter/model",
+      }),
+    ).rejects.toMatchObject({ message: "Provider failed", cause: "Provider failed" });
+    expect(workspace.syncSandboxChanges).toHaveBeenCalledOnce();
+  });
+
   it("interrupts a pending prompt and checkpoints when the event stream fails", async () => {
     const failure = new Error("Transport");
 
@@ -170,7 +196,11 @@ describe("EmbeddedOpenCodeRunner.turn", () => {
                 throw new Error("Expected execution signal");
               }
 
-              signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+              signal.addEventListener(
+                "abort",
+                () => reject(new Error("Stream aborted", { cause: signal.reason })),
+                { once: true },
+              );
             }),
         ),
         wait: vi.fn().mockResolvedValue(undefined),
@@ -218,6 +248,7 @@ describe("public SDK event stream decoding", () => {
   it("propagates early consumer cancellation to the SDK iterator", async () => {
     let closed = false;
 
+    // eslint-disable-next-line require-await, typescript/require-await -- The fixture must remain an async iterator to test stream cleanup and rejection.
     async function* source() {
       try {
         yield { type: "future.event", data: { items: [{ text: "x", optional: undefined }] } };
@@ -242,6 +273,7 @@ describe("public SDK event stream decoding", () => {
   it("closes the source and rejects unsupported non-JSON extension data", async () => {
     let closed = false;
 
+    // eslint-disable-next-line require-await, typescript/require-await -- The fixture must remain an async iterator to test stream cleanup and rejection.
     async function* source() {
       try {
         yield { type: "invalid", data: { amount: 1n } };
@@ -254,6 +286,8 @@ describe("public SDK event stream decoding", () => {
       for await (const event of decodeNativeEvents(source())) {
         return event;
       }
+
+      throw new Error("Expected the malformed stream to reject");
     };
 
     await expect(consume()).rejects.toThrow(ZodError);
@@ -262,6 +296,7 @@ describe("public SDK event stream decoding", () => {
   it("propagates upstream stream failure without inventing an event", async () => {
     const failure = new Error("stream disconnected");
 
+    // eslint-disable-next-line require-await, typescript/require-await -- The fixture must remain an async iterator to test stream cleanup and rejection.
     async function* source() {
       yield { type: "first" };
       throw failure;

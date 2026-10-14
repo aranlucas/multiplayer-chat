@@ -1,3 +1,4 @@
+import { textOrFallback } from "../../shared/text-fallback";
 import {
   Bot,
   Check,
@@ -61,7 +62,7 @@ export function ActivityRail({ events, selectedID, onSelect }: ActivityRailProps
                 </span>
                 <span className="activity-summary">
                   {display.type === "tool"
-                    ? display.detail || display.title
+                    ? textOrFallback(display.detail, display.title)
                     : display.type === "diff"
                       ? `${display.title}  +${display.additions} −${display.deletions}`
                       : "detail" in display

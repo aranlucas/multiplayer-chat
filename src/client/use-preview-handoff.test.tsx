@@ -63,7 +63,8 @@ describe("preview handoff", () => {
         mobileTab: options.mobileTab,
       },
     });
-    await act(() => {
+    await act(async () => {
+      await Promise.resolve();
       resolveResponse(Response.json({ url: "https://preview.example/#handoff=token" }));
     });
     expect(sessionStorage.getItem("relay:room-1:draft")).toBe(options.draft);
@@ -106,7 +107,8 @@ describe("preview handoff", () => {
   it("does not transfer again when already on the preview origin", async () => {
     const fetcher = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetcher);
-    await act(() => {
+    await act(async () => {
+      await Promise.resolve();
       renderHook(() =>
         usePreviewHandoff({
           ...options,

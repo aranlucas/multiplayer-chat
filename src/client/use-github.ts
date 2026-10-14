@@ -1,3 +1,4 @@
+import { textOrFallback } from "../shared/text-fallback";
 import { z } from "zod";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -30,9 +31,9 @@ export function useGitHub(roomID: string, controlOrigin = window.location.origin
 
   const creatingRef = useRef(false);
 
-  useEffect(() => {
+  useEffect((): (() => void) | undefined => {
     if (controlOrigin !== window.location.origin) {
-      return;
+      return undefined;
     }
 
     const controller = new AbortController();
@@ -76,9 +77,9 @@ export function useGitHub(roomID: string, controlOrigin = window.location.origin
     );
   }, [controlOrigin]);
 
-  const createPullRequest = useCallback(async () => {
+  const createPullRequest = useCallback(async (): Promise<string | undefined> => {
     if (creatingRef.current) {
-      return;
+      return undefined;
     }
 
     creatingRef.current = true;
@@ -103,7 +104,7 @@ export function useGitHub(roomID: string, controlOrigin = window.location.origin
         .parse(await response.json());
 
       if (!response.ok || !result.pullRequest) {
-        throw new Error(result.error || "Pull request creation failed");
+        throw new Error(textOrFallback(result.error, "Pull request creation failed"));
       }
 
       setState((current) => ({ ...current, creating: false }));
@@ -117,6 +118,8 @@ export function useGitHub(roomID: string, controlOrigin = window.location.origin
         error: errorMessage(error),
       }));
       creatingRef.current = false;
+
+      return undefined;
     }
   }, [controlOrigin, roomID]);
 

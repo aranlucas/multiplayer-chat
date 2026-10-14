@@ -391,9 +391,7 @@ const clientMessageSchema = z.discriminatedUnion("type", [
 ]);
 
 // WebSocket JSON enters here and is validated against the complete discriminated wire contract.
-export function parseClientMessage(value: unknown): ClientMessage {
-  return clientMessageSchema.parse(value);
-}
+export const parseClientMessage = clientMessageSchema.parse.bind(clientMessageSchema);
 
 export const actorSchema = z.object({
   id: z.string(),

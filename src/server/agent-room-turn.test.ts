@@ -22,6 +22,7 @@ import { RepositoryWorkspace } from "./workspace";
 import { parseServerMessage } from "../shared/protocol";
 
 type WorkspaceContentRow = { content: string };
+
 type EventCursorRow = { opencode_event_cursor: string };
 
 const databases: ReturnType<typeof sqliteStorage>[] = [];

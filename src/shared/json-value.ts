@@ -27,9 +27,7 @@ export const jsonRecordSchema: z.ZodType<JsonRecord> = z.record(
 
 /** Decode unknown extension values once, before event consumers access their fields. */
 // This is the runtime decoder for external JSON extension data, not an application input contract.
-export function parseJsonRecord(value: unknown): JsonRecord {
-  return jsonRecordSchema.parse(value);
-}
+export const parseJsonRecord = jsonRecordSchema.parse.bind(jsonRecordSchema);
 
 export function jsonRecord(value: JsonValue | undefined): JsonRecord {
   const parsed = jsonRecordSchema.safeParse(value);

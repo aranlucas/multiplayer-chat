@@ -92,6 +92,10 @@ async function report(input) {
     return;
   }
 
+  if (!controlOrigin || !webhookSecret) {
+    throw new Error("RELAY_CONTROL_ORIGIN and RELAY_DEPLOYMENT_WEBHOOK_SECRET are required");
+  }
+
   const response = await fetch(new URL("/api/deployments", controlOrigin), {
     method: "POST",
     headers: {

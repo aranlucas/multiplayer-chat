@@ -131,7 +131,7 @@ export class RailwayRoomSandbox {
         }
       }
 
-      return this.runExec(sandbox, command, options);
+      return await this.runExec(sandbox, command, options);
     } finally {
       this.active.delete(handle);
     }
@@ -248,11 +248,9 @@ export class RailwayRoomSandbox {
       return this.current;
     }
 
-    if (!this.connecting) {
-      this.connecting = this.connectOrCreate().finally(() => {
-        this.connecting = undefined;
-      });
-    }
+    this.connecting ??= this.connectOrCreate().finally(() => {
+      this.connecting = undefined;
+    });
 
     this.current = await this.connecting;
 

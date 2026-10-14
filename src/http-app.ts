@@ -12,36 +12,44 @@ import {
 interface AppBindings {
   Bindings: WorkerEnv;
 }
+
 interface PullRequestInput {
   title?: string;
   body?: string;
 }
+
 interface HandoffParticipant {
   id?: string;
   name?: string;
   role?: string;
 }
+
 interface HandoffClientState {
   draft?: string;
   selectedID?: string;
   mobileTab?: "transcript" | "brief" | "people" | "queue";
 }
+
 interface HandoffInput {
   participant?: HandoffParticipant;
   currentOrigin?: string;
   clientState?: HandoffClientState;
 }
+
 interface RedeemHandoffInput {
   token?: string;
 }
+
 interface ActivateRevisionInput {
   revisionID?: string;
   currentOrigin?: string;
 }
+
 interface LocalPreviewInput {
   previewURL?: string;
   commitSHA?: string;
 }
+
 interface DeploymentInput {
   roomID?: string;
   commitSHA?: string;
@@ -51,6 +59,7 @@ interface DeploymentInput {
   deploymentID?: string;
   failure?: string;
 }
+
 interface PreviewReadiness {
   ready?: boolean;
   commitSHA?: string;

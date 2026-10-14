@@ -1,3 +1,4 @@
+import { textOrFallback } from "../shared/text-fallback";
 import { z } from "zod";
 import { getIdentity, rememberIdentity, roomIdentitySchema, type RoomIdentity } from "./use-room";
 
@@ -59,7 +60,7 @@ export async function resolveRelayBootstrap(): Promise<RelayBootstrap> {
     .parse(await response.json());
 
   if (!response.ok || !result.participant) {
-    throw new Error(result.error || "Unable to enter the deployed room");
+    throw new Error(textOrFallback(result.error, "Unable to enter the deployed room"));
   }
 
   rememberIdentity(roomID, result.participant);

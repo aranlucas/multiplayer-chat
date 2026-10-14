@@ -1,3 +1,4 @@
+import { textOrFallback } from "../shared/text-fallback";
 import { z } from "zod";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { queuedPrompts, parseServerMessage } from "../shared/protocol";
@@ -73,7 +74,11 @@ function appendEvent(events: TimelineEvent[], incoming: TimelineEvent) {
 export function getIdentity(roomID: string): RoomIdentity {
   const params = new URLSearchParams(window.location.search);
   const remembered = rememberedIdentity(roomID);
-  const requestedName = params.get("name")?.trim() || remembered?.name || "You";
+
+  const requestedName = textOrFallback(
+    params.get("name")?.trim(),
+    textOrFallback(remembered?.name, "You"),
+  );
 
   const requestedRole = params.has("role")
     ? params.get("role") === "contributor"
@@ -84,7 +89,7 @@ export function getIdentity(roomID: string): RoomIdentity {
   const storageKey = `relay:${roomID}:${requestedName}:participant`;
   let id = window.localStorage.getItem(storageKey);
 
-  if (!id) {
+  if (id === null || id.length === 0) {
     id =
       requestedName === "You"
         ? crypto.randomUUID()

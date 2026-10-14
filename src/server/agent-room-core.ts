@@ -1,3 +1,4 @@
+import { textOrFallback } from "../shared/text-fallback";
 import { z } from "zod";
 import type { RoomStorage } from "./storage";
 import {
@@ -335,7 +336,7 @@ export class AgentRoomCore {
     }
   }
 
-  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
+  // eslint-disable-next-line require-await, typescript/require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
   async initialize(roomID: string): Promise<void> {
     this.ensureRoom(this.ctx.id.name ?? roomID);
 
@@ -343,12 +344,9 @@ export class AgentRoomCore {
       this.ctx.waitUntil(
         this.workspace
           .ensureReady()
-          .then(() => {
-            this.broadcast({ type: "room", room: this.getRoom() });
-
-            return undefined;
-          })
+          .then(() => this.broadcast({ type: "room", room: this.getRoom() }))
           .catch((error) => {
+            // eslint-disable-next-line no-console -- Keep server diagnostics for the recoverable initialization failure.
             console.warn("Repository workspace initialization deferred", error);
             this.broadcast({ type: "room", room: this.getRoom() });
           }),
@@ -357,13 +355,13 @@ export class AgentRoomCore {
   }
 
   async createPullRequest(input: CreatePullRequestInput): Promise<PullRequestResult> {
-    if (!this.pullRequestPublication) {
-      this.pullRequestPublication = this.publishPullRequest(input).finally(() => {
-        this.pullRequestPublication = undefined;
-      });
-    }
+    this.pullRequestPublication ??= this.publishPullRequest(input).finally(() => {
+      this.pullRequestPublication = undefined;
+    });
 
-    return await this.pullRequestPublication;
+    const publication = await this.pullRequestPublication;
+
+    return publication;
   }
 
   protected async publishPullRequest(input: CreatePullRequestInput): Promise<PullRequestResult> {
@@ -479,7 +477,7 @@ export class AgentRoomCore {
     }
   }
 
-  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
+  // eslint-disable-next-line require-await, typescript/require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
   async recordDeployment(input: RecordDeploymentInput): Promise<RoomRevision> {
     const revision = this.revisionForCommit(input.commitSHA);
 
@@ -542,7 +540,7 @@ export class AgentRoomCore {
     return updated;
   }
 
-  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
+  // eslint-disable-next-line require-await, typescript/require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
   async createLocalPreview(input: CreateLocalPreviewInput): Promise<RoomRevision> {
     const room = this.getRoom();
     const workspaceRevision = room.workspaceRevision + 1;
@@ -669,7 +667,7 @@ export class AgentRoomCore {
     };
   }
 
-  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
+  // eslint-disable-next-line require-await, typescript/require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
   async activateRevision(input: ActivateRevisionInput): Promise<RoomRevision> {
     const revision = this.revisionByID(input.revisionID);
 
@@ -778,7 +776,7 @@ export class AgentRoomCore {
     }
   }
 
-  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
+  // eslint-disable-next-line require-await, typescript/require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return Response.json(this.snapshot());
@@ -828,7 +826,7 @@ export class AgentRoomCore {
     }
   }
 
-  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
+  // eslint-disable-next-line require-await, typescript/require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
   async webSocketClose(socket: RoomSocket): Promise<void> {
     const attachment = socketAttachmentSchema.nullable().parse(socket.deserializeAttachment());
 
@@ -1634,11 +1632,8 @@ export class AgentRoomCore {
 
     const timelineEvent = this.insertEvent({
       id:
-        eventIdentity.id !== undefined
-          ? eventIdentity.id
-          : event.cursor
-            ? `opencode:${this.roomID}:${event.cursor}`
-            : crypto.randomUUID(),
+        eventIdentity.id ??
+        (event.cursor ? `opencode:${this.roomID}:${event.cursor}` : crypto.randomUUID()),
       kind: "opencode",
       createdAt: eventIdentity.created ?? Date.now(),
       payload: { type: "raw", event: eventRecord },
@@ -1727,7 +1722,7 @@ export class AgentRoomCore {
     }
   }
 
-  // eslint-disable-next-line require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
+  // eslint-disable-next-line require-await, typescript/require-await -- Preserve the async API: validation and storage failures must reject the returned promise.
   protected async replyToPermission(
     requestID: string,
     reply: "once" | "reject",
@@ -1737,7 +1732,7 @@ export class AgentRoomCore {
       .exec<PermissionRow>("SELECT * FROM relay_permissions WHERE id = ?", requestID)
       .toArray()[0];
 
-    if (!permission || permission.status !== "pending") {
+    if (permission?.status !== "pending") {
       throw new Error("Permission request is no longer pending");
     }
 
@@ -2144,6 +2139,7 @@ export class AgentRoomCore {
     }
 
     const models = await this.runner.models().catch((error) => {
+      // eslint-disable-next-line no-console -- Keep server diagnostics when provider model discovery fails.
       console.warn("OpenCode model catalog unavailable", error);
 
       return [];
@@ -2193,6 +2189,7 @@ function hashCode(value: string): number {
   let hash = 0;
 
   for (let index = 0; index < value.length; index += 1) {
+    // eslint-disable-next-line unicorn/prefer-code-point -- Persisted participant colors hash UTF-16 code units; code points would change colors for astral characters.
     hash = (hash << 5) - hash + value.charCodeAt(index);
   }
 
@@ -2284,7 +2281,7 @@ function cleanPullRequestText(
   fallback: string,
   maximum: number,
 ): string {
-  const normalized = value?.trim() || fallback;
+  const normalized = textOrFallback(value?.trim(), fallback);
 
   if (!normalized || normalized.length > maximum || normalized.includes("\0")) {
     throw new Error(

@@ -257,7 +257,9 @@ export class EmbeddedOpenCodeRunner {
     await onEvent?.({ type: "changes", changes });
 
     if (turnError) {
-      throw turnError;
+      throw turnError instanceof Error
+        ? turnError
+        : new Error(z.string().catch("Agent turn failed").parse(turnError), { cause: turnError });
     }
 
     const latest = await opencode.sessions.get({ sessionID: session.id });
@@ -388,13 +390,17 @@ const eventRoutingSchema = z.object({
     .object({
       sessionID: z.string().optional().catch(undefined),
       form: z
-        .object({ sessionID: z.string().optional().catch(undefined) })
+        .object({
+          sessionID: z.string().optional().catch(undefined),
+        })
         .optional()
         .catch(undefined),
     })
     .catch({}),
   durable: z
-    .object({ seq: z.union([z.number(), z.string()]).optional().catch(undefined) })
+    .object({
+      seq: z.union([z.number(), z.string()]).optional().catch(undefined),
+    })
     .catch({}),
 });
 
