@@ -1,9 +1,10 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: { tsconfigPaths: true },
   test: {
-    setupFiles: ["./src/test-network.ts"],
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "scripts/**/*.test.ts"],
+    setupFiles: ["./test/setup-network.ts"],
+    include: ["test/**/*.test.{ts,tsx}"],
     environment: "node",
   },
 });
