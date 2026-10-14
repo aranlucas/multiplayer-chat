@@ -1,3 +1,4 @@
+import { textOrFallback } from "../shared/text-fallback";
 import { z } from "zod";
 import { jsonValueSchema } from "../shared/json-value";
 import type { WorkspaceChange } from "../shared/workspace-change";
@@ -240,7 +241,7 @@ export class GitHubPullRequestClient {
           status: "failed",
           environment: deployment.environment,
           deploymentID: String(deployment.id),
-          failure: latest.description || `Deployment ${latest.state}`,
+          failure: textOrFallback(latest.description, `Deployment ${latest.state}`),
         };
       }
 

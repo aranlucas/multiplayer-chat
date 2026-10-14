@@ -56,7 +56,13 @@ const toolInputSchema = z
     filePath: z.string().optional().catch(undefined),
     replaceAll: z.boolean().optional().catch(undefined),
     questions: z
-      .array(z.object({ question: z.string().optional().catch(undefined) }).catch({}))
+      .array(
+        z
+          .object({
+            question: z.string().optional().catch(undefined),
+          })
+          .catch({}),
+      )
       .optional()
       .catch(undefined),
   })
@@ -153,9 +159,9 @@ function displayToolName(tool: string) {
   return tool === "shell" ? "bash" : tool;
 }
 
-function textFromContent(value: JsonValue | undefined) {
+function textFromContent(value: JsonValue | undefined): string | undefined {
   if (!Array.isArray(value)) {
-    return;
+    return undefined;
   }
 
   return value

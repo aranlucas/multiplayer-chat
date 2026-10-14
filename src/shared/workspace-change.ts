@@ -28,8 +28,7 @@ const workspaceChangesSchema = z
   .max(MAX_WORKSPACE_CHANGES, "Invalid workspace changes");
 
 // This is the external checkpoint decoder; all paths and content are checked before workspace mutation.
-export function parseWorkspaceChanges(value: unknown): WorkspaceChange[] {
-  const changes = workspaceChangesSchema.parse(value);
+function enforceChangeByteLimits(changes: WorkspaceChange[]): WorkspaceChange[] {
   let totalBytes = 0;
 
   for (const change of changes) {
@@ -50,6 +49,10 @@ export function parseWorkspaceChanges(value: unknown): WorkspaceChange[] {
 
   return changes;
 }
+
+const checkedChangesSchema = workspaceChangesSchema.transform(enforceChangeByteLimits);
+
+export const parseWorkspaceChanges = checkedChangesSchema.parse.bind(checkedChangesSchema);
 
 export function parseGitChangePaths(nameStatus: string, untracked: string): GitChangePath[] {
   const tokens = nameStatus.split("\0");

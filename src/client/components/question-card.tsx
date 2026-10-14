@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { DisplayEvent, QuestionField } from "../event-display";
 
 type QuestionDisplay = Extract<DisplayEvent, { type: "question" }>;
+
 type QuestionAnswerEntry = [key: string, answer: string | string[]];
 
 interface QuestionHeadingProps {

@@ -7,9 +7,12 @@ import type { RoomState } from "./use-room";
 import { App, type AppDependencies } from "./app";
 import { draftStorageKey } from "./draft-storage";
 
+const ok = () => true;
+
 const harness = (() => {
-  const createPullRequest = vi.fn((): Promise<string | undefined> => Promise.resolve(undefined));
-  const ok = () => true;
+  const createPullRequest = vi.fn((): Promise<string | undefined> =>
+    Promise.resolve<string | undefined>(undefined),
+  );
 
   const roomState: RoomState = {
     room: undefined,

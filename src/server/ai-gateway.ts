@@ -72,10 +72,15 @@ export function openRouterGatewayConfiguration(
   }
 
   const token = env.CLOUDFLARE_AI_GATEWAY_TOKEN?.trim();
+  const accountID = env.CLOUDFLARE_ACCOUNT_ID?.trim();
+
+  if (!accountID) {
+    throw new Error("CLOUDFLARE_ACCOUNT_ID is required for the AI gateway.");
+  }
 
   const configuration: GatewayConfiguration = {
     settings: {
-      baseURL: `https://gateway.ai.cloudflare.com/v1/${env.CLOUDFLARE_ACCOUNT_ID?.trim()}/${gatewayID}/openrouter`,
+      baseURL: `https://gateway.ai.cloudflare.com/v1/${accountID}/${gatewayID}/openrouter`,
     },
     headers: {
       "cf-aig-collect-log": "true",

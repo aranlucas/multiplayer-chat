@@ -89,7 +89,7 @@ export function Composer({ disabled, text, onTextChange, onSend }: ComposerProps
             className="send-button"
             type="button"
             onClick={submit}
-            disabled={disabled || !text.trim() || isOverLimit}
+            disabled={(disabled ?? false) || !text.trim() || isOverLimit}
             aria-label="Send"
           >
             <ArrowUp size={18} />

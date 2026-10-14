@@ -1,11 +1,11 @@
-export function deferred<T>() {
-  let resolvePromise: (value: T) => void = () => {
-    throw new Error("Promise not initialized");
-  };
+function notInitialized(): never {
+  throw new Error("Promise not initialized");
+}
 
-  let rejectPromise: (cause: unknown) => void = () => {
-    throw new Error("Promise not initialized");
-  };
+export function deferred<T>() {
+  let resolvePromise: (value: T) => void = notInitialized;
+
+  let rejectPromise: (cause: unknown) => void = notInitialized;
 
   const promise = new Promise<T>((resolve, reject) => {
     resolvePromise = resolve;

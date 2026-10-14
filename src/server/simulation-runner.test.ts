@@ -68,6 +68,7 @@ describe("runSimulatedTurn", () => {
       },
       wait: (milliseconds) => {
         delays.push(milliseconds);
+
         return Promise.resolve();
       },
     });
@@ -214,6 +215,7 @@ describe("drainSimulatedQueue", () => {
       },
       runTurn: (text) => {
         order.push(`turn:${text}`);
+
         return Promise.resolve();
       },
     });

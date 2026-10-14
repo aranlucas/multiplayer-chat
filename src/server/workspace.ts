@@ -94,13 +94,13 @@ export class RepositoryWorkspace {
   }
 
   async ensureReady(): Promise<WorkspaceInfo> {
-    if (!this.preparing) {
-      this.preparing = this.prepare().finally(() => {
-        this.preparing = undefined;
-      });
-    }
+    this.preparing ??= this.prepare().finally(() => {
+      this.preparing = undefined;
+    });
 
-    return await this.preparing;
+    const ready = await this.preparing;
+
+    return ready;
   }
 
   async configure(repository: string, branch: string): Promise<WorkspaceInfo> {
@@ -365,7 +365,7 @@ export class RepositoryWorkspace {
 
     let commitSHA = pinnedCommit;
 
-    if (!commitSHA) {
+    if (commitSHA === undefined || commitSHA === null || commitSHA.length === 0) {
       commitSHA = await resolveGitHubBranch(repository, branch);
     }
 
@@ -739,7 +739,7 @@ function shellQuote(value: string): string {
 function compactFailure(label: string, result: CommandFailure): string {
   const detail = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
 
-  return truncate(`${label} (exit ${result.exitCode})${detail ? `\n${detail}` : ""}`);
+  return truncate(`${label} (exit ${String(result.exitCode)})${detail ? `\n${detail}` : ""}`);
 }
 
 function truncate(value: string): string {
