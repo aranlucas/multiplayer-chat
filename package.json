@@ -24,7 +24,7 @@
     "@opencode/sdk": "2.0.27",
     "hono": "^4.13.13",
     "lucide-react": "^1.55.0",
-    "railway": "3.13.1",
+    "railway": "3.14.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zod": "4.6.6"
@@ -48,7 +48,7 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
-    "vitest": "^5.0.3",
+    "vitest": "^5.0.4",
     "wrangler": "^4.149.0"
   },
   "packageManager": "pnpm@12.10.1"
