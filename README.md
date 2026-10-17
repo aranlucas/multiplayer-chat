@@ -51,7 +51,7 @@ pnpm test
 pnpm build
 ```
 
-The same commands are required by CI. Tests include the Preview publisher's CLI and HTTP integration checks. Workerd regression tests start local servers with Vite's `createServer()` API and the Cloudflare Vite plugin, with ephemeral storage and remote bindings disabled. CI also runs `pnpm build:preview` to verify the native Preview build. `pnpm dev:e2e` starts the browser-oriented Vite/Cloudflare configuration on port 5176; its `e2e/cloudflare.config.ts` uses simulation mode. The repository does not currently define a `test:e2e` script. Run `pnpm cf-typegen` to generate Worker types using `cf workers types`.
+The same commands are required by CI. Tests include the Preview publisher's CLI and HTTP integration checks. The room and OpenCode SDK regression suites run inside Workerd through `cloudflareTest()` from `@cloudflare/vitest-plugin`, using `cloudflare.config.ts` fixtures with remote bindings disabled. Node and UI tests run in a separate Vitest project. The room suite verifies two participants, shared events, SQLite persistence across Durable Object eviction, and one-time draft handoff against a real local HTTP readiness endpoint, including mismatched-commit and wrong-origin failures. CI also runs `pnpm build:preview` to verify the native Preview build. `pnpm dev:e2e` starts the browser-oriented Vite/Cloudflare configuration on port 5176; its `e2e/cloudflare.config.ts` uses simulation mode. The repository does not currently define a `test:e2e` script. Run `pnpm cf-typegen` to generate Worker types using `cf workers types`.
 
 ## Deploy
 
