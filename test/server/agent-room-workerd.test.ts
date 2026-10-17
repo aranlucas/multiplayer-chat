@@ -1,16 +1,11 @@
 import { env, exports } from "cloudflare:workers";
 import { evictDurableObject } from "cloudflare:test";
-import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
+import { afterAll, describe, expect, inject, it } from "vitest";
 import { z } from "zod";
 import { parseServerMessage, type ClientMessage, type ServerMessage } from "@/shared/protocol";
 
 describe("room Durable Object runtime", () => {
   const sockets: WebSocket[] = [];
-
-  beforeAll(async () => {
-    // Keep cold module compilation in setup, outside the collaboration deadline.
-    await import("./fixtures/room-worker");
-  }, 30_000);
 
   afterAll(() => {
     for (const socket of sockets) {

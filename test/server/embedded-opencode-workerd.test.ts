@@ -1,13 +1,12 @@
 import { parseJsonRecord, type JsonRecord } from "@/shared/json-value";
 import { exports } from "cloudflare:workers";
-import { beforeAll, describe, expect, it } from "vitest";
+import { reset } from "cloudflare:test";
+import { afterAll, describe, expect, it } from "vitest";
 
 describe("installed OpenCode Workerd SDK", () => {
-  beforeAll(async () => {
-    // Compile the SDK's module graph before timing session operations. The
-    // fixture still initializes its real host lazily on the first request.
-    await import("./fixtures/opencode-worker");
-  }, 30_000);
+  // Cloudflare's test helpers load the configured Worker during collection,
+  // before operation deadlines start. Release its real storage after the suite.
+  afterAll(reset);
 
   it("initializes the retained host and bundled plugin for concurrent sessions", async () => {
     const sessions = await Promise.all([run("/bootstrap"), run("/bootstrap")]);
