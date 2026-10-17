@@ -1,52 +1,38 @@
-import { createServer } from "node:http";
-import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { unstable_dev, type Unstable_DevWorker } from "wrangler";
+import { env, exports } from "cloudflare:workers";
+import { evictDurableObject } from "cloudflare:test";
+import { afterAll, describe, expect, inject, it } from "vitest";
 import { z } from "zod";
 import { parseServerMessage, type ClientMessage, type ServerMessage } from "@/shared/protocol";
 
 describe("room Durable Object runtime", () => {
-  let worker: Unstable_DevWorker;
   const sockets: WebSocket[] = [];
-  beforeAll(async () => {
-    worker = await unstable_dev(
-      fileURLToPath(new URL("./fixtures/room-worker.ts", import.meta.url)),
-      {
-        config: fileURLToPath(new URL("./fixtures/room-wrangler.jsonc", import.meta.url)),
-        local: true,
-        port: 0,
-        inspectorPort: 0,
-        persist: false,
-        logLevel: "error",
-        experimental: { disableExperimentalWarning: true, disableDevRegistry: true, watch: false },
-      },
-    );
-  }, 30_000);
-  afterAll(async () => {
+
+  afterAll(() => {
     for (const socket of sockets) {
       socket.close();
     }
-
-    await worker?.stop();
   });
 
   async function participant(id: string) {
     const messages: ServerMessage[] = [];
 
-    const socket = new WebSocket(
-      `ws://${worker.address}:${worker.port}/api/rooms/synthetic-room/ws?participant=${id}&name=${id}&role=maintainer`,
+    const response = await exports.default.fetch(
+      `http://localhost/api/rooms/synthetic-room/ws?participant=${id}&name=${id}&role=maintainer`,
+      { headers: { Upgrade: "websocket" } },
     );
+
+    expect(response.status).toBe(101);
+    const socket = response.webSocket;
+
+    if (!socket) {
+      throw new Error("Room did not accept the WebSocket upgrade");
+    }
 
     sockets.push(socket);
     socket.addEventListener("message", (event) => {
       messages.push(parseServerMessage(z.string().parse(event.data)));
     });
-    await new Promise<void>((resolve, reject) => {
-      socket.addEventListener("open", () => resolve(), { once: true });
-      socket.addEventListener("error", () => reject(new Error("Local socket failed")), {
-        once: true,
-      });
-    });
+    socket.accept();
     await waitFor(() => messages.some((message) => message.type === "snapshot"));
 
     return {
@@ -75,6 +61,7 @@ describe("room Durable Object runtime", () => {
       ),
     );
     second.socket.close();
+    await evictDurableObject(env.AGENT_ROOMS.getByName("synthetic-room"));
     const reconnected = await participant("second");
     const snapshot = reconnected.messages.find((message) => message.type === "snapshot");
     expect(snapshot?.type).toBe("snapshot");
@@ -87,31 +74,36 @@ describe("room Durable Object runtime", () => {
       expect.objectContaining({ text: "Keep this synthetic decision" }),
     );
 
-    const preview = createServer((_request, response) => {
-      response.setHeader("Content-Type", "application/json");
-      response.end(JSON.stringify({ ready: true, roomProtocol: 1, commitSHA: "synthetic-sha" }));
+    const previewOrigin = inject("previewOrigin");
+
+    const mismatched = await exports.default.fetch(
+      "http://localhost/api/rooms/synthetic-room/local-preview",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ previewURL: previewOrigin, commitSHA: "different-sha" }),
+      },
+    );
+
+    expect(mismatched.status).toBe(400);
+    expect(await mismatched.json()).toEqual({
+      error: "Preview commit does not match the published revision",
     });
 
-    await new Promise<void>((resolve) => {
-      preview.listen(0, "127.0.0.1", resolve);
-    });
+    const publish = await exports.default.fetch(
+      "http://localhost/api/rooms/synthetic-room/local-preview",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ previewURL: previewOrigin, commitSHA: "synthetic-sha" }),
+      },
+    );
 
-    try {
-      const address = z.object({ port: z.number() }).parse(preview.address());
-      const previewOrigin = `http://127.0.0.1:${address.port}`;
+    expect(publish.status).toBe(200);
 
-      const publish = await worker.fetch(
-        "http://localhost/api/rooms/synthetic-room/local-preview",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ previewURL: previewOrigin, commitSHA: "synthetic-sha" }),
-        },
-      );
-
-      expect(publish.status).toBe(200);
-
-      const handoff = await worker.fetch("http://localhost/api/rooms/synthetic-room/handoffs", {
+    const handoff = await exports.default.fetch(
+      "http://localhost/api/rooms/synthetic-room/handoffs",
+      {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -119,32 +111,42 @@ describe("room Durable Object runtime", () => {
           currentOrigin: "http://localhost",
           clientState: { draft: "Unsent synthetic draft", mobileTab: "brief" },
         }),
+      },
+    );
+
+    expect(handoff.status).toBe(200);
+    const ticket = z.object({ url: z.string() }).parse(await handoff.json());
+    const token = new URLSearchParams(new URL(ticket.url).hash.slice(1)).get("handoff");
+
+    const wrongOrigin = await exports.default.fetch(
+      "http://localhost/api/rooms/synthetic-room/handoffs/redeem",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: "http://localhost:1" },
+        body: JSON.stringify({ token }),
+      },
+    );
+
+    expect(wrongOrigin.status).toBe(400);
+    expect(await wrongOrigin.json()).toEqual({
+      error: "Room handoff ticket was issued for another preview",
+    });
+
+    const redeem = () =>
+      exports.default.fetch("http://localhost/api/rooms/synthetic-room/handoffs/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: previewOrigin },
+        body: JSON.stringify({ token }),
       });
 
-      expect(handoff.status).toBe(200);
-      const ticket = z.object({ url: z.string() }).parse(await handoff.json());
-      const token = new URLSearchParams(new URL(ticket.url).hash.slice(1)).get("handoff");
-
-      const redeem = () =>
-        worker.fetch("http://localhost/api/rooms/synthetic-room/handoffs/redeem", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Origin: previewOrigin },
-          body: JSON.stringify({ token }),
-        });
-
-      const result = await redeem();
-      expect(result.status).toBe(200);
-      expect(await result.json()).toMatchObject({
-        roomID: "synthetic-room",
-        participant: { id: "second" },
-        clientState: { draft: "Unsent synthetic draft", mobileTab: "brief" },
-      });
-      expect((await redeem()).status).toBe(400);
-    } finally {
-      await new Promise<void>((resolve) => {
-        preview.close(() => resolve());
-      });
-    }
+    const result = await redeem();
+    expect(result.status).toBe(200);
+    expect(await result.json()).toMatchObject({
+      roomID: "synthetic-room",
+      participant: { id: "second" },
+      clientState: { draft: "Unsent synthetic draft", mobileTab: "brief" },
+    });
+    expect((await redeem()).status).toBe(400);
   }, 20_000);
 });
 

@@ -1,40 +1,12 @@
 import { parseJsonRecord, type JsonRecord } from "@/shared/json-value";
-import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { unstable_dev, type Unstable_DevWorker } from "wrangler";
+import { exports } from "cloudflare:workers";
+import { reset } from "cloudflare:test";
+import { afterAll, describe, expect, it } from "vitest";
 
 describe("installed OpenCode Workerd SDK", () => {
-  let worker: Unstable_DevWorker;
-
-  beforeAll(async () => {
-    worker = await unstable_dev(
-      fileURLToPath(new URL("./fixtures/opencode-worker.ts", import.meta.url)),
-      {
-        config: fileURLToPath(new URL("./fixtures/wrangler.jsonc", import.meta.url)),
-        local: true,
-        port: 0,
-        inspectorPort: 0,
-        persist: false,
-        logLevel: "error",
-        experimental: {
-          disableExperimentalWarning: true,
-          disableDevRegistry: true,
-          watch: false,
-        },
-      },
-    );
-  }, 30_000);
-
-  afterAll(async () => {
-    await worker?.stop();
-  });
-
-  async function run(path: string): Promise<JsonRecord> {
-    const response = await worker.fetch(`http://localhost${path}`);
-    expect(response.status).toBe(200);
-
-    return parseJsonRecord(await response.json());
-  }
+  // Cloudflare's test helpers load the configured Worker during collection,
+  // before operation deadlines start. Release its real storage after the suite.
+  afterAll(reset);
 
   it("initializes the retained host and bundled plugin for concurrent sessions", async () => {
     const sessions = await Promise.all([run("/bootstrap"), run("/bootstrap")]);
@@ -85,3 +57,10 @@ describe("installed OpenCode Workerd SDK", () => {
     });
   });
 });
+
+async function run(path: string): Promise<JsonRecord> {
+  const response = await exports.default.fetch(`http://localhost${path}`);
+  expect(response.status).toBe(200);
+
+  return parseJsonRecord(await response.json());
+}
