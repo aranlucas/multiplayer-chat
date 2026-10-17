@@ -1,28 +1,12 @@
 import { parseJsonRecord, type JsonRecord } from "@/shared/json-value";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { unstable_dev, type Unstable_DevWorker } from "wrangler";
+import { startLocalWorker } from "./local-worker";
 
 describe("installed OpenCode Workerd SDK", () => {
-  let worker: Unstable_DevWorker;
+  let worker: Awaited<ReturnType<typeof startLocalWorker>>;
 
   beforeAll(async () => {
-    worker = await unstable_dev(
-      fileURLToPath(new URL("./fixtures/opencode-worker.ts", import.meta.url)),
-      {
-        config: fileURLToPath(new URL("./fixtures/wrangler.jsonc", import.meta.url)),
-        local: true,
-        port: 0,
-        inspectorPort: 0,
-        persist: false,
-        logLevel: "error",
-        experimental: {
-          disableExperimentalWarning: true,
-          disableDevRegistry: true,
-          watch: false,
-        },
-      },
-    );
+    worker = await startLocalWorker("sdk");
   }, 30_000);
 
   afterAll(async () => {

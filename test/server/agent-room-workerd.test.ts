@@ -1,26 +1,14 @@
 import { createServer } from "node:http";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { unstable_dev, type Unstable_DevWorker } from "wrangler";
+import { startLocalWorker } from "./local-worker";
 import { z } from "zod";
 import { parseServerMessage, type ClientMessage, type ServerMessage } from "@/shared/protocol";
 
 describe("room Durable Object runtime", () => {
-  let worker: Unstable_DevWorker;
+  let worker: Awaited<ReturnType<typeof startLocalWorker>>;
   const sockets: WebSocket[] = [];
   beforeAll(async () => {
-    worker = await unstable_dev(
-      fileURLToPath(new URL("./fixtures/room-worker.ts", import.meta.url)),
-      {
-        config: fileURLToPath(new URL("./fixtures/room-wrangler.jsonc", import.meta.url)),
-        local: true,
-        port: 0,
-        inspectorPort: 0,
-        persist: false,
-        logLevel: "error",
-        experimental: { disableExperimentalWarning: true, disableDevRegistry: true, watch: false },
-      },
-    );
+    worker = await startLocalWorker("room");
   }, 30_000);
   afterAll(async () => {
     for (const socket of sockets) {
@@ -34,7 +22,7 @@ describe("room Durable Object runtime", () => {
     const messages: ServerMessage[] = [];
 
     const socket = new WebSocket(
-      `ws://${worker.address}:${worker.port}/api/rooms/synthetic-room/ws?participant=${id}&name=${id}&role=maintainer`,
+      `${worker.origin.replace(/^http/u, "ws")}api/rooms/synthetic-room/ws?participant=${id}&name=${id}&role=maintainer`,
     );
 
     sockets.push(socket);

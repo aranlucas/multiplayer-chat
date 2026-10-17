@@ -24,7 +24,7 @@ The images above are local product captures. They show the transcript, participa
 
 ## Run locally
 
-Requirements: Node.js 24, pnpm, and a Cloudflare/Wrangler-compatible development environment.
+Requirements: Node.js 24 and pnpm. The pinned `cf` CLI and Cloudflare Vite plugin are installed with the development dependencies.
 
 ```bash
 corepack enable
@@ -51,7 +51,7 @@ pnpm test
 pnpm build
 ```
 
-The same commands are required by CI. Tests include the Preview publisher's CLI and HTTP integration checks. CI also runs `pnpm build:preview` to verify the native Preview build. `pnpm dev:e2e` starts the browser-oriented Vite/Cloudflare configuration on port 5176; its `e2e/cloudflare.config.ts` uses simulation mode. The repository does not currently define a `test:e2e` script.
+The same commands are required by CI. Tests include the Preview publisher's CLI and HTTP integration checks. Workerd regression tests start local servers with Vite's `createServer()` API and the Cloudflare Vite plugin, with ephemeral storage and remote bindings disabled. CI also runs `pnpm build:preview` to verify the native Preview build. `pnpm dev:e2e` starts the browser-oriented Vite/Cloudflare configuration on port 5176; its `e2e/cloudflare.config.ts` uses simulation mode. The repository does not currently define a `test:e2e` script. Run `pnpm cf-typegen` to generate Worker types using `cf workers types`.
 
 ## Deploy
 
