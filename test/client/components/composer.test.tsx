@@ -36,7 +36,7 @@ function getCounter(container: HTMLElement) {
   const counter = container.querySelector("#composer-char-count");
 
   if (!(counter instanceof HTMLElement)) {
-    throw new Error("Missing character counter");
+    throw new TypeError("Missing character counter");
   }
 
   return counter;
@@ -62,7 +62,7 @@ describe("Composer character counter", () => {
     const textarea = screen.getByRole("textbox", { name: /ask or steer/i });
 
     if (!(textarea instanceof HTMLTextAreaElement)) {
-      throw new Error("Missing composer textarea");
+      throw new TypeError("Missing composer textarea");
     }
 
     const counter = getCounter(container);
@@ -83,7 +83,7 @@ describe("Composer character counter", () => {
     const textarea = screen.getByRole("textbox", { name: /ask or steer/i });
 
     if (!(textarea instanceof HTMLTextAreaElement)) {
-      throw new Error("Missing composer textarea");
+      throw new TypeError("Missing composer textarea");
     }
 
     const counter = getCounter(container);
