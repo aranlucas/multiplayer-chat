@@ -4,13 +4,6 @@ Updated 2026-10-26. Proposed collaboration features after Digits/MCP priorities.
 The value to evaluate is shared understanding and a completed change, not more
 agent activity or a longer transcript.
 
-## Starting point
-
-At `db208cf96bd2f6383ef4656c666bca60c81bd63c`, the [room](README.md) already
-shares ordered agent events, steering/queued prompts, permissions, diffs and
-exact-commit preview/PR publication. A deterministic simulation and live
-Cloudflare/Railway path are distinct; local tests do not prove live availability.
-
 ## Ordered releases
 
 1. **Catch up when joining a busy room.** Show the current task, decisions,
@@ -40,8 +33,6 @@ configured pilot with two participants. Compare time to understand the task,
 clarification messages and mistaken actions with reading the raw transcript.
 Keep code, credentials and prompt contents out of aggregate product analytics.
 
-Follow [project gates](AGENTS.md): lint, formatting, types, tests and build; a
-future multiplayer change also needs the stated two-participant deployed flow.
-This roadmap changes no room behavior and initiates no live provider, sandbox
-or deployment session. Prefer existing room state and events over a parallel
+Follow [project gates](AGENTS.md), including the two-participant deployed flow
+for multiplayer changes. Prefer existing room state and events over a parallel
 coordination service.

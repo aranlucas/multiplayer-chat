@@ -5,22 +5,19 @@
 
 ## Bring the whole room into the coding loop.
 
-Relay is a multiplayer coding-agent room. Share one link, watch an ordered OpenCode event stream, steer the agent or queue the next turn, review permissions and diffs together, and publish an exact-commit preview or pull request from the same repository workspace. It is a room for the moment when “the agent is working” needs to become something a team can actually see and shape.
+Relay is a multiplayer coding-agent room. Share one link, watch an ordered OpenCode event stream, steer the agent or queue the next turn, review permissions and diffs together, and publish an exact-commit preview or pull request from the same repository workspace.
 
 ![Relay desktop room](artifacts/relay-desktop-local.png)
 
 ![Relay mobile room](artifacts/relay-mobile-local.png)
 
-The images above are local product captures. They show the transcript, participants, queued prompts, permission review, and responsive mobile room layout.
+Local product captures of the desktop and mobile room.
 
 ## How it works
 
-- A Cloudflare Durable Object owns each room’s state and SQLite-backed event history.
-- One OpenCode Workerd host runs inside the room. Prompts can be sent immediately (**Steer**) or held for the next turn (**Queue**).
-- A Railway Sandbox provides the persistent, isolated repository workspace used by shell/file tools.
-- Participants receive presence, transcript, diff, question, queue, permission, planning, and revision updates over the room connection.
-- GitHub OAuth can publish room changes to a pull request. Revisions track commit SHA, preview status, provider, and activation.
-- Preview handoff verifies the target readiness endpoint and room protocol before a revision is activated.
+- A Cloudflare Durable Object owns each room’s state, SQLite-backed event history and OpenCode Workerd host. Prompts can be sent immediately (**Steer**) or held for the next turn (**Queue**).
+- A Railway Sandbox provides the persistent, isolated repository workspace used by shell/file tools. GitHub OAuth enables pull-request publication.
+- Preview handoff verifies the published commit and room protocol before activation, while participants continue using the existing room service.
 
 ## Run locally
 
@@ -51,7 +48,9 @@ pnpm test
 pnpm build
 ```
 
-The same commands are required by CI. Tests include the Preview publisher's CLI and HTTP integration checks. The room and OpenCode SDK regression suites run inside Workerd through `cloudflareTest()` from `@cloudflare/vitest-plugin`, using `cloudflare.config.ts` fixtures with remote bindings disabled. Node and UI tests run in a separate Vitest project. The room suite verifies two participants, shared events, SQLite persistence across Durable Object eviction, and one-time draft handoff against a real local HTTP readiness endpoint, including mismatched-commit and wrong-origin failures. CI also runs `pnpm build:preview` to verify the native Preview build. `pnpm dev:e2e` starts the browser-oriented Vite/Cloudflare configuration on port 5176; its `e2e/cloudflare.config.ts` uses simulation mode. The repository does not currently define a `test:e2e` script. Run `pnpm cf-typegen` to generate Worker types using `cf workers types`.
+CI runs these gates plus `pnpm build:preview`. [vitest.config.ts](vitest.config.ts) separates Node/UI tests from Workerd room and SDK integration tests, with remote bindings disabled. These checks do not establish live-service availability.
+
+For manual browser checks, `pnpm dev:e2e` starts a simulation server on port 5176; there is no `test:e2e` script. `pnpm cf-typegen` generates Worker types.
 
 ## Deploy
 
@@ -65,7 +64,9 @@ This builds the Worker and runs `cf deploy --prebuilt` with the generated `.clou
 pnpm deploy:preview
 ```
 
-Production and previews share `vite.config.ts`. The preview build sets `CLOUDFLARE_PREVIEW_BUILD=true` and runs the pinned plugin's `cf-vite build --mode relay-preview` command to set native Preview metadata (`cf-vite build` accepts only `--mode`; the environment variable supplies the preview build context); the publisher runs `cf previews deploy --prebuilt --mode relay-preview` for the CI branch. The generated `.cloudflare/output/v0/config.json` must record `buildContext.isPreview: true` and mode `relay-preview`. Selecting the Vite mode alone does not mark the output as a native Preview build. Provide `WORKERS_CI_BRANCH` and `WORKERS_CI_COMMIT_SHA` (or `GITHUB_HEAD_REF` and `GITHUB_SHA`). The production branch is skipped. Every branch gets a native Preview, and branches named `relay/<room>--<suffix>` also report their deployment to that room.
+Production and previews share `vite.config.ts`. `pnpm build:preview` sets `CLOUDFLARE_PREVIEW_BUILD=true` and mode `relay-preview`; both are required. The generated `.cloudflare/output/v0/config.json` must record `buildContext.isPreview: true` and mode `relay-preview`. Selecting the Vite mode alone does not mark the output as a native Preview build.
+
+The publisher runs `cf previews deploy <branch> --prebuilt --mode relay-preview`. Provide `WORKERS_CI_BRANCH` and `WORKERS_CI_COMMIT_SHA` (or `GITHUB_HEAD_REF` and `GITHUB_SHA`). The build embeds `WORKERS_CI_COMMIT_SHA` (or `RELAY_BUILD_SHA`), so a publisher using only `GITHUB_SHA` must also set `RELAY_BUILD_SHA` to that same SHA during the build. The production branch is skipped. Other branches get a native Preview; branches named `relay/<room>--<suffix>` with an alphanumeric suffix also report their deployment to that room.
 
 Room callbacks require `RELAY_CONTROL_ORIGIN` and the secret `RELAY_DEPLOYMENT_WEBHOOK_SECRET`, matching the production Worker's callback secret. The publisher reads Cloudflare's structured deployment result, verifies the immutable deployment URL against the exact commit and room protocol, then reports that URL and the deployment ID. It does not use the mutable branch URL for room revisions.
 
@@ -78,24 +79,11 @@ Configure Workers Builds on `relay-multiplayer-agent` as follows:
 | Production (`main`) | `pnpm run build`         | `pnpm exec cf deploy --prebuilt`   |
 | Previews (enabled)  | `pnpm run build:preview` | `node scripts/publish-preview.mjs` |
 
-Set the room callback variables in the Previews build settings. The separate `relay-multiplayer-preview` Worker and its production-branch build are no longer used for new publications. Existing version URLs can remain available for historical revisions while its redundant build connection is retired.
+Set the room callback variables in the Previews build settings.
 
-Production configuration enables [Workers Issues](https://developers.cloudflare.com/workers/observability/issues/) and [Workers traces](https://developers.cloudflare.com/workers/observability/traces/) at a 10% sampling rate, with URL query strings redacted. These settings take effect on the next deployment. Automatic RPC spans connect API calls to room Durable Objects; traces use the Workers observability event quota and pricing. The [October 2026 Cloudflare review](docs/cloudflare-announcement-review.md) explains the adopted features and the larger migration candidates.
+## Product and architecture decisions
 
-## Source map
-
-| Path                                                  | Responsibility                                                                                                                        |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/client/`                                         | Landing page, room UI, responsive navigation, connection state, GitHub controls, and event presentation.                              |
-| `src/server/agent-room.ts`                            | Durable Object room lifecycle, event persistence/broadcast, permissions, planning, workspace revisions, and pull-request publication. |
-| `src/server/embedded-opencode.ts`, `opencode.ts`      | OpenCode Workerd host and provider/model configuration.                                                                               |
-| `src/server/railway-sandbox.ts`, `railway-tools.ts`   | Per-room Railway workspace and tool bridge.                                                                                           |
-| `src/server/workspace.ts`                             | Repository clone, edits, commits, and changed-file tracking.                                                                          |
-| `src/server/github-auth.ts`, `github-pull-request.ts` | GitHub OAuth session and pull-request publication.                                                                                    |
-| `src/shared/`                                         | Room protocol, exact-edit helpers, text normalization, and workspace-change contracts.                                                |
-| `cloudflare.config.ts`                                | Durable Object, asset, compatibility, and production variable configuration.                                                          |
-| `artifacts/`                                          | Local desktop/mobile/native event captures used in this README and design review.                                                     |
-
-## Status
-
-Relay is an active prototype with a deterministic local simulation path and a live Cloudflare/Railway path. The live path depends on external provider, sandbox, OAuth, and deployment configuration; the repository’s unit tests and local simulation do not prove those external services are available.
+- [Product purpose and constraints](PRODUCT.md)
+- [Design principles and interaction requirements](DESIGN.md)
+- [Proposed feature roadmap](ROADMAP.md)
+- [Cloudflare integration decisions and migration candidates](docs/cloudflare-announcement-review.md)
