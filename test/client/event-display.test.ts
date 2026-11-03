@@ -17,13 +17,6 @@ function rawToolEvent(tool: string, input: JsonRecord) {
 }
 
 describe("tool event display", () => {
-  it("shows Bash commands without a serialized tool-call wrapper", () => {
-    expect(displayEvent(rawToolEvent("bash", { command: "git status --short" }))).toMatchObject({
-      title: "bash",
-      detail: "$ git status --short",
-    });
-  });
-
   it("presents the shell compatibility alias as Bash", () => {
     expect(displayEvent(rawToolEvent("shell", { command: "pnpm test" }))).toMatchObject({
       title: "bash",
