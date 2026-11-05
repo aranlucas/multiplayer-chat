@@ -1,5 +1,21 @@
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
+import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+
+function openCodeTestSourceMaps(): Plugin {
+  return {
+    name: "relay:opencode-test-source-maps",
+    enforce: "post",
+    transform: {
+      filter: { id: /\/node_modules\/@opencode\/core\/dist\/chunks\// },
+      handler(code) {
+        // Vite's source map expands OpenCode's embedded model catalog beyond
+        // workerd's 32 MiB WebSocket limit. Keep the installed code unchanged.
+        return { code, map: { mappings: "" } };
+      },
+    },
+  };
+}
 
 export default defineConfig({
   resolve: { tsconfigPaths: true },
@@ -18,6 +34,7 @@ export default defineConfig({
       {
         extends: true,
         plugins: [
+          openCodeTestSourceMaps(),
           cloudflareTest({
             experimental: {
               newConfig: { configPath: "test/server/fixtures/cloudflare.config.ts" },
@@ -33,15 +50,13 @@ export default defineConfig({
         ],
         test: {
           name: "sdk-workerd",
-          // Cached module snapshots exceed workerd's WebSocket message limit.
-          // https://github.com/cloudflare/workers-sdk/issues/16349
-          fsModuleCache: false,
           include: ["test/server/embedded-opencode-workerd.test.ts"],
         },
       },
       {
         extends: true,
         plugins: [
+          openCodeTestSourceMaps(),
           cloudflareTest({
             experimental: {
               newConfig: { configPath: "test/server/fixtures/room-cloudflare.config.ts" },
@@ -54,9 +69,6 @@ export default defineConfig({
         ],
         test: {
           name: "room-workerd",
-          // Cached module snapshots exceed workerd's WebSocket message limit.
-          // https://github.com/cloudflare/workers-sdk/issues/16349
-          fsModuleCache: false,
           globalSetup: ["./test/server/preview-setup.ts"],
           include: ["test/server/agent-room-workerd.test.ts"],
         },
