@@ -33,6 +33,9 @@ export default defineConfig({
         ],
         test: {
           name: "sdk-workerd",
+          // Cached module snapshots exceed workerd's WebSocket message limit.
+          // https://github.com/cloudflare/workers-sdk/issues/16349
+          fsModuleCache: false,
           include: ["test/server/embedded-opencode-workerd.test.ts"],
         },
       },
@@ -51,6 +54,9 @@ export default defineConfig({
         ],
         test: {
           name: "room-workerd",
+          // Cached module snapshots exceed workerd's WebSocket message limit.
+          // https://github.com/cloudflare/workers-sdk/issues/16349
+          fsModuleCache: false,
           globalSetup: ["./test/server/preview-setup.ts"],
           include: ["test/server/agent-room-workerd.test.ts"],
         },
