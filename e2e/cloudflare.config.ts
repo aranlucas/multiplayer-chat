@@ -8,7 +8,7 @@ export default defineConfig({
     name: "relay-multiplayer-agent-e2e",
     compatibilityDate: "2026-08-25",
     compatibilityFlags: ["nodejs_compat"],
-    entrypoint: "../src/worker.ts",
+    entrypoint: "worker.ts",
     assets: {
       notFoundHandling: "single-page-application",
       runWorkerFirst: ["/api/*"],

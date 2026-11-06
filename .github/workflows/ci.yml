@@ -39,4 +39,53 @@ jobs:
             run: pnpm test
 
           - name: Typecheck and build (SPA + Worker Preview)
-            run: pnpm build && pnpm build:preview
+            run: pnpm typecheck && pnpm build && pnpm build:preview
+
+  browser-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          cache: true
+          require-lockfile: true
+      - run: pnpm exec e2e-web install chromium --with-deps
+      - run: pnpm exec e2e run
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: browser-regression-evidence
+          path: .e2e
+          include-hidden-files: true
+          retention-days: 7
+
+  pre-fix-reproduction:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          cache: true
+          require-lockfile: true
+      - name: Restore defective implementation with current regression assertions
+        run: git restore --source=0579280 -- src/client/use-room.ts src/server/github-auth.ts src/server/agent-room-core.ts
+      - name: Require each defect regression to fail on the baseline
+        shell: bash
+        run: |
+          for scenario in 'assigns independent same-name' 'ignores malformed unrelated cookies' 'keeps the OAuth callback' 'rejects repository switching until'; do
+            if pnpm exec vitest run --config vitest.config.ts --project node test/client/room-bootstrap.test.ts test/server/github-auth.test.ts test/server/agent-room-turn.test.ts -t "$scenario"; then
+              echo "Regression unexpectedly passed on defective baseline: $scenario"
+              exit 1
+            fi
+          done

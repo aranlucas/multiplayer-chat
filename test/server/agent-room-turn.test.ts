@@ -345,3 +345,89 @@ describe("room turn ownership", () => {
     expect(snapshot.queue.map((item) => item.text)).toEqual(["follow-up"]);
   });
 });
+
+it("rejects repository switching until a paused provider has saved its final checkpoint", async () => {
+  const fixture = await createRoom();
+  fixture.database.sql.exec("UPDATE relay_room SET workspace_status = 'ready'");
+  const configure = vi.spyOn(RepositoryWorkspace.prototype, "configure").mockResolvedValue(info);
+  const turn = controlledTurn();
+
+  const running = fixture.send({
+    type: "prompt",
+    text: "edit feature",
+    delivery: "steer",
+    requestID: "turn",
+  });
+
+  await turn.started;
+  await fixture.send({ type: "agent.pause" });
+  await fixture.send({
+    type: "room.configure",
+    repository: "other/repository",
+    branch: "main",
+    requestID: "configure",
+  });
+  expect(fixture.messages).toContainEqual(
+    expect.objectContaining({
+      type: "error",
+      message: "Wait for active workspace operations before changing the repository",
+    }),
+  );
+  expect(configure).not.toHaveBeenCalled();
+  expect((await fixture.snapshot()).room.repository).not.toBe("other/repository");
+  turn.result.resolve(result("paused-session", "saved old-repository checkpoint", "interrupted"));
+  await running;
+  expect(fixture.changes()).toEqual(["saved old-repository checkpoint"]);
+});
+
+it("excludes competing work during configuration and releases the guard after failure", async () => {
+  const fixture = await createRoom();
+  fixture.database.sql.exec("UPDATE relay_room SET workspace_status = 'ready'");
+  const configuring = deferred<typeof info>();
+  const started = deferred<void>();
+
+  const configure = vi
+    .spyOn(RepositoryWorkspace.prototype, "configure")
+    .mockImplementationOnce(() => {
+      started.resolve();
+
+      return configuring.promise;
+    });
+
+  const first = fixture.send({
+    type: "room.configure",
+    repository: "other/repository",
+    branch: "main",
+    requestID: "first",
+  });
+
+  await started.promise;
+  await fixture.send({ type: "prompt", text: "edit", delivery: "steer", requestID: "prompt" });
+  await fixture.send({
+    type: "room.configure",
+    repository: "third/repository",
+    branch: "main",
+    requestID: "second",
+  });
+  await expect(
+    fixture.room.createPullRequest({ accessToken: "synthetic", login: "synthetic" }),
+  ).rejects.toThrow("Wait for repository configuration");
+  expect(execution.turn).not.toHaveBeenCalled();
+  expect(configure).toHaveBeenCalledTimes(1);
+  expect(fixture.messages).toContainEqual(
+    expect.objectContaining({
+      type: "error",
+      message: "Wait for repository configuration before sending a prompt",
+    }),
+  );
+  configuring.reject(new Error("Clone unavailable"));
+  await first;
+  configure.mockResolvedValueOnce(info);
+  await fixture.send({
+    type: "room.configure",
+    repository: "owner/repo",
+    branch: "main",
+    requestID: "retry",
+  });
+  expect(fixture.messages).toContainEqual({ type: "ack", requestID: "retry" });
+});
