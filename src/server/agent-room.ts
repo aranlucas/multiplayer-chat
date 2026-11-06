@@ -4,8 +4,6 @@ import { AgentRoomCore } from "./agent-room-core";
 import { openCodeConfiguration, type WorkerEnv } from "./opencode";
 import { railwayTools } from "./railway-tools";
 
-export { validateHandoffClientState } from "./agent-room-core";
-
 export class AgentRoom extends DurableObject<WorkerEnv> {
   private readonly core: AgentRoomCore;
   constructor(ctx: DurableObjectState, env: WorkerEnv) {

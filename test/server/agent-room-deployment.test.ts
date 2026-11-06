@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { validateHandoffClientState, type RoomContext } from "@/server/agent-room-core";
+import type { RoomContext } from "@/server/agent-room-core";
+import { validateHandoffClientState } from "@/shared/handoff";
 import { roomContext, TestRoom, simulationEnv } from "@test/server/fixtures/room";
 import { deferred } from "@test/server/fixtures/deferred";
 import { sealGitHubCredential } from "@/server/github-auth";
@@ -47,11 +48,11 @@ class PublishingRoom extends TestRoom {
 
 describe("deployment readiness", () => {
   it.each([
-    ["abc", 1],
-    ["wrong-commit", 0],
+    ["abc", "ready"],
+    ["wrong-commit", "waiting"],
   ] as const)(
     "recovers a saved preview only for its published SHA (%s)",
-    async (commitSHA, expectedCalls) => {
+    async (commitSHA, expectedStatus) => {
       const { context, database } = fixture();
       const room = new TestRoom(context);
       room.seed("room-1");
@@ -66,14 +67,11 @@ describe("deployment readiness", () => {
         "fetch",
         vi.fn().mockResolvedValue(Response.json({ ready: true, commitSHA, roomProtocol: 1 })),
       );
-      const recordDeployment = vi.spyOn(room, "recordDeployment");
       await room.alarm();
-      expect(recordDeployment).toHaveBeenCalledTimes(expectedCalls);
-      expect(recordDeployment.mock.calls).toEqual(
-        Array.from({ length: expectedCalls }, (): unknown[] => [
-          expect.objectContaining({ status: "ready", commitSHA: "abc" }),
-        ]),
-      );
+      expect(room.info().latestRevision).toMatchObject({
+        status: expectedStatus,
+        commitSHA: "abc",
+      });
     },
   );
   it.each(["waiting", "building", "failed"] as const)(

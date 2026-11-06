@@ -1,5 +1,8 @@
+import { z } from "zod";
+import { handoffClientStateSchema } from "./shared/handoff";
+import { verifyPreview } from "./server/preview-readiness";
 import { Hono } from "hono";
-import { safeParticipantName, safeRoomID } from "./shared/protocol";
+import { deploymentStatusSchema, safeParticipantName, safeRoomID } from "./shared/protocol";
 import { liveOpenCodeConfigurationError, type WorkerEnv } from "./server/opencode";
 import {
   beginGitHubAuthorization,
@@ -18,23 +21,13 @@ interface PullRequestInput {
   body?: string;
 }
 
-interface HandoffParticipant {
-  id?: string;
-  name?: string;
-  role?: string;
-}
-
-interface HandoffClientState {
-  draft?: string;
-  selectedID?: string;
-  mobileTab?: "transcript" | "brief" | "people" | "queue";
-}
-
-interface HandoffInput {
-  participant?: HandoffParticipant;
-  currentOrigin?: string;
-  clientState?: HandoffClientState;
-}
+const handoffInputSchema = z.object({
+  participant: z
+    .object({ id: z.string(), name: z.string(), role: z.string().optional() })
+    .optional(),
+  currentOrigin: z.string().optional(),
+  clientState: handoffClientStateSchema.optional(),
+});
 
 interface RedeemHandoffInput {
   token?: string;
@@ -50,21 +43,15 @@ interface LocalPreviewInput {
   commitSHA?: string;
 }
 
-interface DeploymentInput {
-  roomID?: string;
-  commitSHA?: string;
-  status?: "waiting" | "building" | "ready" | "failed";
-  previewURL?: string;
-  provider?: string;
-  deploymentID?: string;
-  failure?: string;
-}
-
-interface PreviewReadiness {
-  ready?: boolean;
-  commitSHA?: string;
-  roomProtocol?: number;
-}
+const deploymentInputSchema = z.object({
+  roomID: z.string().optional(),
+  commitSHA: z.string().optional(),
+  status: deploymentStatusSchema.optional(),
+  previewURL: z.string().optional(),
+  provider: z.string().optional(),
+  deploymentID: z.string().optional(),
+  failure: z.string().optional(),
+});
 
 const app = new Hono<AppBindings>();
 
@@ -168,7 +155,7 @@ app.post("/api/rooms/:room/handoffs", async (context) => {
   try {
     const roomID = safeRoomID(context.req.param("room"));
 
-    const input = await context.req.json<HandoffInput>();
+    const input = handoffInputSchema.parse(await context.req.json());
 
     if (!input.participant?.id || !input.participant.name) {
       throw new Error("Participant identity is required");
@@ -291,7 +278,7 @@ app.post("/api/deployments", async (context) => {
   }
 
   try {
-    const input = await context.req.json<DeploymentInput>();
+    const input = deploymentInputSchema.parse(await context.req.json());
 
     if (!input.roomID || !input.commitSHA || !input.status) {
       throw new Error("Room, commit, and deployment status are required");
@@ -364,34 +351,4 @@ function handoffCors(request: Request, response: Response): Response {
     statusText: response.statusText,
     headers,
   });
-}
-
-async function verifyPreview(previewURL: string, commitSHA?: string) {
-  const preview = new URL(previewURL);
-  const local = preview.hostname === "127.0.0.1" || preview.hostname === "localhost";
-
-  if (preview.protocol !== "https:" && !(local && preview.protocol === "http:")) {
-    throw new Error("Preview URL must use HTTPS unless it is local");
-  }
-
-  const readiness = new URL("/__relay/ready", preview);
-
-  const response = await fetch(readiness, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(8_000),
-  });
-
-  const result: PreviewReadiness = await response.json<PreviewReadiness>().catch(() => ({}));
-
-  if (!response.ok || !result.ready) {
-    throw new Error("Preview did not pass its Relay readiness check");
-  }
-
-  if (result.roomProtocol !== 1) {
-    throw new Error("Preview uses an incompatible Relay room protocol");
-  }
-
-  if (commitSHA && result.commitSHA !== commitSHA) {
-    throw new Error("Preview commit does not match the published revision");
-  }
 }

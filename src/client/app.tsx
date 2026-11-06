@@ -9,7 +9,8 @@ import { ActivityRail } from "./components/activity-rail";
 import { CollaborationRail } from "./components/collaboration-rail";
 import { Composer } from "./components/composer";
 import { Header } from "./components/header";
-import { MobileTabs, type MobileTab } from "./components/mobile-tabs";
+import { MobileTabs } from "./components/mobile-tabs";
+import { mobileTabSchema, type MobileTab } from "../shared/handoff";
 import { Transcript } from "./components/transcript";
 import { ImplementationBrief } from "./components/implementation-brief";
 import { draftStorageKey, readDraft, writeDraft } from "./draft-storage";
@@ -54,7 +55,7 @@ export function App({ bootstrap, dependencies = defaultDependencies }: AppProps)
 
     const stored = window.sessionStorage.getItem(`relay:${roomID}:mobile-tab`);
 
-    return stored === "brief" || stored === "people" || stored === "queue" ? stored : "transcript";
+    return mobileTabSchema.catch("transcript").parse(stored);
   });
 
   const draftKey = draftStorageKey(controlOrigin, roomID, identity.id);

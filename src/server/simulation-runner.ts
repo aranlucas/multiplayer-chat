@@ -1,13 +1,6 @@
 import type { JsonRecord } from "../shared/json-value";
 import type { WorkspaceInfo } from "./workspace";
 
-/**
- * Scripted search/diff playback for `OPENCODE_MODE: simulation`.
- * The Durable Object keeps turn generation and queue consume; this module
- * talks to workspace `search`/`diff` and emits timeline payloads through
- * `emitEvent` so the room can `insertEvent`/`broadcast`.
- */
-
 export interface SimulatedWorkspace {
   ensureReady(): Promise<WorkspaceInfo>;
   search(query: string): Promise<string>;

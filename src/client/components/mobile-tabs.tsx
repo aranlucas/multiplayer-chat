@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export type MobileTab = "transcript" | "brief" | "people" | "queue";
+import type { MobileTab } from "../../shared/handoff";
 
 interface MobileTabOption {
   id: MobileTab;

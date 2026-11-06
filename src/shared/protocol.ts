@@ -4,6 +4,8 @@ import { textValue } from "./text-value";
 
 export type ParticipantRole = "maintainer" | "contributor";
 
+export const ROOM_PROTOCOL_VERSION = 1;
+
 export const DEFAULT_REPOSITORY = "aranlucas/multiplayer-chat";
 
 export const DEFAULT_BRANCH = "main";
@@ -19,7 +21,9 @@ export interface Participant {
 
 export type DeliveryMode = "steer" | "queue";
 
-export type DeploymentStatus = "waiting" | "building" | "ready" | "failed";
+export const deploymentStatusSchema = z.enum(["waiting", "building", "ready", "failed"]);
+
+export type DeploymentStatus = z.infer<typeof deploymentStatusSchema>;
 
 export interface RoomRevision {
   id: string;
@@ -407,7 +411,7 @@ const revisionSchema = z.object({
   sequence: z.number(),
   workspaceRevision: z.number(),
   commitSHA: z.string(),
-  status: z.enum(["waiting", "building", "ready", "failed"]),
+  status: deploymentStatusSchema,
   previewURL: z.string().optional(),
   provider: z.string().optional(),
   deploymentID: z.string().optional(),

@@ -1,3 +1,16 @@
+import { validatePreviewURL, verifyPreview } from "./preview-readiness";
+import {
+  handoffClientStateSchema,
+  handoffParticipantSchema,
+  validateHandoffClientState,
+  type HandoffClientState,
+  type HandoffParticipant,
+} from "../shared/handoff";
+import {
+  migrateRoomSchema,
+  hideRelayTablesForOpenCodeBootstrap,
+  restoreRelayTables,
+} from "./room-schema";
 import { textOrFallback } from "../shared/text-fallback";
 import { z } from "zod";
 import type { RoomStorage } from "./storage";
@@ -46,7 +59,7 @@ import {
   type NativeRunnerEvent,
 } from "./embedded-opencode";
 import { drainSimulatedQueue, runSimulatedTurn } from "./simulation-runner";
-import { RepositoryWorkspace, restorePullRequestAssociation } from "./workspace";
+import { RepositoryWorkspace } from "./workspace";
 import { RailwayRoomSandbox } from "./railway-sandbox";
 import {
   GitHubPullRequestClient,
@@ -98,8 +111,6 @@ type ActivateRevisionInput = {
   currentOrigin: string;
 };
 
-type SqlNameRow = { name: string };
-
 type SqlCountRow = { count: number };
 
 type OpenCodeCursorRow = { opencode_event_cursor: string | null };
@@ -138,15 +149,7 @@ type RoomRow = {
   title_auto: number;
 };
 
-type PreviewReadiness = { ready?: boolean; commitSHA?: string; roomProtocol?: number };
-
 const socketAttachmentSchema = z.object({ participant: actorSchema });
-
-const handoffClientStateSchema = z.object({
-  draft: z.string().optional().catch(undefined),
-  selectedID: z.string().optional().catch(undefined),
-  mobileTab: z.enum(["transcript", "brief", "people", "queue"]).optional().catch(undefined),
-});
 
 interface SocketAttachment {
   participant: Pick<Participant, "id" | "name" | "role" | "color">;
@@ -243,18 +246,6 @@ interface HandoffRow {
   used_at: number | null;
 }
 
-interface HandoffParticipant {
-  id: string;
-  name: string;
-  role: Participant["role"];
-}
-
-interface HandoffClientState {
-  draft?: string;
-  selectedID?: string;
-  mobileTab?: "transcript" | "brief" | "people" | "queue";
-}
-
 export type RoomSocket = Pick<
   WebSocket,
   "send" | "close" | "serializeAttachment" | "deserializeAttachment"
@@ -304,9 +295,9 @@ export class AgentRoomCore {
 
     if (dependencies.runner) {
       this.runner = dependencies.runner;
-      this.migrate();
+      migrateRoomSchema(ctx.storage.sql);
     } else if (env.OPENCODE_MODE === "live") {
-      const hiddenRelayTables = this.hideRelayTablesForOpenCodeBootstrap();
+      const hiddenRelayTables = hideRelayTablesForOpenCodeBootstrap(ctx.storage.sql);
 
       const host = ctx.blockConcurrencyWhile(async () => {
         try {
@@ -315,13 +306,13 @@ export class AgentRoomCore {
           }
 
           const opencode = await dependencies.createHost(this.sandbox, this.workspace);
-          this.restoreRelayTables(hiddenRelayTables);
-          this.migrate();
+          restoreRelayTables(ctx.storage.sql, hiddenRelayTables);
+          migrateRoomSchema(ctx.storage.sql);
 
           return opencode;
         } catch (error) {
-          this.restoreRelayTables(hiddenRelayTables);
-          this.migrate();
+          restoreRelayTables(ctx.storage.sql, hiddenRelayTables);
+          migrateRoomSchema(ctx.storage.sql);
           throw error;
         }
       });
@@ -332,7 +323,7 @@ export class AgentRoomCore {
         this.sandbox,
       );
     } else {
-      this.migrate();
+      migrateRoomSchema(ctx.storage.sql);
     }
   }
 
@@ -655,7 +646,7 @@ export class AgentRoomCore {
 
     const stored = z
       .object({
-        participant: actorSchema.omit({ color: true }),
+        participant: handoffParticipantSchema,
         clientState: handoffClientStateSchema.optional(),
       })
       .parse(JSON.parse(handoff.participant_json));
@@ -716,7 +707,7 @@ export class AgentRoomCore {
 
     // Recover previews whose successful callback was overwritten by an older poll.
     if (revision.previewURL) {
-      const ready = await verifyReadyPreview(revision.previewURL, revision.commitSHA).then(
+      const ready = await verifyPreview(revision.previewURL, revision.commitSHA).then(
         () => true,
         () => false,
       );
@@ -759,7 +750,7 @@ export class AgentRoomCore {
     );
 
     if (observation.status === "ready" && observation.environmentURL) {
-      await verifyReadyPreview(observation.environmentURL, room.pullRequestHeadSHA);
+      await verifyPreview(observation.environmentURL, room.pullRequestHeadSHA);
     }
 
     await this.recordDeployment({
@@ -843,192 +834,6 @@ export class AgentRoomCore {
 
   async webSocketError(socket: RoomSocket): Promise<void> {
     await this.webSocketClose(socket);
-  }
-
-  protected migrate() {
-    this.ctx.storage.sql.exec(`
-      CREATE TABLE IF NOT EXISTS relay_room (
-        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-        room_id TEXT NOT NULL,
-        title TEXT NOT NULL,
-        repository TEXT NOT NULL,
-        branch TEXT NOT NULL,
-        agent_status TEXT NOT NULL,
-        opencode_model TEXT,
-        opencode_session_id TEXT,
-        opencode_event_cursor TEXT,
-        commit_sha TEXT,
-        workspace_status TEXT NOT NULL DEFAULT 'cloning',
-        workspace_error TEXT
-      );
-      CREATE TABLE IF NOT EXISTS relay_events (
-        seq INTEGER PRIMARY KEY AUTOINCREMENT,
-        id TEXT NOT NULL UNIQUE,
-        kind TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        actor_json TEXT,
-        payload_json TEXT NOT NULL,
-        queue_status TEXT
-      );
-      CREATE TABLE IF NOT EXISTS relay_participants (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        role TEXT NOT NULL,
-        color TEXT NOT NULL,
-        last_seen INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS relay_permissions (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        action TEXT NOT NULL,
-        resources_json TEXT NOT NULL,
-        message TEXT,
-        status TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS relay_revisions (
-        id TEXT PRIMARY KEY,
-        sequence INTEGER NOT NULL UNIQUE,
-        workspace_revision INTEGER NOT NULL,
-        commit_sha TEXT NOT NULL UNIQUE,
-        status TEXT NOT NULL,
-        preview_url TEXT,
-        provider TEXT,
-        deployment_id TEXT,
-        failure TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        activated_at INTEGER
-      );
-      CREATE TABLE IF NOT EXISTS relay_handoffs (
-        token_hash TEXT PRIMARY KEY,
-        revision_id TEXT NOT NULL,
-        target_origin TEXT NOT NULL,
-        participant_json TEXT NOT NULL,
-        expires_at INTEGER NOT NULL,
-        used_at INTEGER
-      );
-      CREATE TABLE IF NOT EXISTS relay_brief (
-        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-        objective TEXT NOT NULL DEFAULT '',
-        constraints_json TEXT NOT NULL DEFAULT '[]',
-        validation_json TEXT NOT NULL DEFAULT '[]',
-        updated_at INTEGER,
-        updated_by_json TEXT
-      );
-      CREATE TABLE IF NOT EXISTS relay_decisions (
-        id TEXT PRIMARY KEY,
-        text TEXT NOT NULL,
-        rationale TEXT,
-        source_event_id TEXT,
-        actor_json TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS relay_brief_review_comments (
-        id TEXT PRIMARY KEY,
-        review_round INTEGER NOT NULL,
-        text TEXT NOT NULL,
-        actor_json TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS relay_events_created_idx ON relay_events(created_at);
-      CREATE INDEX IF NOT EXISTS relay_handoffs_expiry_idx ON relay_handoffs(expires_at);
-      CREATE INDEX IF NOT EXISTS relay_decisions_created_idx ON relay_decisions(created_at);
-      CREATE INDEX IF NOT EXISTS relay_brief_review_comments_created_idx ON relay_brief_review_comments(created_at);
-    `);
-    this.ctx.storage.sql.exec("INSERT OR IGNORE INTO relay_brief (singleton) VALUES (1)");
-    this.ensureColumn("relay_room", "commit_sha", "TEXT");
-    this.ensureColumn("relay_room", "workspace_status", "TEXT NOT NULL DEFAULT 'cloning'");
-    this.ensureColumn("relay_room", "workspace_error", "TEXT");
-    this.ensureColumn("relay_room", "railway_sandbox_id", "TEXT");
-    this.ensureColumn("relay_room", "opencode_event_cursor", "TEXT");
-    this.ensureColumn("relay_room", "opencode_model", "TEXT");
-    this.ensureColumn("relay_room", "agent_turn_generation", "INTEGER NOT NULL DEFAULT 0");
-    this.ensureColumn("relay_events", "queue_status", "TEXT");
-    this.ctx.storage.sql.exec(
-      "CREATE INDEX IF NOT EXISTS relay_events_queue_idx ON relay_events(queue_status, seq)",
-    );
-    this.ensureColumn("relay_room", "pull_request_url", "TEXT");
-    this.ensureColumn("relay_room", "pull_request_branch", "TEXT");
-    this.ensureColumn("relay_room", "pull_request_number", "INTEGER");
-    this.ensureColumn("relay_room", "pull_request_repository", "TEXT");
-    this.ensureColumn("relay_room", "pull_request_head_sha", "TEXT");
-    this.ensureColumn("relay_room", "github_credential", "TEXT");
-    this.ensureColumn("relay_room", "title_auto", "INTEGER NOT NULL DEFAULT 1");
-    this.ensureColumn("relay_room", "workspace_revision", "INTEGER NOT NULL DEFAULT 0");
-    this.ensureColumn("relay_room", "published_workspace_revision", "INTEGER NOT NULL DEFAULT 0");
-    restorePullRequestAssociation(this.ctx.storage.sql);
-    this.ensureColumn("relay_brief", "revision", "INTEGER NOT NULL DEFAULT 0");
-    this.ensureColumn("relay_brief", "review_status", "TEXT NOT NULL DEFAULT 'draft'");
-    this.ensureColumn("relay_brief", "review_round", "INTEGER NOT NULL DEFAULT 0");
-    this.ensureColumn("relay_brief", "review_started_at", "INTEGER");
-    this.ensureColumn("relay_brief", "review_started_by_json", "TEXT");
-    this.ensureColumn("relay_brief", "review_resolved_at", "INTEGER");
-    this.ensureColumn("relay_brief", "review_resolved_by_json", "TEXT");
-    this.ctx.storage.sql.exec("DELETE FROM relay_events WHERE id LIKE 'seed-%'");
-    this.ctx.storage.sql.exec("DELETE FROM relay_permissions WHERE id = 'demo-deploy'");
-    this.ctx.storage.sql.exec(
-      "UPDATE relay_room SET branch = 'master', commit_sha = NULL, workspace_status = 'cloning', workspace_error = NULL WHERE repository = 'cloudflare/workers-chat-demo' AND branch IN ('fix/session-reconnect', 'main')",
-    );
-  }
-
-  protected hideRelayTablesForOpenCodeBootstrap(): string[] {
-    const tables = this.ctx.storage.sql
-      .exec<SqlNameRow>(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND (name LIKE 'relay_%' OR name LIKE '_opencode_bootstrap_relay_%')",
-      )
-      .toArray()
-      .map((row) => row.name);
-
-    const hasOpenCodeSchema = this.ctx.storage.sql
-      .exec<SqlCountRow>(
-        "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('session', 'session_v2')",
-      )
-      .one().count;
-
-    const hidden = tables.filter((name) => name.startsWith("_opencode_bootstrap_"));
-
-    if (hasOpenCodeSchema) {
-      this.restoreRelayTables(hidden);
-
-      return [];
-    }
-
-    for (const name of tables) {
-      if (name.startsWith("_opencode_bootstrap_")) {
-        continue;
-      }
-
-      this.ctx.storage.sql.exec(`ALTER TABLE ${name} RENAME TO _opencode_bootstrap_${name}`);
-      hidden.push(`_opencode_bootstrap_${name}`);
-    }
-
-    return hidden;
-  }
-
-  protected restoreRelayTables(tables: string[]) {
-    for (const hidden of tables) {
-      const visible = hidden.replace(/^_opencode_bootstrap_/, "");
-
-      const exists = this.ctx.storage.sql
-        .exec<SqlCountRow>(
-          "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = ?",
-          hidden,
-        )
-        .one().count;
-
-      if (exists) {
-        this.ctx.storage.sql.exec(`ALTER TABLE ${hidden} RENAME TO ${visible}`);
-      }
-    }
-  }
-
-  protected ensureColumn(table: string, column: string, definition: string) {
-    const columns = this.ctx.storage.sql.exec<SqlNameRow>(`PRAGMA table_info(${table})`).toArray();
-
-    if (!columns.some((candidate) => candidate.name === column)) {
-      this.ctx.storage.sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-    }
   }
 
   protected ensureRoom(roomID: string) {
@@ -2197,65 +2002,10 @@ function hashCode(value: string): number {
   return hash | 0;
 }
 
-function validatePreviewURL(value: string): string {
-  const url = new URL(value);
-  const local = url.hostname === "127.0.0.1" || url.hostname === "localhost";
-
-  if (url.protocol !== "https:" && !(local && url.protocol === "http:")) {
-    throw new Error("Preview URL must use HTTPS unless it is local");
-  }
-
-  url.username = "";
-  url.password = "";
-  url.hash = "";
-
-  return url.toString();
-}
-
 async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
 
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-export function validateHandoffClientState(
-  value: HandoffClientState | undefined,
-): HandoffClientState | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const state = handoffClientStateSchema.parse(value);
-  const draft = state.draft?.slice(0, 8_000);
-
-  const selectedID = state.selectedID?.slice(0, 200);
-
-  const mobileTab =
-    value.mobileTab === "brief" || value.mobileTab === "people" || value.mobileTab === "queue"
-      ? value.mobileTab
-      : "transcript";
-
-  return { draft, selectedID, mobileTab };
-}
-
-async function verifyReadyPreview(previewURL: string, commitSHA: string) {
-  const readiness = new URL("/__relay/ready", validatePreviewURL(previewURL));
-
-  const response = await fetch(readiness, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(8_000),
-  });
-
-  const result: PreviewReadiness = await response.json<PreviewReadiness>().catch(() => ({}));
-
-  if (
-    !response.ok ||
-    !result.ready ||
-    result.commitSHA !== commitSHA ||
-    result.roomProtocol !== 1
-  ) {
-    throw new Error("Deployment did not pass the Relay readiness check");
-  }
 }
 
 function unwrapNativeEvent(value: JsonRecord): JsonRecord {

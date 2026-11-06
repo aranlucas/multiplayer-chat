@@ -99,7 +99,7 @@ describe("published workspace association", () => {
 
   it("restores missing PR fields from the exact published commit, without replacing intact fields", async () => {
     const { DatabaseSync } = await import("node:sqlite");
-    const { restorePullRequestAssociation } = await import("@/server/workspace");
+    const { restorePullRequestAssociation } = await import("@/server/room-schema");
     const database = new DatabaseSync(":memory:");
     database.exec(`CREATE TABLE relay_room (singleton INTEGER PRIMARY KEY, pull_request_url TEXT, pull_request_branch TEXT, pull_request_number INTEGER, pull_request_head_sha TEXT);
       CREATE TABLE relay_events (seq INTEGER PRIMARY KEY, kind TEXT, payload_json TEXT);
