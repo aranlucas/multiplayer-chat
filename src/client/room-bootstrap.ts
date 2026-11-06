@@ -1,3 +1,4 @@
+import { handoffClientStateSchema, type HandoffClientState } from "../shared/handoff";
 import { textOrFallback } from "../shared/text-fallback";
 import { z } from "zod";
 import { getIdentity, rememberIdentity, roomIdentitySchema, type RoomIdentity } from "./use-room";
@@ -6,11 +7,7 @@ export interface RelayBootstrap {
   roomID: string;
   controlOrigin: string;
   identity: RoomIdentity;
-  resumeState?: {
-    draft?: string;
-    selectedID?: string;
-    mobileTab?: "transcript" | "brief" | "people" | "queue";
-  };
+  resumeState?: HandoffClientState;
 }
 
 export function createThread() {
@@ -48,13 +45,7 @@ export async function resolveRelayBootstrap(): Promise<RelayBootstrap> {
   const result = z
     .object({
       participant: roomIdentitySchema.optional(),
-      clientState: z
-        .object({
-          draft: z.string().optional(),
-          selectedID: z.string().optional(),
-          mobileTab: z.enum(["transcript", "brief", "people", "queue"]).optional(),
-        })
-        .optional(),
+      clientState: handoffClientStateSchema.optional(),
       error: z.string().optional(),
     })
     .parse(await response.json());
@@ -88,12 +79,7 @@ function rememberClientState(roomID: string, state: RelayBootstrap["resumeState"
     window.sessionStorage.setItem(`relay:${roomID}:selected`, state.selectedID);
   }
 
-  if (
-    state.mobileTab === "transcript" ||
-    state.mobileTab === "brief" ||
-    state.mobileTab === "people" ||
-    state.mobileTab === "queue"
-  ) {
+  if (state.mobileTab !== undefined) {
     window.sessionStorage.setItem(`relay:${roomID}:mobile-tab`, state.mobileTab);
   }
 }

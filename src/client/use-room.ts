@@ -1,3 +1,13 @@
+import {
+  handoffParticipantSchema as roomIdentitySchema,
+  type HandoffParticipant as RoomIdentity,
+} from "../shared/handoff";
+
+export {
+  handoffParticipantSchema as roomIdentitySchema,
+  type HandoffParticipant as RoomIdentity,
+} from "../shared/handoff";
+
 import { textOrFallback } from "../shared/text-fallback";
 import { z } from "zod";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -28,18 +38,6 @@ export interface RoomState {
   decisions: RoomDecision[];
   connection: "connecting" | "connected" | "reconnecting" | "offline";
   error?: string;
-}
-
-export const roomIdentitySchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  role: z.enum(["maintainer", "contributor"]),
-});
-
-export interface RoomIdentity {
-  id: string;
-  name: string;
-  role: "maintainer" | "contributor";
 }
 
 const initialState: RoomState = {

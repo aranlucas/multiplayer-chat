@@ -83,3 +83,22 @@ function env(overrides: Partial<RoomEnv> = {}): RoomEnv {
     ...overrides,
   };
 }
+
+describe("/api/deployments", () => {
+  it("rejects an invalid deployment status before looking up a room", async () => {
+    const response = await app.request(
+      "https://relay.test/api/deployments",
+      {
+        method: "POST",
+        headers: { Authorization: "Bearer webhook", "Content-Type": "application/json" },
+        body: JSON.stringify({ roomID: "room-1", commitSHA: "abc", status: "bogus" }),
+      },
+      env({ RELAY_DEPLOYMENT_WEBHOOK_SECRET: "webhook" }),
+    );
+
+    expect(response.status).toBe(400);
+    const body: unknown = await response.json();
+
+    expect(parseJsonRecord(body).error).toEqual(expect.stringContaining("status"));
+  });
+});

@@ -1,16 +1,7 @@
 import { z } from "zod";
 import { jsonRecordSchema, type JsonRecord } from "../shared/json-value";
 
-/**
- * Extracts the session title from an OpenCode `session.updated` event emitted
- * by the built-in `use-title` agent. The agent calls `setTitle`, which patches
- * the session and publishes `session.updated` with the new title under
- * `info.title`. Returns `undefined` for unrelated events or for OpenCode's
- * placeholder default titles so they are never captured as room titles.
- *
- * This helper is intentionally free of any `cloudflare:workers` imports so it
- * can be unit tested outside the Workers runtime.
- */
+// OpenCode's placeholder titles must not replace the room's own title.
 const sessionTitleEventSchema = z.object({
   type: z.string().catch(""),
   data: z

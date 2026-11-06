@@ -1,4 +1,5 @@
-import type { RoomSql, RoomStorage } from "./storage";
+import { WORKSPACE_DIRECTORY } from "./workspace-path";
+import type { RoomStorage } from "./storage";
 import {
   MAX_WORKSPACE_CHANGE_BYTES,
   MAX_WORKSPACE_FILE_BYTES,
@@ -55,31 +56,7 @@ interface PullRequestWorkspace extends WorkspaceInfo {
   changes: WorkspaceChange[];
 }
 
-const WORKSPACE_DIRECTORY = "/workspace/repository";
-
 const MAX_TOOL_OUTPUT = 60_000;
-
-// Older checkpoints cleared these two fields while retaining the publication's
-// number and SHA. Recover only from the event for that exact published commit.
-export function restorePullRequestAssociation(sql: RoomSql) {
-  sql.exec(`
-    UPDATE relay_room SET
-      pull_request_url = COALESCE(pull_request_url, (
-        SELECT json_extract(payload_json, '$.url') FROM relay_events
-        WHERE kind = 'system' AND json_extract(payload_json, '$.type') = 'pull_request'
-          AND json_extract(payload_json, '$.commitSHA') = relay_room.pull_request_head_sha
-        ORDER BY seq DESC LIMIT 1
-      )),
-      pull_request_branch = COALESCE(pull_request_branch, (
-        SELECT json_extract(payload_json, '$.branch') FROM relay_events
-        WHERE kind = 'system' AND json_extract(payload_json, '$.type') = 'pull_request'
-          AND json_extract(payload_json, '$.commitSHA') = relay_room.pull_request_head_sha
-        ORDER BY seq DESC LIMIT 1
-      ))
-    WHERE singleton = 1 AND pull_request_number IS NOT NULL
-      AND (pull_request_url IS NULL OR pull_request_branch IS NULL)
-  `);
-}
 
 export class RepositoryWorkspace {
   private preparing?: Promise<WorkspaceInfo>;

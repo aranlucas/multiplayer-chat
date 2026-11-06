@@ -1,3 +1,4 @@
+import { WORKSPACE_DIRECTORY } from "./workspace-path";
 import { z } from "zod";
 import { jsonRecord, parseJsonRecord, type JsonRecord, type JsonValue } from "../shared/json-value";
 import { InactiveAgentTurnError } from "./agent-turn";
@@ -299,7 +300,7 @@ export class EmbeddedOpenCodeRunner {
     const opencode = await this.host;
 
     const response = await opencode.model.list({
-      location: { directory: "/workspace/repository" },
+      location: { directory: WORKSPACE_DIRECTORY },
     });
 
     return response.data
@@ -351,7 +352,7 @@ export class EmbeddedOpenCodeRunner {
     return opencode.sessions.create({
       agent: "build",
       model: openCodeModelRef(model),
-      location: { directory: "/workspace/repository" },
+      location: { directory: WORKSPACE_DIRECTORY },
     });
   }
 }

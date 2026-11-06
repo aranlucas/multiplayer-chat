@@ -1,3 +1,4 @@
+import { handoffClientStateSchema, validateHandoffClientState } from "@/shared/handoff";
 import { ZodError } from "zod";
 import { describe, expect, it } from "vitest";
 import { parseJsonRecord, jsonRecord } from "@/shared/json-value";
@@ -83,5 +84,35 @@ describe("validated wire boundaries", () => {
     expect(parseWorkspaceChanges([{ path: "file", content: null }])).toEqual([
       { path: "file", content: null },
     ]);
+  });
+});
+
+describe("handoff client state boundary", () => {
+  it("retains usable draft fields when optional navigation state is malformed", () => {
+    const decoded = handoffClientStateSchema.parse({
+      draft: "unsent",
+      selectedID: 42,
+      mobileTab: "unknown",
+    });
+
+    expect(validateHandoffClientState(decoded)).toEqual({
+      draft: "unsent",
+      selectedID: undefined,
+      mobileTab: "transcript",
+    });
+  });
+
+  it("limits saved text without dropping valid navigation state", () => {
+    const result = validateHandoffClientState({
+      draft: "x".repeat(8_001),
+      selectedID: "e".repeat(201),
+      mobileTab: "queue",
+    });
+
+    expect(result).toEqual({
+      draft: "x".repeat(8_000),
+      selectedID: "e".repeat(200),
+      mobileTab: "queue",
+    });
   });
 });

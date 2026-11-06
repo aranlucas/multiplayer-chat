@@ -1,3 +1,4 @@
+import { ROOM_PROTOCOL_VERSION } from "./shared/protocol";
 import { Hono } from "hono";
 
 // oxlint-disable-next-line eslint/no-underscore-dangle -- Vite injects this build-time constant.
@@ -18,7 +19,7 @@ app.get("/__relay/ready", (context) =>
   context.json({
     ready: true,
     commitSHA: __RELAY_BUILD_SHA__,
-    roomProtocol: 1,
+    roomProtocol: ROOM_PROTOCOL_VERSION,
     controlPlaneOrigin: context.env.RELAY_CONTROL_ORIGIN,
   }),
 );

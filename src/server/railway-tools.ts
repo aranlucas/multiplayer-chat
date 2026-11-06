@@ -1,3 +1,4 @@
+import { WORKSPACE_DIRECTORY } from "./workspace-path";
 import { z } from "zod";
 import type { JsonRecord, JsonValue } from "../shared/json-value";
 import { jsonRecordSchema, parseJsonRecord } from "../shared/json-value";
@@ -16,8 +17,6 @@ type CommandResult = {
   timedOut: boolean;
   truncated: boolean;
 };
-
-const WORKSPACE_DIRECTORY = "/workspace/repository";
 
 const MAX_TOOL_OUTPUT = 60_000;
 
@@ -51,8 +50,7 @@ export function railwayToolDefinitions({
   return [
     {
       name: "shell",
-      description:
-        "Run a Bash command in the room's isolated Railway sandbox. Commands execute in /workspace/repository by default. Long commands can be detached and later reattached by sessionName.",
+      description: `Run a Bash command in the room's isolated Railway sandbox. Commands execute in ${WORKSPACE_DIRECTORY} by default. Long commands can be detached and later reattached by sessionName.`,
       input: {
         type: "object",
         properties: {
@@ -323,7 +321,7 @@ export function railwayTools(dependencies: RailwayToolDependencies) {
       await ctx.session.hook("context", (event) => {
         event.system.push({
           type: "text",
-          text: "The repository is mounted remotely at /workspace/repository in an isolated Railway Sandbox. Use the read, glob, grep, edit, write, and shell tools; all of them operate on that same remote workspace. Inspect evidence, implement requested changes, and run appropriate verification before finishing.",
+          text: `The repository is mounted remotely at ${WORKSPACE_DIRECTORY} in an isolated Railway Sandbox. Use the read, glob, grep, edit, write, and shell tools; all of them operate on that same remote workspace. Inspect evidence, implement requested changes, and run appropriate verification before finishing.`,
         });
       });
     },
@@ -349,7 +347,7 @@ function resolveWorkspacePath(value: string): string {
   const normalized = `/${parts.join("/")}`;
 
   if (normalized !== WORKSPACE_DIRECTORY && !normalized.startsWith(`${WORKSPACE_DIRECTORY}/`)) {
-    throw new Error("Tool paths must stay inside /workspace/repository");
+    throw new Error(`Tool paths must stay inside ${WORKSPACE_DIRECTORY}`);
   }
 
   return normalized;
