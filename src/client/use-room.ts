@@ -88,10 +88,7 @@ export function getIdentity(roomID: string): RoomIdentity {
   let id = window.localStorage.getItem(storageKey);
 
   if (id === null || id.length === 0) {
-    id =
-      requestedName === "You"
-        ? crypto.randomUUID()
-        : requestedName.toLowerCase().replaceAll(/[^a-z0-9]/g, "-");
+    id = crypto.randomUUID();
   }
 
   const identity = { id, name: requestedName, role: requestedRole };

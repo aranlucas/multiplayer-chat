@@ -272,6 +272,8 @@ export interface RoomDependencies {
 }
 
 export class AgentRoomCore {
+  private repositoryConfiguration = false;
+  private activeTurnInvocations = 0;
   protected pullRequestPublication?: Promise<PullRequestResult>;
   protected readonly workspace: RepositoryWorkspace;
   protected readonly sandbox: RailwayRoomSandbox;
@@ -346,6 +348,10 @@ export class AgentRoomCore {
   }
 
   async createPullRequest(input: CreatePullRequestInput): Promise<PullRequestResult> {
+    if (this.repositoryConfiguration) {
+      throw new Error("Wait for repository configuration before publishing");
+    }
+
     this.pullRequestPublication ??= this.publishPullRequest(input).finally(() => {
       this.pullRequestPublication = undefined;
     });
@@ -901,7 +907,23 @@ export class AgentRoomCore {
         throw new Error("Only maintainers can change the repository");
       }
 
-      const info = await this.workspace.configure(message.repository, message.branch);
+      if (
+        this.repositoryConfiguration ||
+        this.activeTurnInvocations > 0 ||
+        this.pullRequestPublication ||
+        this.getRoom().workspaceStatus === "cloning"
+      ) {
+        throw new Error("Wait for active workspace operations before changing the repository");
+      }
+
+      this.repositoryConfiguration = true;
+      let info;
+
+      try {
+        info = await this.workspace.configure(message.repository, message.branch);
+      } finally {
+        this.repositoryConfiguration = false;
+      }
 
       const event = this.insertEvent({
         id: crypto.randomUUID(),
@@ -1164,6 +1186,10 @@ export class AgentRoomCore {
       return;
     }
 
+    if (this.repositoryConfiguration) {
+      throw new Error("Wait for repository configuration before sending a prompt");
+    }
+
     const promptPayload: JsonRecord = { text: message.text, delivery: message.delivery };
 
     if (message.delivery === "queue") {
@@ -1207,6 +1233,7 @@ export class AgentRoomCore {
       }
 
       const turn = this.turns.start();
+      this.activeTurnInvocations += 1;
 
       try {
         if (message.delivery === "queue") {
@@ -1253,12 +1280,15 @@ export class AgentRoomCore {
 
         turn.complete("error");
         throw error;
+      } finally {
+        this.activeTurnInvocations -= 1;
       }
 
       return;
     }
 
     const turn = this.turns.start();
+    this.activeTurnInvocations += 1;
 
     try {
       const result = await this.runNativeOpenCodeTurn(
@@ -1290,6 +1320,8 @@ export class AgentRoomCore {
 
       this.broadcast({ type: "event", event: failed });
       throw error;
+    } finally {
+      this.activeTurnInvocations -= 1;
     }
   }
 

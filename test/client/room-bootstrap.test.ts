@@ -80,3 +80,15 @@ it("retains the existing identity fallback when tab storage is malformed", async
   sessionStorage.setItem(`relay:${roomID}:identity`, "invalid JSON");
   expect((await resolveRelayBootstrap()).identity).toEqual(alice);
 });
+
+it("assigns independent same-name visitors distinct identities and preserves reload identity", async () => {
+  window.history.replaceState(null, "", `/r/${roomID}?name=Alice`);
+  const first = (await resolveRelayBootstrap()).identity;
+  expect((await resolveRelayBootstrap()).identity).toEqual(first);
+  localStorage.clear();
+  sessionStorage.clear();
+  const second = (await resolveRelayBootstrap()).identity;
+  expect(second.name).toBe(first.name);
+  expect(second.id).not.toBe(first.id);
+  expect((await resolveRelayBootstrap()).identity).toEqual(second);
+});

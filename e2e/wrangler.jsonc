@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "relay-multiplayer-agent-e2e",
-  "main": "../src/worker.ts",
+  "main": "worker.ts",
   "compatibility_date": "2026-08-25",
   "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {

@@ -51,7 +51,7 @@ export default defineConfig((ctx) => {
   }
 
   if (ctx.mode === "e2e") {
-    return { ...e2eConfig, worker: { ...e2eConfig.worker, entrypoint: "src/worker.ts" } };
+    return { ...e2eConfig, worker: { ...e2eConfig.worker, entrypoint: "e2e/worker.ts" } };
   }
 
   return productionConfig;

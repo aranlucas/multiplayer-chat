@@ -317,11 +317,14 @@ function assertConfigured(env: GitHubOAuthEnv): asserts env is Required<GitHubOA
 }
 
 function safeReturnTo(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+  const base = "https://relay.invalid";
+  const candidate = value?.slice(0, 1_000);
+
+  if (!candidate?.startsWith("/") || new URL(candidate, base).origin !== base) {
     return "/";
   }
 
-  return value.slice(0, 1_000);
+  return candidate;
 }
 
 async function sessionCookie(session: GitHubSession, secret: string): Promise<string> {
@@ -404,9 +407,15 @@ function parseCookies(header: string | null): Record<string, string> {
     header.split(";").flatMap((part) => {
       const index = part.indexOf("=");
 
-      return index < 0
-        ? []
-        : [[part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1))]];
+      if (index < 0) {
+        return [];
+      }
+
+      try {
+        return [[part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1))]];
+      } catch {
+        return [];
+      }
     }),
   );
 }
