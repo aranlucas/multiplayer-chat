@@ -5,6 +5,7 @@ import {
   type RoomSocket,
 } from "@/server/agent-room-core";
 import type { RoomEnv } from "@/server/opencode";
+import type { WorkspaceChange } from "@/shared/workspace-change";
 import { sqliteStorage } from "./sqlite-storage";
 
 export const simulationEnv: RoomEnv = {
@@ -53,5 +54,8 @@ export class TestRoom extends AgentRoomCore {
   }
   info() {
     return this.getRoom();
+  }
+  changeWorkspace(changes: WorkspaceChange[]) {
+    this.workspace.syncNativeAgentChanges(changes);
   }
 }

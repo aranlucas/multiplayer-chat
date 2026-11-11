@@ -5,6 +5,8 @@ import { roomContext, TestRoom, simulationEnv } from "@test/server/fixtures/room
 import { deferred } from "@test/server/fixtures/deferred";
 import { sealGitHubCredential } from "@/server/github-auth";
 import type { PullRequestResult } from "@/server/github-pull-request";
+import { parseServerMessage } from "@/shared/protocol";
+import { BASE_COMMIT, fakeGitHub } from "@test/server/fixtures/github-api";
 
 const databases: ReturnType<typeof roomContext>["database"][] = [];
 
@@ -158,6 +160,53 @@ describe("concurrent publication", () => {
     const input = { accessToken: "synthetic", login: "maintainer" };
     await expect(room.createPullRequest(input)).rejects.toThrow("GitHub unavailable");
     await expect(room.createPullRequest(input)).resolves.toEqual(publication("retry"));
+  });
+});
+
+describe("pull request lifecycle", () => {
+  it("moves the room to a new pull request after its saved one was merged", async () => {
+    const { context, database } = fixture();
+
+    const room = new TestRoom(context, {
+      ...simulationEnv,
+      GITHUB_SESSION_SECRET: "local-test-key",
+    });
+
+    room.seed("room-1");
+    room.changeWorkspace([{ path: "src/index.ts", content: "pink" }]);
+
+    database.sql.exec(
+      "INSERT INTO relay_workspace_files (path, content) VALUES ('src/index.ts', 'blue')",
+    );
+    database.sql.exec(
+      "UPDATE relay_room SET repository = 'owner/repo', branch = 'main', commit_sha = ?, workspace_status = 'ready', workspace_revision = 2, published_workspace_revision = 1, pull_request_url = 'https://github.com/owner/repo/pull/42', pull_request_number = 42, pull_request_branch = 'relay/existing', pull_request_repository = 'owner/repo', pull_request_head_sha = 'old-head'",
+      BASE_COMMIT,
+    );
+    const github = fakeGitHub({ savedPullState: "closed" });
+    vi.stubGlobal("fetch", github.fetcher);
+
+    await expect(
+      room.createPullRequest({ accessToken: "synthetic", login: "maintainer" }),
+    ).resolves.toMatchObject({ number: 43 });
+
+    expect(room.info()).toMatchObject({
+      pullRequestNumber: 43,
+      pullRequestURL: "https://github.com/owner/repo/pull/43",
+      pullRequestHeadSHA: "new-head",
+      publishedWorkspaceRevision: 2,
+    });
+
+    const snapshot = parseServerMessage(
+      await (await room.fetch(new Request("https://room.test"))).text(),
+    );
+
+    expect(
+      snapshot.type === "snapshot" ? snapshot.events.at(-1)?.payload : undefined,
+    ).toMatchObject({
+      type: "pull_request",
+      text: "@maintainer created pull request #43 because #42 is no longer open",
+      url: "https://github.com/owner/repo/pull/43",
+    });
   });
 });
 
