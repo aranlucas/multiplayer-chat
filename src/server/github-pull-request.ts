@@ -66,6 +66,8 @@ const refSchema = z.object({ object: shaSchema });
 
 const pullSchema = z.object({ number: z.number(), html_url: z.string() });
 
+const pullStateSchema = z.object({ state: z.string() });
+
 const deploymentsSchema = z.array(z.object({ id: z.number(), environment: z.string().optional() }));
 
 const statusesSchema = z.array(
@@ -85,15 +87,14 @@ export class GitHubPullRequestClient {
     private readonly fetcher: typeof fetch = fetch,
   ) {}
 
-  async publish(
-    input: PullRequestInput,
-    existing?: ExistingPullRequest,
-  ): Promise<PullRequestResult> {
+  async publish(input: PullRequestInput, saved?: ExistingPullRequest): Promise<PullRequestResult> {
     if (!input.changes.length) {
       throw new Error("There are no shared workspace changes to put in a pull request");
     }
 
     const baseRepository = await this.request(repositorySchema, `/repos/${input.repository}`);
+
+    const existing = saved ? await this.reusablePullRequest(input.repository, saved) : undefined;
 
     const writeRepository =
       existing?.writeRepository ??
@@ -137,22 +138,7 @@ export class GitHubPullRequestClient {
       }),
     });
 
-    let parentSHA = input.baseCommitSHA;
-
-    if (existing) {
-      const remote = await this.request(
-        refSchema,
-        `/repos/${writeRepository}/git/ref/heads/${refPath(existing.branch)}`,
-      );
-
-      if (remote.object.sha !== existing.headSHA) {
-        throw new Error(
-          `Pull request branch moved from ${existing.headSHA.slice(0, 12)} to ${remote.object.sha.slice(0, 12)}; refresh the room before publishing`,
-        );
-      }
-
-      parentSHA = remote.object.sha;
-    }
+    const parentSHA = existing?.headSHA ?? input.baseCommitSHA;
 
     const commit = await this.request(shaSchema, `/repos/${writeRepository}/git/commits`, {
       method: "POST",
@@ -253,6 +239,45 @@ export class GitHubPullRequestClient {
     }
 
     return { status: "waiting" };
+  }
+
+  /**
+   * A saved pull request receives new revisions only while it is open and its
+   * branch still exists; otherwise the room's changes need a new pull request.
+   */
+  private async reusablePullRequest(
+    repository: string,
+    saved: ExistingPullRequest,
+  ): Promise<ExistingPullRequest | undefined> {
+    const pull = await this.request(
+      pullStateSchema,
+      `/repos/${repository}/pulls/${saved.number}`,
+      {},
+      true,
+    );
+
+    if (pull?.state !== "open") {
+      return undefined;
+    }
+
+    const remote = await this.request(
+      refSchema,
+      `/repos/${saved.writeRepository}/git/ref/heads/${refPath(saved.branch)}`,
+      {},
+      true,
+    );
+
+    if (!remote) {
+      return undefined;
+    }
+
+    if (remote.object.sha !== saved.headSHA) {
+      throw new Error(
+        `Pull request branch moved from ${saved.headSHA.slice(0, 12)} to ${remote.object.sha.slice(0, 12)}; refresh the room before publishing`,
+      );
+    }
+
+    return saved;
   }
 
   private async ensureFork(login: string, base: RepositoryResponse): Promise<string> {

@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { parseJsonRecord, type JsonRecord, type JsonValue } from "@/shared/json-value";
 import { describe, expect, it, vi } from "vitest";
-import { GitHubPullRequestClient } from "@/server/github-pull-request";
+import { GitHubPullRequestClient, type ExistingPullRequest } from "@/server/github-pull-request";
+import { BASE_COMMIT, fakeGitHub } from "@test/server/fixtures/github-api";
 
 interface RecordedRequest {
   url: string;
@@ -129,6 +130,10 @@ describe("GitHubPullRequestClient", () => {
         return json({ sha: "a".repeat(40), tree: { sha: "base-tree" } });
       }
 
+      if (url.endsWith("/repos/owner/repo/pulls/42")) {
+        return json({ number: 42, state: "open" });
+      }
+
       if (url.includes("/git/ref/heads/relay/existing")) {
         return json({ object: { sha: "old-head" } });
       }
@@ -184,6 +189,55 @@ describe("GitHubPullRequestClient", () => {
     });
   });
 
+  it.each([
+    ["merged or closed", { savedPullState: "closed", savedBranchHead: "old-head" }],
+    ["open but its branch was deleted", { savedPullState: "open" }],
+    ["no longer found", { savedBranchHead: "old-head" }],
+  ] as const)(
+    "opens a new pull request from the base commit when the saved one is %s",
+    async (_case, github) => {
+      const { fetcher, requests } = fakeGitHub(github);
+
+      const result = await new GitHubPullRequestClient("token", fetcher).publish(
+        laterRevision,
+        savedPullRequest,
+      );
+
+      expect(result).toMatchObject({
+        number: 43,
+        url: "https://github.com/owner/repo/pull/43",
+        commitSHA: "new-head",
+      });
+      expect(result.branch).toMatch(/^relay\/room--/);
+      expect(requests.find((request) => request.url.endsWith("/git/commits"))?.body).toEqual({
+        message: "Pink",
+        tree: "tree",
+        parents: [BASE_COMMIT],
+      });
+      expect(requests.find((request) => request.url.endsWith("/git/refs"))?.body).toEqual({
+        ref: `refs/heads/${result.branch}`,
+        sha: "new-head",
+      });
+      expect(requests.find((request) => request.url.endsWith("/pulls"))?.body).toMatchObject({
+        base: "main",
+        head: result.branch,
+      });
+      expect(requests.some((request) => request.method === "PATCH")).toBe(false);
+    },
+  );
+
+  it("refuses to publish over an open pull request whose branch moved", async () => {
+    const { fetcher, requests } = fakeGitHub({
+      savedPullState: "open",
+      savedBranchHead: "someone-else",
+    });
+
+    await expect(
+      new GitHubPullRequestClient("token", fetcher).publish(laterRevision, savedPullRequest),
+    ).rejects.toThrow("Pull request branch moved from old-head to someone-else");
+    expect(requests.filter((request) => request.method !== "GET")).toEqual([]);
+  });
+
   it("discovers the ready preview URL for an exact commit", async () => {
     const fetcher = vi.fn<typeof fetch>((input) => {
       const url = input instanceof Request ? input.url : String(input);
@@ -224,3 +278,22 @@ function json(value: JsonValue, status = 200) {
     }),
   );
 }
+
+const laterRevision = {
+  login: "owner",
+  roomID: "room",
+  repository: "owner/repo",
+  baseBranch: "main",
+  baseCommitSHA: BASE_COMMIT,
+  changes: [{ path: "src/index.ts", content: "pink" }],
+  title: "Pink",
+  body: "",
+};
+
+const savedPullRequest: ExistingPullRequest = {
+  number: 42,
+  url: "https://github.com/owner/repo/pull/42",
+  branch: "relay/existing",
+  writeRepository: "owner/repo",
+  headSHA: "old-head",
+};

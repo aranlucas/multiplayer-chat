@@ -436,9 +436,7 @@ export class AgentRoomCore {
       createdAt: Date.now(),
       payload: {
         type: "pull_request",
-        text: existing
-          ? `@${input.login} published revision ${revision.sequence} to pull request #${result.number}`
-          : `@${input.login} created pull request #${result.number}`,
+        text: pullRequestEventText(input.login, revision.sequence, result, existing),
         url: result.url,
         branch: result.branch,
         commitSHA: result.commitSHA,
@@ -2056,6 +2054,23 @@ function normalizeNativeEvent(value: JsonRecord): JsonRecord {
 
 function asRecord(value: JsonValue | undefined): JsonRecord {
   return jsonRecord(value);
+}
+
+function pullRequestEventText(
+  login: string,
+  revision: number,
+  result: PullRequestResult,
+  existing: ExistingPullRequest | undefined,
+): string {
+  if (!existing) {
+    return `@${login} created pull request #${result.number}`;
+  }
+
+  if (existing.number === result.number) {
+    return `@${login} published revision ${revision} to pull request #${result.number}`;
+  }
+
+  return `@${login} created pull request #${result.number} because #${existing.number} is no longer open`;
 }
 
 function cleanPullRequestText(
