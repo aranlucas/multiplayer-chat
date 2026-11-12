@@ -36,9 +36,7 @@ export default defineConfig({
         plugins: [
           openCodeTestSourceMaps(),
           cloudflareTest({
-            experimental: {
-              newConfig: { configPath: "test/server/fixtures/cloudflare.config.ts" },
-            },
+            config: "test/server/fixtures/cloudflare.config.ts",
             remoteBindings: false,
             // The beta config loader retains the original Worker name in self-bindings.
             // An unqualified class name binds to this project's test isolate.
@@ -58,9 +56,7 @@ export default defineConfig({
         plugins: [
           openCodeTestSourceMaps(),
           cloudflareTest({
-            experimental: {
-              newConfig: { configPath: "test/server/fixtures/room-cloudflare.config.ts" },
-            },
+            config: "test/server/fixtures/room-cloudflare.config.ts",
             remoteBindings: false,
             miniflare: {
               durableObjects: { AGENT_ROOMS: { className: "AgentRoom", useSQLite: true } },
