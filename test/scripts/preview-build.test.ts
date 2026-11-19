@@ -12,7 +12,7 @@ const run = promisify(execFile);
 
 const project = fileURLToPath(new URL("../../", import.meta.url));
 
-it("build:preview produces output accepted as a native Preview by the installed plugin", async () => {
+it("build:preview produces v1 output marked as a native Preview and readable by cf", async () => {
   const directory = await mkdtemp(join(tmpdir(), "relay-preview-build-"));
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
   await symlink(join(project, "node_modules"), join(directory, "node_modules"), "dir");
@@ -59,10 +59,21 @@ it("build:preview produces output accepted as a native Preview by the installed 
   await run("pnpm", ["run", "build:preview"], { cwd: directory, timeout: 25_000 });
 
   const output = z
-    .object({ buildContext: z.object({ isPreview: z.boolean(), mode: z.string() }) })
+    .object({
+      producer: z.object({ name: z.string() }),
+      buildContext: z.object({ isPreview: z.boolean(), mode: z.string() }),
+    })
     .parse(
-      JSON.parse(await readFile(join(directory, ".cloudflare/output/v0/config.json"), "utf8")),
+      JSON.parse(await readFile(join(directory, ".cloudflare/output/v1/config.json"), "utf8")),
     );
 
+  assert.equal(output.producer.name, "@cloudflare/vite-plugin");
   assert.deepEqual(output.buildContext, { isPreview: true, mode: "relay-preview" });
-}, 30_000);
+
+  // Load the same prebuilt Worker through cf without uploading a Preview.
+  await run(
+    join(project, "node_modules/.bin/cf"),
+    ["workers", "check", "--prebuilt", "--mode", "relay-preview"],
+    { cwd: directory, timeout: 25_000 },
+  );
+}, 60_000);

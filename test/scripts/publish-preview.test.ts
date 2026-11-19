@@ -139,6 +139,7 @@ it("publishes a native Preview and reports its immutable deployment URL", async 
     "cf",
     "previews",
     "deploy",
+    "--preview-name",
     "relay/test-room--123abc",
     "--prebuilt",
     "--mode",

@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { z } from "zod";
 import { spawnSync } from "node:child_process";
 
@@ -26,7 +28,17 @@ if (roomID && (!controlOrigin || !webhookSecret)) {
 
 const upload = spawnSync(
   "pnpm",
-  ["exec", "cf", "previews", "deploy", branch, "--prebuilt", "--mode", "relay-preview"],
+  [
+    "exec",
+    "cf",
+    "previews",
+    "deploy",
+    "--preview-name",
+    branch,
+    "--prebuilt",
+    "--mode",
+    "relay-preview",
+  ],
   { encoding: "utf8", stdio: ["inherit", "pipe", "pipe"] },
 );
 
