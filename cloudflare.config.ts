@@ -3,13 +3,15 @@ import { bindings, defineConfig, exports } from "cf/config";
 import previewConfig from "./preview/cloudflare.config.ts";
 import e2eConfig from "./e2e/cloudflare.config.ts";
 
+const workerName = "relay-multiplayer-agent";
+
 const productionConfig = defineConfig({
   worker: {
     exports: {
       AgentRoom: exports.durableObject({ storage: "sqlite" }),
       Sandbox: exports.durableObject({ state: "deleted" }),
     },
-    name: "relay-multiplayer-agent",
+    name: workerName,
     compatibilityDate: "2026-08-25",
     compatibilityFlags: ["nodejs_compat", "global_fetch_strictly_public"],
     entrypoint: "src/worker.ts",
@@ -27,6 +29,7 @@ const productionConfig = defineConfig({
       OPENCODE_MODE: bindings.text("live"),
       OPENCODE_PROVIDER: bindings.text("openrouter"),
       CLOUDFLARE_ACCOUNT_ID: bindings.text("d93c650f72e597f96785abba389b0ce4"),
+      RELAY_PREVIEW_WORKER_NAME: bindings.text(workerName),
       OPENCODE_MODEL: bindings.text("openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"),
       OPENCODE_MODEL_ALLOWLIST: bindings.text("openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"),
       RAILWAY_ENVIRONMENT_ID: bindings.text("795c1abd-ce4f-41f8-aa26-e7da9c55cc4f"),

@@ -1,4 +1,5 @@
 import { validatePreviewURL, verifyPreview } from "./preview-readiness";
+import { cloudflarePreviewLookup } from "./cloudflare-preview";
 import {
   handoffClientStateSchema,
   handoffParticipantSchema,
@@ -736,6 +737,41 @@ export class AgentRoomCore {
         provider: revision.provider,
         failure: "Preview deployment was not ready within 15 minutes",
       });
+
+      return;
+    }
+
+    const lookup = cloudflarePreviewLookup(this.env);
+
+    if (
+      lookup &&
+      room.pullRequestRepository?.toLowerCase() === DEFAULT_REPOSITORY &&
+      room.pullRequestBranch?.startsWith("relay/")
+    ) {
+      const deployment = await lookup(room.pullRequestBranch, revision.commitSHA).catch(() => null);
+
+      const latestRoom = this.getRoomOrNull();
+      const current = latestRoom?.latestRevision;
+
+      if (
+        latestRoom?.pullRequestHeadSHA !== revision.commitSHA ||
+        current?.id !== revision.id ||
+        current.status === "ready" ||
+        current.status === "failed"
+      ) {
+        return;
+      }
+
+      if (deployment) {
+        await this.recordDeployment({
+          ...deployment,
+          commitSHA: revision.commitSHA,
+          status: "ready",
+          provider: "cloudflare-workers-builds",
+        });
+      } else {
+        await this.ctx.storage.setAlarm(Date.now() + 5_000);
+      }
 
       return;
     }

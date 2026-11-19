@@ -65,7 +65,6 @@
   "overrides": [
     {
       "files": [
-        "scripts/publish-preview.mjs",
         "test/client/app.test.tsx",
         "src/client/app.tsx",
         "src/client/event-display.ts",

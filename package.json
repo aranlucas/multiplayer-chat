@@ -9,7 +9,6 @@
     "dev:preview": "VITE_RELAY_BUILD=preview VITE_RELAY_ACCENT='#ff5ca8' vite --mode relay-preview --port 5174",
     "build": "tsc -b && vite build",
     "build:preview": "tsc -b && VITE_RELAY_BUILD=preview VITE_RELAY_ACCENT='#ff5ca8' CLOUDFLARE_PREVIEW_BUILD=true cf-vite build --mode relay-preview",
-    "deploy:preview": "pnpm build:preview && node scripts/publish-preview.mjs",
     "prepare": "husky",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",

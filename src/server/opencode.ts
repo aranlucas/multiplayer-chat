@@ -3,13 +3,15 @@ import type { OpenCodeWorkerd } from "@opencode/sdk/workerd";
 import type { OpenCodeModelOption } from "../shared/protocol";
 import type { GitHubOAuthEnv } from "./github-auth";
 import type { RailwaySandboxEnv } from "./railway-sandbox";
+import type { CloudflarePreviewEnv } from "./cloudflare-preview";
 import {
   aiGatewayConfigurationError,
   openRouterGatewayConfiguration,
   type AIGatewayEnv,
 } from "./ai-gateway";
 
-export interface RoomEnv extends GitHubOAuthEnv, RailwaySandboxEnv, AIGatewayEnv {
+export interface RoomEnv
+  extends GitHubOAuthEnv, RailwaySandboxEnv, AIGatewayEnv, CloudflarePreviewEnv {
   OPENCODE_MODE: "simulation" | "live";
   OPENCODE_PROVIDER: "opencode-zen" | "openrouter" | "cloudflare-workers-ai";
   OPENCODE_ZEN_API_KEY?: string;
