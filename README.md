@@ -64,9 +64,9 @@ This builds the Worker and runs `cf deploy --prebuilt` with the generated `.clou
 pnpm deploy:preview
 ```
 
-Production and previews share `vite.config.ts`. `pnpm build:preview` sets `CLOUDFLARE_PREVIEW_BUILD=true` and mode `relay-preview`; both are required. The generated `.cloudflare/output/v0/config.json` must record `buildContext.isPreview: true` and mode `relay-preview`. Selecting the Vite mode alone does not mark the output as a native Preview build.
+Production and previews share `vite.config.ts`. `pnpm build:preview` sets `CLOUDFLARE_PREVIEW_BUILD=true` to mark the build as a native Preview and uses mode `relay-preview` to select the Preview configuration. The generated `.cloudflare/output/v1/config.json` records these settings in `buildContext`.
 
-The publisher runs `cf previews deploy <branch> --prebuilt --mode relay-preview`. Provide `WORKERS_CI_BRANCH` and `WORKERS_CI_COMMIT_SHA` (or `GITHUB_HEAD_REF` and `GITHUB_SHA`). The build embeds `WORKERS_CI_COMMIT_SHA` (or `RELAY_BUILD_SHA`), so a publisher using only `GITHUB_SHA` must also set `RELAY_BUILD_SHA` to that same SHA during the build. The production branch is skipped. Other branches get a native Preview; branches named `relay/<room>--<suffix>` with an alphanumeric suffix also report their deployment to that room.
+The publisher runs `cf previews deploy --preview-name <branch> --prebuilt --mode relay-preview`. Provide `WORKERS_CI_BRANCH` and `WORKERS_CI_COMMIT_SHA` (or `GITHUB_HEAD_REF` and `GITHUB_SHA`). The build embeds `WORKERS_CI_COMMIT_SHA` (or `RELAY_BUILD_SHA`), so a publisher using only `GITHUB_SHA` must also set `RELAY_BUILD_SHA` to that same SHA during the build. The production branch is skipped. Other branches get a native Preview; branches named `relay/<room>--<suffix>` with an alphanumeric suffix also report their deployment to that room.
 
 Room callbacks require `RELAY_CONTROL_ORIGIN` and the secret `RELAY_DEPLOYMENT_WEBHOOK_SECRET`, matching the production Worker's callback secret. The publisher reads Cloudflare's structured deployment result, verifies the immutable deployment URL against the exact commit and room protocol, then reports that URL and the deployment ID. It does not use the mutable branch URL for room revisions.
 
