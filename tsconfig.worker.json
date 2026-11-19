@@ -20,7 +20,6 @@
     "src/preview-worker.ts",
     "src/server",
     "src/shared",
-    "scripts",
     "test/server",
     "test/shared",
     "test/scripts",

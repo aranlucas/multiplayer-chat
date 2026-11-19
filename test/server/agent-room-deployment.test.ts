@@ -5,7 +5,7 @@ import { roomContext, TestRoom, simulationEnv } from "@test/server/fixtures/room
 import { deferred } from "@test/server/fixtures/deferred";
 import { sealGitHubCredential } from "@/server/github-auth";
 import type { PullRequestResult } from "@/server/github-pull-request";
-import { parseServerMessage } from "@/shared/protocol";
+import { DEFAULT_REPOSITORY, parseServerMessage } from "@/shared/protocol";
 import { BASE_COMMIT, fakeGitHub } from "@test/server/fixtures/github-api";
 
 const databases: ReturnType<typeof roomContext>["database"][] = [];
@@ -94,6 +94,151 @@ describe("deployment readiness", () => {
       expect(room.info().latestRevision).toEqual(ready);
     },
   );
+});
+
+describe("Cloudflare CLI Preview handoff", () => {
+  const commitSHA = "abc";
+  const branch = "relay/room-1--abc";
+  const previewURL = "https://immutable-preview.example";
+  const deploymentID = "native-deployment";
+  const apiURL = `https://api.cloudflare.com/client/v4/accounts/test-account/workers/workers/test-worker/previews/${encodeURIComponent(branch)}/deployments?per_page=100`;
+
+  function previewRoom() {
+    const { context, database } = fixture();
+
+    const setAlarm = vi.spyOn(context.storage, "setAlarm");
+
+    const room = new TestRoom(context, {
+      ...simulationEnv,
+      CLOUDFLARE_ACCOUNT_ID: "test-account",
+      RELAY_PREVIEW_WORKER_NAME: "test-worker",
+      RELAY_PREVIEW_API_TOKEN: "preview-read-token",
+    });
+
+    room.seed("room-1");
+    room.revision({ workspaceRevision: 1, commitSHA, status: "waiting" });
+    database.sql.exec(
+      "UPDATE relay_room SET pull_request_head_sha = ?, pull_request_branch = ?, pull_request_repository = ?",
+      commitSHA,
+      branch,
+      DEFAULT_REPOSITORY,
+    );
+
+    return { room, database, setAlarm };
+  }
+
+  function deployments() {
+    return Response.json({
+      success: true,
+      result: [
+        {
+          id: "unrelated-deployment",
+          annotations: { "workers/commit_sha": "different-sha" },
+          urls: ["https://unrelated-preview.example"],
+        },
+        { id: deploymentID, annotations: { "workers/commit_sha": commitSHA }, urls: [previewURL] },
+      ],
+    });
+  }
+
+  it("waits for the exact SHA, then hands off the room and unsent draft to its immutable URL", async () => {
+    const { room, setAlarm } = previewRoom();
+
+    const readiness = vi
+      .fn<() => Promise<Response>>()
+      .mockResolvedValueOnce(Response.json({ ready: true, commitSHA: "wrong", roomProtocol: 1 }))
+      .mockResolvedValueOnce(Response.json({ ready: true, commitSHA, roomProtocol: 1 }));
+
+    const fetcher = vi.fn((url: string | URL, _init?: RequestInit) =>
+      url === apiURL ? Promise.resolve(deployments()) : readiness(),
+    );
+
+    vi.stubGlobal("fetch", fetcher);
+
+    await room.alarm();
+    expect(room.info().latestRevision).toMatchObject({ status: "waiting" });
+    expect(setAlarm).toHaveBeenCalledTimes(1);
+    await room.alarm();
+    expect(room.info().latestRevision).toMatchObject({
+      status: "ready",
+      commitSHA,
+      deploymentID,
+      previewURL: `${previewURL}/`,
+    });
+    const apiRequest = [apiURL, "Bearer preview-read-token"];
+    const readinessRequest = [`${previewURL}/__relay/ready`, null];
+
+    expect(
+      fetcher.mock.calls.map(([url, init]) => [
+        String(url),
+        new Headers(init?.headers).get("Authorization"),
+      ]),
+    ).toEqual([apiRequest, readinessRequest, apiRequest, readinessRequest]);
+
+    const controlOrigin = "https://relay.example";
+    const participant = { id: "alice", name: "Alice", role: "maintainer" } as const;
+
+    const ticket = await room.createHandoff({
+      participant,
+      currentOrigin: controlOrigin,
+      controlOrigin,
+      clientState: { draft: "unsent" },
+    });
+
+    const target = new URL(ticket.url);
+
+    expect(target.origin).toBe(previewURL);
+    await expect(
+      room.redeemHandoff({
+        token: target.hash.slice("#handoff=".length),
+        targetOrigin: previewURL,
+      }),
+    ).resolves.toMatchObject({
+      roomID: "room-1",
+      participant,
+      clientState: { draft: "unsent" },
+    });
+  });
+
+  it.each([404, 503])("retries when the Preview API returns HTTP %s", async (status) => {
+    const { room, setAlarm } = previewRoom();
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status })));
+    await room.alarm();
+    expect(room.info().latestRevision).toMatchObject({ commitSHA, status: "waiting" });
+    expect(setAlarm).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a completed lookup for a revision superseded during discovery", async () => {
+    const { room, database, setAlarm } = previewRoom();
+
+    const pending = deferred<Response>();
+
+    const fetcher = vi.fn((url: string) =>
+      url === apiURL
+        ? pending.promise
+        : Promise.resolve(Response.json({ ready: true, commitSHA, roomProtocol: 1 })),
+    );
+
+    vi.stubGlobal("fetch", fetcher);
+
+    const earlierPoll = room.alarm();
+
+    expect(fetcher).toHaveBeenCalledOnce();
+
+    const newer = room.revision({ workspaceRevision: 2, commitSHA: "new-head", status: "waiting" });
+
+    database.sql.exec("UPDATE relay_room SET pull_request_head_sha = 'new-head'");
+    pending.resolve(deployments());
+    await earlierPoll;
+
+    expect(room.info().latestRevision).toEqual(newer);
+    expect(setAlarm).not.toHaveBeenCalled();
+    await expect(room.recordDeployment({ commitSHA, status: "waiting" })).resolves.toMatchObject({
+      status: "waiting",
+      previewURL: undefined,
+    });
+  });
 });
 
 describe("concurrent publication", () => {

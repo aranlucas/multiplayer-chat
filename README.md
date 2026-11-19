@@ -61,25 +61,26 @@ pnpm deploy
 This builds the Worker and runs `cf deploy --prebuilt` with the generated `.cloudflare/output` build output. Cloudflare credentials and live-mode secrets must be configured in the target environment. Branch publication uses native [Worker Previews](https://developers.cloudflare.com/workers/previews/) under the same `relay-multiplayer-agent` Worker:
 
 ```bash
-pnpm deploy:preview
+RELAY_BUILD_SHA="$(git rev-parse HEAD)" pnpm build:preview
+GITHUB_SHA="$(git rev-parse HEAD)" pnpm exec cf previews deploy --prebuilt --mode relay-preview
 ```
 
 Production and previews share `vite.config.ts`. `pnpm build:preview` sets `CLOUDFLARE_PREVIEW_BUILD=true` to mark the build as a native Preview and uses mode `relay-preview` to select the Preview configuration. The generated `.cloudflare/output/v1/config.json` records these settings in `buildContext`.
 
-The publisher runs `cf previews deploy --preview-name <branch> --prebuilt --mode relay-preview`. Provide `WORKERS_CI_BRANCH` and `WORKERS_CI_COMMIT_SHA` (or `GITHUB_HEAD_REF` and `GITHUB_SHA`). The build embeds `WORKERS_CI_COMMIT_SHA` (or `RELAY_BUILD_SHA`), so a publisher using only `GITHUB_SHA` must also set `RELAY_BUILD_SHA` to that same SHA during the build. The production branch is skipped. Other branches get a native Preview; branches named `relay/<room>--<suffix>` with an alphanumeric suffix also report their deployment to that room.
+The CLI names the Preview after the current Git or CI branch. On a detached checkout, pass `--preview-name <branch>`. The build embeds the commit SHA from `WORKERS_CI_COMMIT_SHA` or `RELAY_BUILD_SHA`. The deploy command passes the same SHA to `cf` through `GITHUB_SHA` so Cloudflare records it on the deployment.
 
-Room callbacks require `RELAY_CONTROL_ORIGIN` and the secret `RELAY_DEPLOYMENT_WEBHOOK_SECRET`, matching the production Worker's callback secret. The publisher reads Cloudflare's structured deployment result, verifies the immutable deployment URL against the exact commit and room protocol, then reports that URL and the deployment ID. It does not use the mutable branch URL for room revisions.
+For Relay branches in the connected repository, the control Worker polls Cloudflare for the published SHA. It verifies that the immutable deployment URL serves that SHA and the room protocol before announcing the Preview to the room. Configure `RELAY_PREVIEW_API_TOKEN` on the control Worker with Workers Scripts Read permission for its Cloudflare account.
 
 Previews serve the UI and readiness endpoint, and participants continue connecting to the existing production room service. They do not bind an isolated `AGENT_ROOMS` namespace, so a handoff retains the room's participants, transcript, and unsent draft. Preview URLs are public unless Cloudflare Access is configured.
 
 Configure Workers Builds on `relay-multiplayer-agent` as follows:
 
-| Target              | Build command            | Deploy command                     |
-| ------------------- | ------------------------ | ---------------------------------- |
-| Production (`main`) | `pnpm run build`         | `pnpm exec cf deploy --prebuilt`   |
-| Previews (enabled)  | `pnpm run build:preview` | `node scripts/publish-preview.mjs` |
+| Target              | Build command            | Deploy command                                                                                     |
+| ------------------- | ------------------------ | -------------------------------------------------------------------------------------------------- |
+| Production (`main`) | `pnpm run build`         | `pnpm exec cf deploy --prebuilt`                                                                   |
+| Previews (enabled)  | `pnpm run build:preview` | `GITHUB_SHA="$WORKERS_CI_COMMIT_SHA" pnpm exec cf previews deploy --prebuilt --mode relay-preview` |
 
-Set the room callback variables in the Previews build settings.
+For an existing installation, roll out the updated control Worker with `RELAY_PREVIEW_API_TOKEN` before switching the Workers Builds Preview command. Apply the command to the Previews base settings and existing branch overrides that use the old publisher. Earlier builds can still report through the authenticated deployment callback during the transition.
 
 ## Product and architecture decisions
 
